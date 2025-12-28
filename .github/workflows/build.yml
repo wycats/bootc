@@ -40,6 +40,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Install skopeo
         run: |
@@ -88,7 +91,14 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "${DIGEST_FILE}"
           git commit -m "chore(upstream): bump bazzite stable digest" || exit 0
-          git push
+          for attempt in 1 2 3; do
+            git pull --rebase origin main || true
+            if git push; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
 
   check-getnf:
     runs-on: ubuntu-latest
@@ -97,6 +107,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Check getnf upstream script
         id: check
@@ -141,7 +154,14 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "${GETNF_REF_FILE}" "${GETNF_VERSION_FILE}" "${GETNF_SHA256_FILE}"
           git commit -m "chore(upstream): bump getnf (${ver})" || exit 0
-          git push
+          for attempt in 1 2 3; do
+            git pull --rebase origin main || true
+            if git push; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
 
   nightly:
     runs-on: ubuntu-latest
