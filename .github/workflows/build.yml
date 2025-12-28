@@ -111,6 +111,11 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
       - name: Check getnf upstream script
         id: check
         shell: bash
@@ -120,7 +125,8 @@ jobs:
           set -euo pipefail
 
           # Resolve the moving branch to an immutable commit SHA so the build stays reproducible.
-          ref="$(git ls-remote https://github.com/getnf/getnf.git refs/heads/main | awk '{print $1}')"
+            # Pin to an immutable commit SHA so builds don't break when upstream moves.
+            ref="$(curl -fsSL -H 'Accept: application/vnd.github+json' https://api.github.com/repos/getnf/getnf/commits/main | jq -r .sha)"
           url="${RAW_URL}/${ref}/getnf"
           script="$(curl -fsSL "$url")"
           sha="$(printf "%s" "$script" | sha256sum | cut -d" " -f1)"
