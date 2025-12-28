@@ -1,0 +1,3 @@
+Recommended defaults (bootc image):
+- journald cap: SystemMaxUse=1G, SystemKeepFree=2G
+- lid policy: suspend on battery, ignore on AC/docked

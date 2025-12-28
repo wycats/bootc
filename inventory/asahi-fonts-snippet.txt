@@ -1,0 +1,121 @@
+### 5.1 Fonts (Inter + JetBrains Mono)
+
+```bash
+sudo dnf install rsms-inter-fonts
+mkdir -p ~/.local/share/fonts
+cd ~/.local/share/fonts
+wget https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip
+unzip -o JetBrainsMono.zip
+rm JetBrainsMono.zip
+fc-cache -fv
+```
+
+### 5.2 Battery percentage
+
+```bash
+gsettings set org.gnome.desktop.interface show-battery-percentage true
+```
+
+### 5.3 Refine
+
+```bash
+flatpak install flathub page.tesk.Refine
+```
+
+### 5.4 Dock
+
+- Dash to Dock: https://extensions.gnome.org/extension/307/dash-to-dock/
+- Dash to Panel: https://extensions.gnome.org/extension/1160/dash-to-panel/
+
+### 5.5 Blur + icons
+
+```bash
+sudo dnf install papirus-icon-theme
+```
+
+Blur My Shell: https://extensions.gnome.org/extension/3193/blur-my-shell/
+
+### 5.6 Cursor theme (Bibata Modern Ice)
+
+**Goal**
+
+- Install a modern cursor theme.
+
+**Apply**
+
+```bash
+mkdir -p /tmp/bibata
+cd /tmp/bibata
+wget https://github.com/ful1e5/Bibata_Cursor/releases/latest/download/Bibata-Modern-Ice.tar.gz
+tar -xvf Bibata-Modern-Ice.tar.gz
+mkdir -p ~/.local/share/icons
+mv Bibata-Modern-Ice ~/.local/share/icons/
+```
+
+**Verify**
+
+- GNOME Tweaks → Appearance → Cursor.
+
+**Rollback**
+
+```bash
+rm -rf ~/.local/share/icons/Bibata-Modern-Ice
+```
+
+### 5.7 Legacy apps: adw-gtk3
+
+**Goal**
+
+- Make GTK3/legacy apps visually match modern Libadwaita styling.
+
+**Apply**
+
+```bash
+sudo dnf install adw-gtk3-theme
+```
+
+**Verify**
+
+- GNOME Tweaks → Appearance → Legacy Applications.
+
+**Rollback**
+
+```bash
+sudo dnf remove adw-gtk3-theme
+```
+
+### 5.8 Optional: font discovery GUI (Font Downloader + Flatseal)
+
+**Goal**
+
+- Browse/install fonts via GUI.
+
+**Apply**
+
+```bash
+flatpak install flathub org.gustavoperrot.FontDownloader
+flatpak install flathub com.github.tchx84.Flatseal
+```
+
+**Verify**
+
+- In Flatseal, grant Font Downloader access to `~/.local/share/fonts`.
+
+## 6) Power-user tools
+
+### 6.1 Faster DNF
+
+- Edit `/etc/dnf/dnf.conf` and add:
+
+```ini
+max_parallel_downloads=10
+fastestmirror=True
+defaultyes=True
+```
+
+### 6.2 Allow GNOME Software on metered
+
+```bash
+gsettings set org.gnome.software download-updates-on-metered true
+```
+

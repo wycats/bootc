@@ -1,0 +1,39 @@
+=== LAYERED PACKAGES ===
+1password
+1password-cli
+code
+gh
+keyd
+lazygit
+microsoft-edge-stable
+papirus-icon-theme
+starship
+toolbox
+
+=== CURRENT SHELL ===
+/bin/bash
+
+=== DOTFILES DETECTED ===
+/home/wycats/.bashrc
+
+=== TOP 20 CLI COMMANDS (Usage Pattern) ===
+71  12.9091%   -
+62  11.2727%   exo
+31  5.63636%   export
+28  5.09091%   sudo
+24  4.36364%   git
+13  2.36364%   toolbox
+13  2.36364%   ls
+13  2.36364%   dnf
+12  2.18182%   scp
+11  2%         cargo
+11  2%         ##
+9   1.63636%   which
+9   1.63636%   ssh
+9   1.63636%   cd
+8   1.45455%   command
+7   1.27273%   ujust
+7   1.27273%   source
+7   1.27273%   rpm-ostree
+7   1.27273%   rm
+7   1.27273%   flatpak

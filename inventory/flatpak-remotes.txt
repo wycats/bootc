@@ -1,0 +1,2 @@
+appcenter	https://flatpak.elementary.io/repo	system
+flathub	https://dl.flathub.org/repo/	system,filtered

@@ -1,0 +1,20 @@
+[Unit]
+Description=Trackpad Is Too Damn Big Daemon
+After=multi-user.target
+
+[Service]
+# Creates a dead zone frame around the trackpad to ignore resting palms.
+# Note: on this titdb build, the device argument (-d) is mandatory.
+# -b 25: Disable bottom 25% (main resting area)
+# -l 20: Disable left 20%
+# -r 20: Disable right 20%
+# -t 5: Disable top 5% (near keyboard)
+# IMPORTANT: use a stable /dev/input/by-path/... symlink, not /dev/input/eventX.
+# event numbers can change across boots, which makes the service flaky.
+#
+# Replace the device path below for your hardware (Asahi-only).
+ExecStart=/usr/local/bin/titdb -b 25 -l 20 -r 20 -t 5 -d /dev/input/by-path/REPLACE_ME-event-mouse
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

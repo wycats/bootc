@@ -1,0 +1,10 @@
+[Unit]
+Description=Apply user bootstrap state (Flatpak + GNOME extensions)
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/bootc-bootstrap apply
+
+[Install]
+WantedBy=default.target

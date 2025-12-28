@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-apply}"
+
+share_dir="/usr/local/share/bootc-bootstrap"
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/bootc-bootstrap"
+state_file="${state_dir}/last-applied.sha256"
+
+log() {
+  printf "[bootc-bootstrap] %s\n" "$*" >&2
+}
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+manifest_hash() {
+  if ! compgen -G "${share_dir}/*" >/dev/null; then
+    printf "";
+    return 0
+  fi
+  (cd "${share_dir}" && sha256sum ./* 2>/dev/null || true) | sha256sum | cut -d" " -f1
+}
+
+run_flatpak() {
+  local scope="$1"; shift
+  if [[ "$scope" == system* ]]; then
+    if need_cmd pkexec; then
+      pkexec flatpak "$@"
+    else
+      log "pkexec missing; skipping system flatpak: flatpak $*"
+      return 1
+    fi
+  else
+    flatpak --user "$@"
+  fi
+}
+
+apply_flatpak_remotes() {
+  local file="${share_dir}/flatpak-remotes.txt"
+  [[ -f "$file" ]] || return 0
+  need_cmd flatpak || { log "flatpak not found; skipping flatpak remotes"; return 1; }
+
+  while IFS=$'\t' read -r name url scope; do
+    [[ -n "${name}" ]] || continue
+    [[ "${name}" == \#* ]] && continue
+
+    log "Ensuring flatpak remote (${scope}): ${name} ${url}"
+    run_flatpak "${scope}" remote-add --if-not-exists "${name}" "${url}" || return 1
+  done < "$file"
+}
+
+apply_flatpak_apps() {
+  local file="${share_dir}/flatpak-apps.txt"
+  [[ -f "$file" ]] || return 0
+  need_cmd flatpak || { log "flatpak not found; skipping flatpak apps"; return 1; }
+
+  while IFS=$'\t' read -r scope appid remote; do
+    [[ -n "${scope}" ]] || continue
+    [[ "${scope}" == \#* ]] && continue
+
+    log "Installing/updating flatpak (${scope}): ${appid} (${remote})"
+    run_flatpak "${scope}" install -y --noninteractive --or-update "${remote}" "${appid}" || return 1
+  done < "$file"
+}
+
+shell_major_version() {
+  local v
+  v="$(gnome-shell --version 2>/dev/null || true)"
+  # "GNOME Shell 47.2" -> 47
+  printf "%s" "$v" | grep -Eo '[0-9]+' | head -n1
+}
+
+apply_gnome_extensions() {
+  local file="${share_dir}/gnome-extensions.txt"
+  [[ -f "$file" ]] || return 0
+
+  need_cmd gnome-extensions || { log "gnome-extensions not found; skipping extensions"; return 1; }
+  need_cmd curl || { log "curl not found; skipping extensions"; return 1; }
+
+  local shell_ver
+  shell_ver="$(shell_major_version)"
+  if [[ -z "$shell_ver" ]]; then
+    log "Could not detect GNOME Shell version; skipping extensions"
+    return 1
+  fi
+
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  trap 'rm -rf "$tmpdir"' EXIT
+
+  while IFS= read -r uuid; do
+    [[ -n "${uuid}" ]] || continue
+    [[ "${uuid}" == \#* ]] && continue
+
+    if gnome-extensions info "${uuid}" >/dev/null 2>&1; then
+      log "Enabling GNOME extension: ${uuid}"
+      gnome-extensions enable "${uuid}" >/dev/null 2>&1 || true
+      continue
+    fi
+
+    log "Installing GNOME extension: ${uuid} (shell ${shell_ver})"
+
+    info_json="$(curl -fsSL "https://extensions.gnome.org/extension-info/?uuid=${uuid}&shell_version=${shell_ver}")" || { log "Failed to fetch extension info for ${uuid}"; return 1; }
+    dl_path="$(printf "%s" "$info_json" | grep -Eo '"download_url"\s*:\s*"[^"]+"' | head -n1 | sed -E 's/.*"download_url"\s*:\s*"([^"]+)".*/\1/')"
+    if [[ -z "$dl_path" ]]; then
+      log "No download_url for ${uuid}; skipping"
+      continue
+    fi
+
+    zip_path="${tmpdir}/${uuid}.zip"
+    curl -fsSL "https://extensions.gnome.org${dl_path}" -o "${zip_path}" || { log "Failed to download ${uuid}"; return 1; }
+
+    gnome-extensions install --force "${zip_path}" || { log "Failed to install ${uuid}"; return 1; }
+    gnome-extensions enable "${uuid}" >/dev/null 2>&1 || true
+  done < "$file"
+}
+
+apply_gsettings() {
+  local file="${share_dir}/gsettings.txt"
+  [[ -f "$file" ]] || return 0
+
+  need_cmd gsettings || { log "gsettings not found; skipping gsettings"; return 0; }
+
+  while IFS=$'\t' read -r schema key value; do
+    [[ -n "${schema}" ]] || continue
+    [[ "${schema}" == \#* ]] && continue
+    [[ -n "${key}" ]] || continue
+    [[ -n "${value}" ]] || continue
+
+    log "Applying gsettings: ${schema} ${key} ${value}"
+    gsettings set "${schema}" "${key}" ${value} || true
+  done < "$file"
+}
+
+apply_all() {
+  local hash
+  hash="$(manifest_hash)"
+
+  mkdir -p "${state_dir}"
+  if [[ -n "$hash" && -f "${state_file}" ]]; then
+    if [[ "$(tr -d '\n' < "${state_file}" || true)" == "$hash" ]]; then
+      log "Already applied (manifest hash ${hash}); exiting"
+      return 0
+    fi
+  fi
+
+  local failed=0
+
+  apply_flatpak_remotes || failed=1
+  apply_flatpak_apps || failed=1
+  apply_gnome_extensions || failed=1
+  apply_gsettings || failed=1
+
+  if [[ $failed -ne 0 ]]; then
+    log "One or more steps failed; will retry next login"
+    return 0
+  fi
+
+  if [[ -n "$hash" ]]; then
+    printf "%s\n" "$hash" > "${state_file}"
+    log "Applied successfully (manifest hash ${hash})"
+  fi
+}
+
+case "$cmd" in
+  apply)
+    apply_all
+    ;;
+  *)
+    echo "Usage: bootc-bootstrap [apply]" >&2
+    exit 2
+    ;;
+esac

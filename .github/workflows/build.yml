@@ -1,0 +1,211 @@
+name: build-and-push
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - upstream/bazzite-stable.digest
+      - upstream/getnf.ref
+      - upstream/getnf.version
+      - upstream/getnf.sha256
+  schedule:
+    # Hourly cheap poll of upstream digest
+    - cron: '0 * * * *'
+    # Nightly forced rebuild to pick up RPM repo updates even if upstream digest doesn't change
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: build-and-push-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BASE_IMAGE: ghcr.io/ublue-os/bazzite:stable
+  DIGEST_FILE: upstream/bazzite-stable.digest
+  GETNF_REF_FILE: upstream/getnf.ref
+  GETNF_VERSION_FILE: upstream/getnf.version
+  GETNF_SHA256_FILE: upstream/getnf.sha256
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    outputs:
+      upstream_changed: ${{ steps.check.outputs.upstream_changed }}
+      force_rebuild: ${{ steps.check.outputs.force_rebuild }}
+      upstream_digest: ${{ steps.check.outputs.upstream_digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+
+      - name: Check upstream digest
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Nightly forced rebuild is determined by a separate job (see below).
+          force_rebuild=false
+
+          upstream_digest="$(skopeo inspect --format '{{.Digest}}' "docker://${BASE_IMAGE}")"
+          echo "upstream_digest=${upstream_digest}" >> "$GITHUB_OUTPUT"
+          echo "force_rebuild=${force_rebuild}" >> "$GITHUB_OUTPUT"
+
+          current_digest=""
+          if [[ -f "${DIGEST_FILE}" ]]; then
+            current_digest="$(grep -Eo '^sha256:[0-9a-f]{64}$' "${DIGEST_FILE}" | tail -n 1 || true)"
+          fi
+
+          if [[ "${upstream_digest}" != "${current_digest}" ]]; then
+            echo "upstream_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "upstream_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update digest file (commit)
+        if: steps.check.outputs.upstream_changed == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$(dirname "${DIGEST_FILE}")"
+          {
+            echo "# Updated automatically by GitHub Actions."
+            echo "# This is the last-seen digest for ${BASE_IMAGE}"
+            echo "# Format: sha256:..."
+            echo "${{ steps.check.outputs.upstream_digest }}"
+          } > "${DIGEST_FILE}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${DIGEST_FILE}"
+          git commit -m "chore(upstream): bump bazzite stable digest" || exit 0
+          git push
+
+  check-getnf:
+    runs-on: ubuntu-latest
+    outputs:
+      getnf_changed: ${{ steps.check.outputs.getnf_changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check getnf upstream script
+        id: check
+        shell: bash
+        env:
+          RAW_URL: https://raw.githubusercontent.com/getnf/getnf
+        run: |
+          set -euo pipefail
+
+          ref="main"
+          url="${RAW_URL}/${ref}/getnf"
+          script="$(curl -fsSL "$url")"
+          sha="$(printf "%s" "$script" | sha256sum | cut -d" " -f1)"
+          ver="$(printf "%s" "$script" | grep -E "^readonly VERSION=\"" | head -n1 | sed -E "s/^readonly VERSION=\"([^\"]+)\"/\1/" || true)"
+          ver="${ver:-unknown}"
+
+          current_sha=""
+          if [[ -f "${GETNF_SHA256_FILE}" ]]; then
+            current_sha="$(tr -d "\n" < "${GETNF_SHA256_FILE}" || true)"
+          fi
+
+          if [[ "${sha}" != "${current_sha}" ]]; then
+            echo "getnf_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "getnf_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [[ "${{ github.event_name }}" != "schedule" && "${{ github.event_name }}" != "workflow_dispatch" ]]; then
+            exit 0
+          fi
+
+          if [[ "${sha}" == "${current_sha}" ]]; then
+            exit 0
+          fi
+
+          mkdir -p "$(dirname "${GETNF_REF_FILE}")"
+          printf "%s\n" "$ref" > "${GETNF_REF_FILE}"
+          printf "%s\n" "$ver" > "${GETNF_VERSION_FILE}"
+          printf "%s\n" "$sha" > "${GETNF_SHA256_FILE}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${GETNF_REF_FILE}" "${GETNF_VERSION_FILE}" "${GETNF_SHA256_FILE}"
+          git commit -m "chore(upstream): bump getnf (${ver})" || exit 0
+          git push
+
+  nightly:
+    runs-on: ubuntu-latest
+    outputs:
+      force_rebuild: ${{ steps.flag.outputs.force_rebuild }}
+    steps:
+      - name: Determine nightly schedule
+        id: flag
+        shell: bash
+        run: |
+          set -euo pipefail
+          # GitHub provides the triggering cron string in github.event.schedule for scheduled runs.
+          # For non-scheduled events (push/workflow_dispatch), we never force a rebuild here.
+          if [[ "${{ github.event_name }}" == "schedule" && "${{ github.event.schedule }}" == "0 3 * * *" ]]; then
+            echo "force_rebuild=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "force_rebuild=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: [check-upstream, check-getnf, nightly]
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      needs.check-upstream.outputs.upstream_changed == 'true' ||
+      needs.check-getnf.outputs.getnf_changed == 'true' ||
+      needs.nightly.outputs.force_rebuild == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
