@@ -37,6 +37,7 @@ RUN dnf install -y \
     gh \
     microsoft-edge-stable \
     papirus-icon-theme \
+    xorg-x11-server-Xvfb \
     rsms-inter-fonts \
     toolbox \
     curl \
