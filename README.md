@@ -1,56 +1,129 @@
-# bootc Config as Code (Bazzite base)
+# Workstation as Code
 
 > ⚠️ **This repository and its container images are public.** Do not commit
 > secrets, passwords, API keys, personal data, or any sensitive information.
 > Machine-specific files like `system_profile.json` are gitignored for this
 > reason.
 
-- Container build definition: [Containerfile](Containerfile)
-- Package analysis: [docs/ANALYSIS.md](docs/ANALYSIS.md)
-- Migration steps: [docs/MIGRATION.md](docs/MIGRATION.md)
-- End-to-end plan: [PLAN.md](PLAN.md)
-- Upstream base digest (auto-updated): [upstream/bazzite-stable.digest](upstream/bazzite-stable.digest)
-- getnf pinning (auto-updated): [upstream/getnf.ref](upstream/getnf.ref), [upstream/getnf.version](upstream/getnf.version), [upstream/getnf.sha256](upstream/getnf.sha256)
+This repo defines a complete, reproducible Linux workstation built on [Bazzite](https://bazzite.gg) (uBlue/Fedora Atomic). The entire system configuration lives in git, builds into immutable container images, and flows to machines through the standard bootc update mechanism.
 
-## Source of truth
+## Architecture
 
-This repo is the source of truth for host configuration baked into the bootc image.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Host (ghcr.io/wycats/bootc)                  │
+│  • Immutable Bazzite base                                       │
+│  • Desktop apps via Flatpak                                     │
+│  • Gaming (Steam, gamescope)                                    │
+│  • Update: bootc upgrade → reboot                               │
+└─────────────────────────────────────────────────────────────────┘
+         │ shares $HOME
+         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              Toolbox (ghcr.io/wycats/bootc-toolbox)             │
+│  • Ephemeral dev environment (like WSL)                         │
+│  • Nix, Cargo, proto toolchains                                 │
+│  • GPG signing for git commits                                  │
+│  • VS Code attaches from host                                   │
+│  • Update: ujust toolbox-update (no reboot needed)              │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-- keyd: [system/keyd/default.conf](system/keyd/default.conf) (extracted from wycats/asahi-env)
-- NetworkManager (Asahi-only / optional): [system/NetworkManager/conf.d/wifi_backend.conf](system/NetworkManager/conf.d/wifi_backend.conf)
-- NetworkManager (optional): [system/NetworkManager/conf.d/default-wifi-powersave-on.conf](system/NetworkManager/conf.d/default-wifi-powersave-on.conf)
-- systemd (Asahi-only / template): [system/asahi/titdb.service.template](system/asahi/titdb.service.template)
-- modprobe (Asahi-only / optional): [system/asahi/modprobe.d/brcmfmac.conf](system/asahi/modprobe.d/brcmfmac.conf)
+**Key insight:** Both images are ephemeral; `$HOME` persists. Toolbox-specific user binaries live in `~/.local/toolbox/bin` (in toolbox PATH only).
 
-## Bootstrap state (applied on first login)
+## Three-Tier Configuration Model
 
-These are applied by a user `systemd` oneshot (`bootc-bootstrap.service`) and re-run automatically when the manifests change:
+| Tier | When | Mechanism | Examples |
+|------|------|-----------|----------|
+| **Baked** | Image build | Containerfile | RPM packages, keyd config, ujust recipes, fonts |
+| **Bootstrapped** | First login | systemd user oneshot | Flatpaks, GNOME extensions, toolbox setup |
+| **Optional** | User-activated | `ujust enable-*` | Remote play, hardware-specific tweaks |
 
-- Flatpak remotes: [manifests/flatpak-remotes.txt](manifests/flatpak-remotes.txt)
-- Flatpak apps: [manifests/flatpak-apps.txt](manifests/flatpak-apps.txt)
-- GNOME extensions: [manifests/gnome-extensions.txt](manifests/gnome-extensions.txt)
+## Update Flows
 
-## ujust customization
+**Host image** (requires reboot):
+```
+Edit repo → push → GitHub Actions builds → bootc upgrade → reboot
+```
 
-- Custom recipes shipped in the image: [ujust/60-custom.just](ujust/60-custom.just)
+**Toolbox image** (no reboot):
+```
+Edit repo → push → GitHub Actions builds → ujust toolbox-update → next shell
+```
 
-Remote play (Option B / tty2 + Steam gamepad UI):
+## Quick Reference
 
-- `ujust enable-remote-play` (installs unit + enables it)
-- `ujust disable-remote-play`
-- `ujust remote-play-status`
+| What | Where |
+|------|-------|
+| Host image definition | [Containerfile](Containerfile) |
+| Toolbox image definition | [toolbox/Containerfile](toolbox/Containerfile) |
+| Flatpak apps | [manifests/flatpak-apps.txt](manifests/flatpak-apps.txt) |
+| GNOME extensions | [manifests/gnome-extensions.txt](manifests/gnome-extensions.txt) |
+| ujust recipes | [ujust/60-custom.just](ujust/60-custom.just) |
+| Migration plan | [PLAN.md](PLAN.md) |
+| Package analysis | [docs/ANALYSIS.md](docs/ANALYSIS.md) |
 
-## System profile (migration preflight)
+## Toolbox as Primary Dev Environment
 
-Generate a machine snapshot (JSON + optional text):
+The toolbox is where development happens. Terminals (ddterm, etc.) are configured to run `toolbox enter dev` as the shell command.
 
-- `./scripts/build-system-profile --output system_profile.json --text-output system_profile.txt`
+**Why this works:**
+- PATH is set via container metadata, not shell init — works regardless of how you enter
+- `~/.local/toolbox/bin` holds toolbox-specific scripts (like `code` wrapper)
+- VS Code on host attaches to the container via "Remote - Containers"
+- Home directory is shared, so files persist across toolbox recreation
 
-`jq` is expected to be available (it’s installed in the bootc image; and `./scripts/toolbox-gpg-setup` installs it in a toolbox).
+**The `code` wrapper** (in `~/.local/toolbox/bin/code`):
+```bash
+# Launches host VS Code attached to this container
+flatpak-spawn --host /usr/bin/code --folder-uri "vscode-remote://attached-container+${hex_name}${folder}"
+```
 
-Quick queries:
+## Bootstrap Service
 
-- `jq '.rpm_ostree.booted["requested-packages"]' system_profile.json`
-- `jq '.etc_config_diff' system_profile.json`
-- `jq '.flatpak_manifest_diff' system_profile.json`
-- `jq '.gnome_extensions_enabled_vs_installed' system_profile.json`
+On login, `bootc-bootstrap.service` ensures the system matches manifests:
+
+1. **Flatpak remotes** — configured from [manifests/flatpak-remotes.txt](manifests/flatpak-remotes.txt)
+2. **Flatpak apps** — installed/updated from [manifests/flatpak-apps.txt](manifests/flatpak-apps.txt)
+3. **GNOME extensions** — installed/enabled from [manifests/gnome-extensions.txt](manifests/gnome-extensions.txt)
+4. **Toolbox** — recreated if image digest changed (preserves container name)
+5. **Toolbox bin** — ensures `~/.local/toolbox/bin/code` exists
+
+The service is idempotent and hash-cached — it only runs when manifests change.
+
+## Optional Features
+
+Shipped in the image but disabled by default. Activate via ujust:
+
+| Feature | Enable | Disable |
+|---------|--------|---------|
+| Remote Play (tty2 + Steam gamepad UI) | `ujust enable-remote-play` | `ujust disable-remote-play` |
+
+## System Profile (Migration Preflight)
+
+Capture current machine state for migration planning:
+
+```bash
+./scripts/build-system-profile --output system_profile.json --text-output system_profile.txt
+```
+
+Query with jq:
+```bash
+jq '.rpm_ostree.booted["requested-packages"]' system_profile.json
+jq '.flatpak_manifest_diff' system_profile.json
+```
+
+## Source Files
+
+### Host configuration (baked into image)
+- keyd: [system/keyd/default.conf](system/keyd/default.conf)
+- NetworkManager (optional): [system/NetworkManager/conf.d/](system/NetworkManager/conf.d/)
+- systemd tweaks (optional): [system/systemd/](system/systemd/)
+
+### Shell defaults (skel)
+- [skel/.bashrc](skel/.bashrc)
+- [skel/.config/nushell/](skel/.config/nushell/)
+
+### Upstream pinning (auto-updated by CI)
+- [upstream/bazzite-stable.digest](upstream/bazzite-stable.digest)
+- [upstream/getnf.ref](upstream/getnf.ref), [upstream/getnf.sha256](upstream/getnf.sha256)

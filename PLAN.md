@@ -1,109 +1,185 @@
-# Plan: Bazzite → bootc image (this repo)
+# Plan: Bazzite → Workstation as Code
 
-This document captures the end-to-end plan for migrating a stock Bazzite install to tracking a custom bootc image built from this repo, while keeping the existing working setup safe and making updates fully automated.
+This document captures the migration plan and ongoing operational model for this "workstation as code" setup.
 
-## Goals
+> ⚠️ **Security reminder:** This repo and its container images are public.
+> Never commit secrets, API keys, passwords, or personal data.
 
-1. Switch from stock Bazzite to a bootc image derived from this repo without losing user data or surprises.
-2. Make image publishing to GHCR fully automatic on changes to `main`.
-3. Consume updates through the normal bootc/uBlue update flow (tag moves → `bootc upgrade` stages → reboot).
+## Vision
 
-## Mental model (what changes vs what persists)
+**"Workstation as Code"** — the entire system configuration lives in git, builds into immutable container images, and flows to machines through the standard bootc update mechanism.
 
-- **Immutable image (this repo builds it)**
-  - Packages and system files baked into the image (see `Containerfile`).
-  - Optional payloads shipped in the image but disabled by default (enabled via explicit actions).
-  - `ujust` recipes shipped in the image.
+**What this solves:**
+- Eliminates configuration drift ("snowflake" machines)
+- Makes system state reproducible and auditable (git history = system history)
+- Provides safe migration with atomic rollbacks
+- Stays current with upstream Bazzite while maintaining customizations
 
-- **Persistent state (already on your machine)**
-  - Home directories and most app state (under `/var` and `/var/home/...`) should persist across bootc deployments.
-  - Flatpaks are typically stored under `/var` and/or your home; switching images should not wipe them.
+## Architecture Overview
 
-- **First-login bootstrap (runs per-user, idempotent)**
-  - Flatpaks and GNOME extensions are applied on first login (and re-applied when manifests change) via `bootc-bootstrap`.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Host (ghcr.io/wycats/bootc)                  │
+│  • Immutable Bazzite base                                       │
+│  • Desktop/gaming (Flatpak, Steam)                              │
+│  • Update: bootc upgrade → reboot                               │
+└─────────────────────────────────────────────────────────────────┘
+         │ shares $HOME
+         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              Toolbox (ghcr.io/wycats/bootc-toolbox)             │
+│  • Ephemeral dev environment                                    │
+│  • Nix, Cargo, proto in PATH                                    │
+│  • Update: ujust toolbox-update (no reboot)                     │
+└─────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         $HOME (persists)                        │
+│  • ~/.cargo, ~/.nix-profile, ~/.proto                           │
+│  • ~/.local/toolbox/bin (toolbox-only PATH)                     │
+│  • User data, dotfiles, app state                               │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-## Phase 0: Inventory and define “source of truth”
+## Three-Tier Configuration Model
 
-1. Capture a baseline snapshot of the current machine:
-   - Run `./scripts/build-system-profile --output system_profile.json --text-output system_profile.txt`
-   - Use the JSON as your migration checklist.
+| Tier | When Applied | Mechanism | Examples |
+|------|--------------|-----------|----------|
+| **Baked** | Image build time | Containerfile | RPM packages, keyd config, fonts, ujust recipes |
+| **Bootstrapped** | First login (idempotent) | systemd user oneshot | Flatpaks, GNOME extensions, toolbox creation |
+| **Optional** | User-activated | `ujust enable-*` | Remote play, hardware-specific tweaks |
 
-2. Move “real configuration” into the repo (source of truth):
-   - System packages and files: update `Containerfile` / `system/`.
-   - User-space apps: update `manifests/flatpak-*.txt`.
-   - GNOME extensions: update `manifests/gnome-extensions.txt`.
-   - Shell/toolbox defaults: keep dotfiles under `skel/`.
+## Phase 0: Inventory (Done)
 
-3. Accept that `/etc` drift is the common surprise:
-   - If `etc_config_diff` cannot be gathered without root, decide whether to:
-     - temporarily allow non-interactive root for inspection, or
-     - proceed and handle surprises iteratively after the first boot.
+Capture baseline with `./scripts/build-system-profile`:
+- RPM packages → decide what to bake vs leave as layered
+- Flatpaks → add to manifests
+- GNOME extensions → add to manifests
+- /etc diffs → incorporate into image or accept as local state
 
-## Phase 1: Make publishing to GHCR reliable
+## Phase 1: GHCR Publishing (Done)
 
-The workflow `.github/workflows/build.yml` is intended to build and push:
+### Setup Checklist
 
-- `ghcr.io/<owner>/<repo>:latest`
-- `ghcr.io/<owner>/<repo>:sha-<gitsha>`
+1. **Workflow permissions** — `.github/workflows/build.yml` has `packages: write`
 
-Checklist:
+2. **GHCR package settings** (https://github.com/users/wycats/packages/container/bootc/settings):
+   - Add `bootc` repo under "Manage Actions access" with **Write** role
+   - Set visibility to **Public** (required for unauthenticated `bootc upgrade`)
 
-1. Ensure Actions can push packages:
-   - Repository workflow permissions must allow `GITHUB_TOKEN` to write packages.
-   - The GHCR package must be associated with the repo and allow GitHub Actions access.
+3. **Validation** — push a commit and confirm `:latest` digest updates in GHCR
 
-2. Validate on a trivial change:
-   - Push a small commit to `main`.
-   - Confirm a new `:latest` digest appears in GHCR.
+### What Gets Published
 
-## Phase 2: Safe switch on the host (stock Bazzite → your image)
+| Image | Purpose | Update Trigger |
+|-------|---------|----------------|
+| `ghcr.io/wycats/bootc:latest` | Host OS | Push to main, upstream digest change, nightly rebuild |
+| `ghcr.io/wycats/bootc:sha-<gitsha>` | Pinned builds | Every push |
+| `ghcr.io/wycats/bootc-toolbox:latest` | Dev environment | Push to main |
 
-Recommended first switch strategy:
+## Phase 2: Host Migration
 
-1. Keep a fresh snapshot from Phase 0.
-2. Switch to the published image:
-   - `sudo bootc switch --transport registry ghcr.io/<owner>/<repo>:latest`
+### First Switch
 
-Notes:
+```bash
+# Capture current state (for reference if needed)
+./scripts/build-system-profile --output system_profile.json
 
-- `bootc switch` stages a new deployment; the change takes effect after reboot.
-- Have a rollback plan before rebooting:
-  - Prefer boot menu selection of the previous deployment if something goes wrong.
-  - Or use `sudo bootc rollback` once you’re back on a working boot.
+# Switch to the custom image
+sudo bootc switch --transport registry ghcr.io/wycats/bootc:latest
 
-3. After reboot, validate the invariants:
-   - Home data present
-   - Flatpaks still present
-   - `bootc-bootstrap` applies manifests (or is able to retry on next login)
+# Reboot to apply
+sudo reboot
+```
 
-## Phase 3: Normal update loop (config changes → update arrives)
+### Rollback
 
-Once the machine is tracking `ghcr.io/<owner>/<repo>:latest`:
+If something goes wrong:
+- **At boot:** Select previous deployment from boot menu
+- **After boot:** `sudo bootc rollback` then reboot
 
-1. Change this repo → push to `main`.
-2. GitHub Actions builds and pushes a new `:latest` image.
-3. On the machine:
-   - `sudo bootc upgrade` should fetch and stage the updated deployment.
-   - Reboot to apply.
+### Post-Switch Validation
 
-Optional verification during rollout:
+- [ ] Home data present
+- [ ] Flatpaks working
+- [ ] `bootc-bootstrap` ran (check `~/.local/state/bootc-bootstrap/`)
+- [ ] Toolbox created and functional
 
-- Use `:sha-<gitsha>` temporarily to pin a known build, then switch to `:latest` once you’re confident the pipeline is stable.
+## Phase 3: Normal Operations
 
-## Development loop: iterating on ujust recipes before a rebuild
+### Host Updates (requires reboot)
 
-If you want to try updated recipes immediately (without rebuilding/switching images), run host `ujust` against the repo file explicitly:
+```
+Edit repo → push to main
+    ↓
+GitHub Actions builds and pushes :latest
+    ↓
+On host: sudo bootc upgrade
+    ↓
+Reboot to apply
+```
 
-- `flatpak-spawn --host ujust -f /var/home/wycats/Code/Config/bootc/ujust/60-custom.just --list`
+### Toolbox Updates (no reboot)
 
-Once you rebuild/switch to an image containing the updated recipes, normal `ujust ...` will pick them up automatically.
+```
+Edit toolbox/Containerfile → push to main
+    ↓
+GitHub Actions builds and pushes :latest
+    ↓
+On host: ujust toolbox-update
+    ↓
+Next `toolbox enter dev` uses new image
+```
 
-## Current workstream: remote play / console mode (Option B)
+The toolbox container is ephemeral. `$HOME` (including `~/.cargo`, `~/.nix-profile`, `~/.local/toolbox/bin`) persists across recreations.
 
-This repo ships optional artifacts plus `ujust` commands for enabling Steam Remote Play style console mode (gamescope DRM + Steam gamepad UI on tty2).
+## Toolbox Strategy
 
-- Enable: `ujust enable-remote-play`
-- Disable: `ujust disable-remote-play`
-- Status: `ujust remote-play-status`
+### Design Principles
 
-The artifacts are shipped in the image as optional payload and installed to the host when enabled.
+1. **Toolbox = primary dev environment** (like WSL on Windows)
+2. **PATH via container metadata** — works regardless of entry method (fixes VS Code issues)
+3. **`~/.local/toolbox/bin`** — toolbox-specific scripts, in toolbox PATH only
+4. **Ephemeral container, persistent home** — recreate on image update, data survives
+
+### Toolbox Container Name
+
+Fixed name `dev` so integrations (ddterm, etc.) keep working:
+```bash
+toolbox enter dev
+```
+
+### VS Code Integration
+
+The `code` wrapper in `~/.local/toolbox/bin/code`:
+```bash
+# Inside toolbox, launches host VS Code attached to this container
+flatpak-spawn --host /usr/bin/code --folder-uri "vscode-remote://attached-container+${hex_name}${folder}"
+```
+
+## Bootstrap Service
+
+`bootc-bootstrap.service` runs on login and handles:
+
+1. Flatpak remotes (from manifests)
+2. Flatpak apps (from manifests)
+3. GNOME extensions (from manifests)
+4. Toolbox creation/recreation (if image digest changed)
+5. `~/.local/toolbox/bin` setup
+
+Idempotent and hash-cached — only re-runs when manifests change.
+
+## Optional Features
+
+Shipped in image but disabled by default:
+
+| Feature | Enable | Disable | Status |
+|---------|--------|---------|--------|
+| Remote Play (tty2 + Steam gamepad UI) | `ujust enable-remote-play` | `ujust disable-remote-play` | `ujust remote-play-status` |
+
+## Future Considerations
+
+- **Secrets handling** — pattern for API keys, credentials (1Password CLI integration?)
+- **Skel sync for existing users** — mechanism to update dotfiles in existing home directories
+- **Multi-machine variants** — if needed, handle via ujust runtime detection rather than separate builds
