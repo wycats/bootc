@@ -1,5 +1,10 @@
 # bootc Config as Code (Bazzite base)
 
+> ⚠️ **This repository and its container images are public.** Do not commit
+> secrets, passwords, API keys, personal data, or any sensitive information.
+> Machine-specific files like `system_profile.json` are gitignored for this
+> reason.
+
 - Container build definition: [Containerfile](Containerfile)
 - Package analysis: [docs/ANALYSIS.md](docs/ANALYSIS.md)
 - Migration steps: [docs/MIGRATION.md](docs/MIGRATION.md)
