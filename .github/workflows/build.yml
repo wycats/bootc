@@ -2,7 +2,7 @@ name: build-and-push
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths-ignore:
       - upstream/bazzite-stable.digest
       - upstream/getnf.ref
@@ -10,9 +10,9 @@ on:
       - upstream/getnf.sha256
   schedule:
     # Hourly cheap poll of upstream digest
-    - cron: '0 * * * *'
+    - cron: "0 * * * *"
     # Nightly forced rebuild to pick up RPM repo updates even if upstream digest doesn't change
-    - cron: '0 3 * * *'
+    - cron: "0 3 * * *"
   workflow_dispatch:
 
 permissions:

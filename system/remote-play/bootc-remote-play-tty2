@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+vt="${BOOTC_REMOTE_PLAY_VT:-2}"
+
+need_cmd() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "Missing required command: $1" >&2
+        return 1
+    fi
+}
+
+need_cmd gamescope
+need_cmd steam
+need_cmd chvt
+
+# Switch to the target VT. This generally requires root. In the systemd unit we
+# run chvt from ExecStartPre as root; this is here for manual runs.
+chvt "$vt" || true
+
+# Minimal 'console mode' launcher:
+# - Run gamescope directly on DRM
+# - Start Steam in gamepad UI
+#
+# If you need to target a specific connector/output, we’ll add that once we
+# decide on the discovery/config mechanism.
+exec gamescope --backend drm -- steam -gamepadui

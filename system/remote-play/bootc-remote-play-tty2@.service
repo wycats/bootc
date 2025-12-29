@@ -1,0 +1,34 @@
+[Unit]
+Description=bootc remote play (Steam gamepad UI on tty2) for %i
+Wants=network-online.target
+After=network-online.target
+
+# Safety: only run when explicitly enabled by ujust.
+ConditionPathExists=/etc/bootc-remote-play/enabled
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=~
+
+# Bind the service I/O to tty2.
+TTYPath=/dev/tty2
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-force
+StandardOutput=tty
+StandardError=tty
+
+Environment=BOOTC_REMOTE_PLAY_VT=2
+
+# Switch to tty2 before starting. Needs privileges.
+PermissionsStartOnly=true
+ExecStartPre=/usr/bin/bash -lc 'chvt 2 || true'
+
+ExecStart=/usr/local/bin/bootc-remote-play-tty2
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

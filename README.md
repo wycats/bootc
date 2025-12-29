@@ -3,6 +3,7 @@
 - Container build definition: [Containerfile](Containerfile)
 - Package analysis: [docs/ANALYSIS.md](docs/ANALYSIS.md)
 - Migration steps: [docs/MIGRATION.md](docs/MIGRATION.md)
+- End-to-end plan: [PLAN.md](PLAN.md)
 - Upstream base digest (auto-updated): [upstream/bazzite-stable.digest](upstream/bazzite-stable.digest)
 - getnf pinning (auto-updated): [upstream/getnf.ref](upstream/getnf.ref), [upstream/getnf.version](upstream/getnf.version), [upstream/getnf.sha256](upstream/getnf.sha256)
 
@@ -27,3 +28,24 @@ These are applied by a user `systemd` oneshot (`bootc-bootstrap.service`) and re
 ## ujust customization
 
 - Custom recipes shipped in the image: [ujust/60-custom.just](ujust/60-custom.just)
+
+Remote play (Option B / tty2 + Steam gamepad UI):
+
+- `ujust enable-remote-play` (installs unit + enables it)
+- `ujust disable-remote-play`
+- `ujust remote-play-status`
+
+## System profile (migration preflight)
+
+Generate a machine snapshot (JSON + optional text):
+
+- `./scripts/build-system-profile --output system_profile.json --text-output system_profile.txt`
+
+`jq` is expected to be available (it’s installed in the bootc image; and `./scripts/toolbox-gpg-setup` installs it in a toolbox).
+
+Quick queries:
+
+- `jq '.rpm_ostree.booted["requested-packages"]' system_profile.json`
+- `jq '.etc_config_diff' system_profile.json`
+- `jq '.flatpak_manifest_diff' system_profile.json`
+- `jq '.gnome_extensions_enabled_vs_installed' system_profile.json`

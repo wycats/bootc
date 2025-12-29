@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+log() {
+  printf "[toolbox-gpg-setup] %s\n" "$*" >&2
+}
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+install_packages() {
+  if ! need_cmd dnf; then
+    log "dnf not found; skipping package install"
+    return 0
+  fi
+
+  if ! need_cmd sudo; then
+    log "sudo not found; skipping package install"
+    return 0
+  fi
+
+  log "Installing packages (pinentry-tty, gnupg2, jq)"
+  sudo dnf install -y pinentry-tty gnupg2 jq
+}
+
+ensure_gpg_agent_conf() {
+  local gnupg_dir agent_conf pinentry
+  gnupg_dir="${GNUPGHOME:-$HOME/.gnupg}"
+  agent_conf="${gnupg_dir}/gpg-agent.conf"
+
+  mkdir -p "$gnupg_dir"
+  chmod 700 "$gnupg_dir"
+
+  pinentry="$(command -v pinentry-tty || true)"
+  if [[ -z "$pinentry" ]]; then
+    log "pinentry-tty not found on PATH; cannot configure gpg-agent"
+    return 1
+  fi
+
+  local tmp
+  tmp="$(mktemp)"
+  if [[ -f "$agent_conf" ]]; then
+    cat "$agent_conf" >"$tmp"
+  else
+    : >"$tmp"
+  fi
+
+  # Remove any existing pinentry-program lines (we'll append a single canonical one).
+  grep -vE '^[[:space:]]*pinentry-program[[:space:]]+' "$tmp" >"${tmp}.filtered" || true
+
+  if ! grep -qE '^[[:space:]]*allow-loopback-pinentry([[:space:]]+.*)?$' "${tmp}.filtered"; then
+    printf "allow-loopback-pinentry\n" >>"${tmp}.filtered"
+  fi
+
+  printf "pinentry-program %s\n" "$pinentry" >>"${tmp}.filtered"
+
+  mv "${tmp}.filtered" "$agent_conf"
+  rm -f "$tmp"
+
+  log "Wrote ${agent_conf} (pinentry-program=${pinentry})"
+
+  if need_cmd gpgconf; then
+    gpgconf --kill gpg-agent || true
+    gpgconf --launch gpg-agent || true
+    log "Restarted gpg-agent"
+  else
+    log "gpgconf not found; skipping gpg-agent restart"
+  fi
+}
+
+ensure_gpg_tty() {
+  if ! need_cmd tty; then
+    return 0
+  fi
+
+  local bashrc marker line
+  bashrc="${HOME}/.bashrc"
+  marker="# bootc: required for gpg pinentry in terminals"
+  line='export GPG_TTY=$(tty)'
+
+  if [[ -f "$bashrc" ]] && grep -qE '^[[:space:]]*export[[:space:]]+GPG_TTY=' "$bashrc"; then
+    return 0
+  fi
+
+  {
+    printf "\n%s\n" "$marker"
+    printf "%s\n" "$line"
+  } >>"$bashrc"
+
+  log "Appended GPG_TTY export to ${bashrc}"
+}
+
+ensure_nushell_gpg_tty_file() {
+  local file marker
+  file="$1"
+  marker="# bootc: required for gpg pinentry in terminals"
+
+  mkdir -p "$(dirname "$file")"
+
+  if [[ -f "$file" ]]; then
+    if grep -qF "$marker" "$file"; then
+      return 0
+    fi
+    if grep -qE '^[[:space:]]*\$env\.GPG_TTY[[:space:]]*=' "$file"; then
+      return 0
+    fi
+  fi
+
+  {
+    printf "\n%s\n" "$marker"
+    printf '%s\n' 'if $nu.is-interactive {'
+    printf '%s\n' '  if not (which tty | is-empty) {'
+    printf '%s\n' '    $env.GPG_TTY = (tty | str trim)'
+    printf '%s\n' '  }'
+    printf '%s\n' '}'
+  } >>"$file"
+}
+
+ensure_nushell_gpg_tty() {
+  local nu_dir
+  nu_dir="${HOME}/.config/nushell"
+  ensure_nushell_gpg_tty_file "${nu_dir}/config.nu"
+  log "Ensured Nushell sets GPG_TTY in ${nu_dir}/config.nu"
+}
+
+ensure_git_signing() {
+  if ! need_cmd git || ! need_cmd gpg; then
+    return 0
+  fi
+
+  local signingkey
+  signingkey="$(git config --global --get user.signingkey || true)"
+
+  if [[ -z "$signingkey" ]]; then
+    local fpr
+    fpr="$(gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '$1=="fpr"{print $10; exit}')"
+    if [[ -n "$fpr" ]]; then
+      git config --global gpg.program gpg
+      git config --global user.signingkey "$fpr"
+      signingkey="$fpr"
+      log "Set git user.signingkey=${fpr}"
+    fi
+  fi
+
+  if [[ -z "$(git config --global --get commit.gpgsign || true)" ]]; then
+    git config --global commit.gpgsign true
+    log "Enabled commit.gpgsign=true"
+  fi
+
+  if [[ -n "$signingkey" ]]; then
+    log "Git will sign with key: ${signingkey}"
+  else
+    log "No GPG secret key detected; git signing key not configured"
+  fi
+}
+
+main() {
+  install_packages
+  ensure_gpg_agent_conf
+  ensure_gpg_tty
+  ensure_nushell_gpg_tty
+  ensure_git_signing
+
+  log "Done. Open a new shell (or: source ~/.bashrc) before trying git signing."
+}
+
+main "$@"

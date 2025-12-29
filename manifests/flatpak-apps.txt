@@ -8,6 +8,7 @@ system	com.github.Matoking.protontricks	flathub
 system	com.github.tchx84.Flatseal	flathub
 system	com.mattjakeman.ExtensionManager	flathub
 system	com.raggesilver.BlackBox	flathub
+system	com.obsproject.Studio	flathub
 system	com.ranfdev.DistroShelf	flathub
 system	com.slack.Slack	flathub
 system	com.stremio.Stremio	flathub

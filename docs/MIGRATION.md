@@ -21,7 +21,7 @@ The `skel/.config/nushell/env.nu` scaffold already prepends these to PATH when t
 
 That PATH logic is what makes your toolbox containers pick them up too, since toolbox binds your home directory into the container.
 
-Update: after inspecting your current toolbox container, your toolbox PATH is actually coming from the toolbox *image tag* (`localhost/fedora-nix-toolbox:latest`) via a baked-in `PATH=...` environment in the image. The Nushell `env.nu` scaffold in this repo is now conservative (no PATH changes by default) to avoid double-prepending.
+Update: after inspecting your current toolbox container, your toolbox PATH is actually coming from the toolbox _image tag_ (`localhost/fedora-nix-toolbox:latest`) via a baked-in `PATH=...` environment in the image. The Nushell `env.nu` scaffold in this repo is now conservative (no PATH changes by default) to avoid double-prepending.
 
 Command:
 
@@ -29,6 +29,29 @@ Command:
 - `cp -a /home/wycats/.config/nushell/config.nu ./skel/.config/nushell/config.nu`
 - `cp -a /home/wycats/.config/nushell/env.nu ./skel/.config/nushell/env.nu`
 - `cp -a /home/wycats/.config/containers/toolbox.conf ./skel/.config/containers/toolbox.conf` (if present)
+
+## 1.5) Capture a system profile snapshot (recommended)
+
+This repo includes a generator script to capture a snapshot of what’s "custom" on the current machine so you can review it before switching:
+
+- Layered RPMs (on rpm-ostree systems)
+- `/etc` changes vs the base deployment (on ostree systems)
+- Installed Flatpaks (system + user)
+- A diff of installed Flatpaks vs the repo’s first-login bootstrap manifests
+
+Run:
+
+- `./scripts/build-system-profile --repo-root . --output system_profile.json --text-output system_profile.txt`
+
+Inspect the JSON with `jq` (it’s included in the bootc image, and `./scripts/toolbox-gpg-setup` will install it in a toolbox):
+
+- `jq '.flatpak_manifest_diff' system_profile.json`
+- `jq '.flatpak_remote_manifest_diff' system_profile.json`
+- `jq '.gnome_extensions_manifest_diff' system_profile.json`
+- `jq '.gnome_extensions_enabled_vs_installed' system_profile.json`
+- `jq '.etc_config_diff' system_profile.json`
+
+By default these snapshots are not intended to be committed (they describe a specific machine at a point in time).
 
 ## 2) Build and publish
 
@@ -42,6 +65,16 @@ This repo also includes scheduled rebuilds:
 
 - Hourly: cheap poll of the upstream `ghcr.io/ublue-os/bazzite:stable` digest; rebuild only if it changed.
 - Nightly (03:00 UTC): forced rebuild to pick up RPM updates even if upstream digest did not change.
+
+## 2.25) Toolbox: enable GPG signing
+
+If you want `git commit -S` (or `commit.gpgsign=true`) to work inside your toolbox, run:
+
+- `./scripts/toolbox-gpg-setup`
+
+This also installs `jq` (handy for inspecting the system profile JSON).
+
+Then open a new shell (or `source ~/.bashrc`) so `GPG_TTY` is set.
 
 ## 2.5) First-login bootstrap (Flatpaks + GNOME extensions)
 

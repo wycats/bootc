@@ -35,6 +35,7 @@ RUN dnf install -y \
     1password-cli \
     code \
     gh \
+    jq \
     microsoft-edge-stable \
     papirus-icon-theme \
     xorg-x11-server-Xvfb \
@@ -88,8 +89,22 @@ COPY upstream/getnf.ref /tmp/getnf.ref
 COPY upstream/getnf.sha256 /tmp/getnf.sha256
 RUN set -eu; \
     ref="$(cat /tmp/getnf.ref)"; \
-    curl -fsSL "https://raw.githubusercontent.com/getnf/getnf/${ref}/getnf" -o /usr/local/bin/getnf; \
-    echo "$(cat /tmp/getnf.sha256)  /usr/local/bin/getnf" | sha256sum -c -; \
+    expected_sha="$(cat /tmp/getnf.sha256)"; \
+    ok=0; \
+    for attempt in 1 2 3; do \
+        curl -fsSL \
+            --retry 5 \
+            --retry-delay 2 \
+            "https://raw.githubusercontent.com/getnf/getnf/${ref}/getnf" \
+            -o /usr/local/bin/getnf; \
+        if echo "${expected_sha}  /usr/local/bin/getnf" | sha256sum -c -; then \
+            ok=1; \
+            break; \
+        fi; \
+        echo "getnf checksum mismatch; retrying (${attempt}/3)" >&2; \
+        sleep $((attempt * 2)); \
+    done; \
+    test "${ok}" = 1; \
     chmod 0755 /usr/local/bin/getnf; \
     rm -f /tmp/getnf.ref /tmp/getnf.sha256
 
@@ -119,6 +134,12 @@ RUN chmod 0755 /usr/local/bin/bootc-bootstrap && \
 # Custom ujust recipes (auto-imported as /usr/share/ublue-os/just/60-custom.just)
 RUN mkdir -p /usr/share/ublue-os/just
 COPY ujust/60-custom.just /usr/share/ublue-os/just/60-custom.just
+
+# Optional: remote play / console mode (off by default; enabled via `ujust enable-remote-play`)
+RUN mkdir -p /usr/local/share/bootc-optional/remote-play/bin \
+    /usr/local/share/bootc-optional/remote-play/systemd
+COPY system/remote-play/bootc-remote-play-tty2 /usr/local/share/bootc-optional/remote-play/bin/bootc-remote-play-tty2
+COPY system/remote-play/bootc-remote-play-tty2@.service /usr/local/share/bootc-optional/remote-play/systemd/bootc-remote-play-tty2@.service
 
 # Optional host tweaks (off by default)
 # NetworkManager: disable Wi-Fi power save (wifi.powersave=2)
