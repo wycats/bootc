@@ -140,9 +140,15 @@ jobs:
           # Pin to an immutable commit SHA so builds don't break when upstream moves.
           ref="$(curl "${curl_common[@]}" -H 'Accept: application/vnd.github+json' https://api.github.com/repos/getnf/getnf/commits/main | jq -r .sha)"
           url="${RAW_URL}/${ref}/getnf"
-          script="$(curl "${curl_common[@]}" "$url")"
-          sha="$(printf "%s" "$script" | sha256sum | cut -d" " -f1)"
-          ver="$(printf "%s" "$script" | grep -E "^readonly VERSION=\"" | head -n1 | sed -E "s/^readonly VERSION=\"([^\"]+)\"/\1/" || true)"
+
+          # Download to a temp file instead of a variable to preserve the trailing
+          # newline. Command substitution strips trailing newlines, which would
+          # produce a different sha256 than what the Containerfile downloads.
+          tmpfile="$(mktemp)"
+          trap 'rm -f "$tmpfile"' EXIT
+          curl "${curl_common[@]}" "$url" -o "$tmpfile"
+          sha="$(sha256sum "$tmpfile" | cut -d" " -f1)"
+          ver="$(grep -E "^readonly VERSION=\"" "$tmpfile" | head -n1 | sed -E "s/^readonly VERSION=\"([^\"]+)\"/\1/" || true)"
           ver="${ver:-unknown}"
 
           current_sha=""
