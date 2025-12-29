@@ -21,7 +21,9 @@ permissions:
 
 concurrency:
   group: build-and-push-${{ github.ref }}
-  cancel-in-progress: true
+  # Let manual/push runs cancel anything in-flight, but don't let the hourly
+  # scheduled runs cancel a manual build-and-push.
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 env:
   BASE_IMAGE: ghcr.io/ublue-os/bazzite:stable
@@ -124,11 +126,21 @@ jobs:
         run: |
           set -euo pipefail
 
+          curl_common=(
+            --fail
+            --silent
+            --show-error
+            --location
+            --retry 5
+            --retry-all-errors
+            --retry-delay 2
+          )
+
           # Resolve the moving branch to an immutable commit SHA so the build stays reproducible.
-            # Pin to an immutable commit SHA so builds don't break when upstream moves.
-            ref="$(curl -fsSL -H 'Accept: application/vnd.github+json' https://api.github.com/repos/getnf/getnf/commits/main | jq -r .sha)"
+          # Pin to an immutable commit SHA so builds don't break when upstream moves.
+          ref="$(curl "${curl_common[@]}" -H 'Accept: application/vnd.github+json' https://api.github.com/repos/getnf/getnf/commits/main | jq -r .sha)"
           url="${RAW_URL}/${ref}/getnf"
-          script="$(curl -fsSL "$url")"
+          script="$(curl "${curl_common[@]}" "$url")"
           sha="$(printf "%s" "$script" | sha256sum | cut -d" " -f1)"
           ver="$(printf "%s" "$script" | grep -E "^readonly VERSION=\"" | head -n1 | sed -E "s/^readonly VERSION=\"([^\"]+)\"/\1/" || true)"
           ver="${ver:-unknown}"
@@ -182,7 +194,10 @@ jobs:
           set -euo pipefail
           # GitHub provides the triggering cron string in github.event.schedule for scheduled runs.
           # For non-scheduled events (push/workflow_dispatch), we never force a rebuild here.
-          if [[ "${{ github.event_name }}" == "schedule" && "${{ github.event.schedule }}" == "0 3 * * *" ]]; then
+          utc_hour="$(date -u +%H)"
+          # At 03:00 UTC we want to force a rebuild, even if the run was
+          # triggered by the hourly cron.
+          if [[ "${{ github.event_name }}" == "schedule" && ( "${{ github.event.schedule }}" == "0 3 * * *" || ( "${{ github.event.schedule }}" == "0 * * * *" && "${utc_hour}" == "03" ) ) ]]; then
             echo "force_rebuild=true" >> "$GITHUB_OUTPUT"
           else
             echo "force_rebuild=false" >> "$GITHUB_OUTPUT"
