@@ -137,7 +137,7 @@ RUN set -eu; \
 # Fix emoji rendering in VS Code / Electron apps
 # The COLRv1 vector font is incompatible with Electron's Skia renderer.
 # Remove it and install the legacy bitmap version instead.
-RUN dnf remove -y google-noto-color-emoji-fonts || true; \
+RUN dnf remove -y google-noto-emoji-fonts google-noto-color-emoji-fonts || true; \
     mkdir -p /usr/share/fonts/noto-emoji; \
     curl -fsSL "https://github.com/googlefonts/noto-emoji/raw/main/fonts/NotoColorEmoji.ttf" \
         -o /usr/share/fonts/noto-emoji/NotoColorEmoji.ttf; \
