@@ -46,6 +46,23 @@ RUN dnf install -y \
     fontconfig \
     && dnf clean all
 
+# Relocate /opt to /usr/lib/opt for ostree compatibility
+# On ostree, /opt -> /var/opt which is persistent and NOT updated on upgrade.
+# Moving to /usr/lib/opt makes it part of the immutable image.
+RUN set -eu; \
+    if [ -d /opt ] && [ "$(ls -A /opt 2>/dev/null)" ]; then \
+        mkdir -p /usr/lib/opt; \
+        cp -a /opt/. /usr/lib/opt/; \
+        rm -rf /opt/*; \
+    fi
+
+# Create systemd tmpfiles rule to symlink /var/opt contents from /usr/lib/opt
+RUN printf '%s\n' \
+    '# Symlink /opt contents from immutable /usr/lib/opt' \
+    'L+ /var/opt/1Password - - - - /usr/lib/opt/1Password' \
+    'L+ /var/opt/microsoft - - - - /usr/lib/opt/microsoft' \
+    >/usr/lib/tmpfiles.d/bootc-opt.conf
+
 # starship (pinned to upstream version + verified by sha256)
 COPY upstream/starship.version /tmp/starship.version
 RUN set -eu; \
