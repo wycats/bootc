@@ -146,7 +146,9 @@ COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
 
 # Host-level config extracted from wycats/asahi-env (now sourced here)
 COPY system/keyd/default.conf /etc/keyd/default.conf
-RUN systemctl enable keyd.service
+# Enable keyd service (create symlink manually since systemctl doesn't work in containers)
+RUN mkdir -p /usr/lib/systemd/system/multi-user.target.wants && \
+    ln -sf ../keyd.service /usr/lib/systemd/system/multi-user.target.wants/keyd.service
 
 # First-login bootstrap (Flatpak + GNOME extensions + host shims)
 RUN mkdir -p /usr/share/bootc-bootstrap

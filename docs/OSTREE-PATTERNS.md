@@ -8,14 +8,14 @@ The rootfs (`/usr`) is **immutable** and replaced on each update. But some paths
 
 ## Persistent Paths (Don't Install Here)
 
-| Path | Actually Points To | Behavior |
-|------|-------------------|----------|
-| `/opt` | `/var/opt` | Persistent, NOT updated |
-| `/usr/local` | `/var/usrlocal` | Persistent, NOT updated |
-| `/home` | `/var/home` | Persistent (user data) |
-| `/srv` | `/var/srv` | Persistent |
-| `/mnt` | `/var/mnt` | Persistent |
-| `/root` | `/var/roothome` | Persistent |
+| Path         | Actually Points To | Behavior                |
+| ------------ | ------------------ | ----------------------- |
+| `/opt`       | `/var/opt`         | Persistent, NOT updated |
+| `/usr/local` | `/var/usrlocal`    | Persistent, NOT updated |
+| `/home`      | `/var/home`        | Persistent (user data)  |
+| `/srv`       | `/var/srv`         | Persistent              |
+| `/mnt`       | `/var/mnt`         | Persistent              |
+| `/root`      | `/var/roothome`    | Persistent              |
 
 **Problem:** If your Containerfile installs binaries to `/usr/local/bin` or packages install to `/opt`, those files exist in the image but are **invisible** at runtime because the symlink points to the persistent `/var` location.
 
@@ -24,6 +24,7 @@ The rootfs (`/usr`) is **immutable** and replaced on each update. But some paths
 ### For `/usr/local/*`
 
 **Don't use it.** Install to `/usr` instead:
+
 - `/usr/local/bin` → `/usr/bin`
 - `/usr/local/share` → `/usr/share`
 - `/usr/local/lib` → `/usr/lib`
@@ -66,6 +67,7 @@ RUN echo 'L /opt/1Password - - - - /usr/lib/1Password' \
 Run the CI check: `scripts/check-ostree-paths`
 
 Or manually after a build:
+
 ```bash
 # Check if anything installed to problematic paths
 podman run --rm <image> ls -la /opt /usr/local/bin 2>/dev/null
