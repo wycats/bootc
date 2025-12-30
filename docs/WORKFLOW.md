@@ -6,9 +6,9 @@ You maintain your own Linux distribution. This guide covers the day-to-day patte
 
 You have two modes:
 
-| Mode | What you're doing | Where |
-|------|-------------------|-------|
-| **Using** | Running apps, gaming, browsing | Host |
+| Mode         | What you're doing               | Where   |
+| ------------ | ------------------------------- | ------- |
+| **Using**    | Running apps, gaming, browsing  | Host    |
 | **Building** | Writing code, building software | Toolbox |
 
 Both share your home directory. The toolbox is a container that mounts `~`.
@@ -47,10 +47,10 @@ shim remove nmcli           # Remove a shim
 
 Shims come from two places:
 
-| Source | Location | Purpose |
-|--------|----------|---------|
+| Source | Location                                           | Purpose          |
+| ------ | -------------------------------------------------- | ---------------- |
 | System | `/usr/local/share/bootc-bootstrap/host-shims.json` | Baked into image |
-| User | `~/.config/bootc/host-shims.json` | Your additions |
+| User   | `~/.config/bootc/host-shims.json`                  | Your additions   |
 
 ## Making Changes Permanent
 
@@ -60,13 +60,14 @@ Here's the key pattern: **apply locally for immediate effect, open a PR to make 
 
 These apply immediately and can be synced to the repo:
 
-| What | Local command | To bake permanently |
-|------|---------------|---------------------|
-| Add a shim | `shim add nmcli` | Edit `manifests/host-shims.json`, push |
-| Install Flatpak | `flatpak install ...` | Edit `manifests/flatpak-apps.json`, push |
+| What             | Local command                 | To bake permanently                          |
+| ---------------- | ----------------------------- | -------------------------------------------- |
+| Add a shim       | `shim add nmcli`              | Edit `manifests/host-shims.json`, push       |
+| Install Flatpak  | `flatpak install ...`         | Edit `manifests/flatpak-apps.json`, push     |
 | Enable extension | `gnome-extensions enable ...` | Edit `manifests/gnome-extensions.json`, push |
 
 **Coming soon:** `--pr` flag to do both at once:
+
 ```bash
 shim add --pr nmcli   # Apply locally AND open PR
 ```
@@ -75,12 +76,12 @@ shim add --pr nmcli   # Apply locally AND open PR
 
 These require editing the repo and rebuilding:
 
-| What | Where to edit |
-|------|---------------|
-| Add system package | `Containerfile` |
-| Add system font | `Containerfile` |
+| What                 | Where to edit                  |
+| -------------------- | ------------------------------ |
+| Add system package   | `Containerfile`                |
+| Add system font      | `Containerfile`                |
 | Change system config | `system/...` + `Containerfile` |
-| Add toolbox package | `toolbox/Containerfile` |
+| Add toolbox package  | `toolbox/Containerfile`        |
 
 The workflow:
 
@@ -153,12 +154,11 @@ bootc always keeps the previous deployment. You're never stuck.
 
 ## Quick Reference
 
-| Task | Command |
-|------|---------|
-| Enter toolbox | `toolbox enter` |
-| Update host | `sudo bootc upgrade && systemctl reboot` |
-| Check drift | `check-drift` |
-| Add shim | `shim add <name>` |
-| List shims | `shim list` |
-| Host status | `bootc status` |
-
+| Task          | Command                                  |
+| ------------- | ---------------------------------------- |
+| Enter toolbox | `toolbox enter`                          |
+| Update host   | `sudo bootc upgrade && systemctl reboot` |
+| Check drift   | `check-drift`                            |
+| Add shim      | `shim add <name>`                        |
+| List shims    | `shim list`                              |
+| Host status   | `bootc status`                           |

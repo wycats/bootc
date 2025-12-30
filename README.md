@@ -39,10 +39,10 @@ You're not a user of Bazzite. You're the maintainer of a distribution that happe
 
 ## Two Images, One Home
 
-| Image | What it is | Update |
-|-------|------------|--------|
-| `ghcr.io/wycats/bootc` | Host OS (boots your machine) | `bootc upgrade` + reboot |
-| `ghcr.io/wycats/bootc-toolbox` | Dev container (where you code) | recreate toolbox |
+| Image                          | What it is                     | Update                   |
+| ------------------------------ | ------------------------------ | ------------------------ |
+| `ghcr.io/wycats/bootc`         | Host OS (boots your machine)   | `bootc upgrade` + reboot |
+| `ghcr.io/wycats/bootc-toolbox` | Dev container (where you code) | recreate toolbox         |
 
 Both are disposable. `$HOME` persists across everything.
 
@@ -59,6 +59,7 @@ shim add --pr nmcli
 ```
 
 This applies to:
+
 - Host command shims
 - Flatpak apps
 - GNOME extensions
@@ -68,11 +69,11 @@ One command, two effects: works now, becomes permanent via PR merge.
 
 ## Three Tiers of Configuration
 
-| Tier | Applied | Requires reboot | Examples |
-|------|---------|-----------------|----------|
-| **Baked** | Image build | Yes | Packages, fonts, system units |
-| **Bootstrapped** | First login | No | Flatpaks, extensions, shims |
-| **Optional** | User-activated | Depends | Remote play, HW-specific tweaks |
+| Tier             | Applied        | Requires reboot | Examples                        |
+| ---------------- | -------------- | --------------- | ------------------------------- |
+| **Baked**        | Image build    | Yes             | Packages, fonts, system units   |
+| **Bootstrapped** | First login    | No              | Flatpaks, extensions, shims     |
+| **Optional**     | User-activated | Depends         | Remote play, HW-specific tweaks |
 
 ## Quick Start
 
@@ -80,7 +81,7 @@ One command, two effects: works now, becomes permanent via PR merge.
 # Update your OS
 sudo bootc upgrade && systemctl reboot
 
-# Check for drift from declared state  
+# Check for drift from declared state
 check-drift
 
 # Enter dev environment
@@ -111,11 +112,11 @@ shim add nmcli
 
 ## Documentation
 
-| Doc | Purpose |
-|-----|---------|
-| [WORKFLOW.md](docs/WORKFLOW.md) | Day-to-day usage patterns |
+| Doc                               | Purpose                      |
+| --------------------------------- | ---------------------------- |
+| [WORKFLOW.md](docs/WORKFLOW.md)   | Day-to-day usage patterns    |
 | [MIGRATION.md](docs/MIGRATION.md) | Switching from stock Bazzite |
-| [PLAN.md](PLAN.md) | Architecture decisions |
+| [PLAN.md](PLAN.md)                | Architecture decisions       |
 
 ## Philosophy
 
@@ -128,4 +129,3 @@ shim add nmcli
 4. **Recovery is trivial.** Bad update? Reboot, pick previous deployment, done.
 
 5. **Dev happens in the toolbox.** Host runs apps and games. Toolbox builds software.
-

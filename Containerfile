@@ -1,4 +1,4 @@
-FROM ghcr.io/ublue-os/bazzite:stable
+FROM ghcr.io/ublue-os/bazzite-gnome:stable
 
 # Layered packages detected in system_profile.txt
 RUN set -eu; \
