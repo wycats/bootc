@@ -116,6 +116,17 @@ RUN set -eu; \
     rm -f /tmp/JetBrainsMono.zip; \
     fc-cache -f
 
+# Fix emoji rendering in VS Code / Electron apps
+# The COLRv1 vector font is incompatible with Electron's Skia renderer.
+# Remove it and install the legacy bitmap version instead.
+RUN dnf remove -y google-noto-color-emoji-fonts || true; \
+    mkdir -p /usr/share/fonts/noto-emoji; \
+    curl -fsSL "https://github.com/googlefonts/noto-emoji/raw/main/fonts/NotoColorEmoji.ttf" \
+        -o /usr/share/fonts/noto-emoji/NotoColorEmoji.ttf; \
+    fc-cache -f
+
+COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
+
 # Host-level config extracted from wycats/asahi-env (now sourced here)
 COPY system/keyd/default.conf /etc/keyd/default.conf
 
