@@ -17,8 +17,8 @@ This document tracks the improvements identified during the codebase review. Wor
 | 7   | [Toolbox update recipe](#7-toolbox-update-recipe)                   | 🟡 Medium | ✅     |
 | 8   | [Machine detection](#8-machine-detection)                           | 🟢 Low    | ⬜     |
 | 9   | [Secrets documentation](#9-secrets-documentation)                   | 🟢 Low    | ⬜     |
-| 10  | [Structural cleanup](#10-structural-cleanup)                        | 🟢 Low    | ⬜     |
-| 11  | [Stale documentation fixes](#11-stale-documentation-fixes)          | 🟢 Low    | 🟡     |
+| 10  | [Structural cleanup](#10-structural-cleanup)                        | 🟢 Low    | ✅     |
+| 11  | [Stale documentation fixes](#11-stale-documentation-fixes)          | 🟢 Low    | ✅     |
 
 ---
 
@@ -131,7 +131,7 @@ The existing `shim` CLI will be consolidated into `bkt shim`. Benefits:
 8. ✅ Implement `bkt profile` subcommand (see #4)
 9. ✅ Add CI build step for bkt binary
 10. ✅ Update Containerfile to install bkt
-11. ⬜ Remove standalone `/usr/bin/shim`
+11. ✅ Remove standalone `/usr/bin/shim`
 12. ✅ Add comprehensive test suite (60 unit + 34 integration + 11 property tests)
 
 ---
@@ -485,14 +485,14 @@ gh auth login --with-token <<< $(op read "op://Personal/GitHub Token/credential"
 
 ## 10. Structural Cleanup
 
-**Status:** ⬜ Not started
+**Status:** ✅ Complete
 
 ### Tasks
 
-- [ ] Move `PLAN.md` to `docs/PLAN.md`
-- [ ] Delete `inventory/` directory (migration artifacts, insights extracted to #4)
-- [ ] Delete `system_profile.txt` at root (can be regenerated anytime)
-- [ ] Move `journald-logind-policy-notes.txt` to `docs/notes/` if it has lasting value
+- [x] Move `PLAN.md` to `docs/PLAN.md`
+- [x] Delete `inventory/` directory (migration artifacts, insights extracted to #4)
+- [x] Delete `system_profile.txt` at root (can be regenerated anytime)
+- [x] Move `journald-logind-policy-notes.txt` to `docs/notes/`
 
 ### Decision: Inventory Files
 
@@ -507,13 +507,14 @@ These are migration artifacts. The insight about per-category outputs has been c
 
 ## 11. Stale Documentation Fixes
 
-**Status:** ⬜ Not started
+**Status:** ✅ Complete
 
 ### Tasks
 
-- [ ] Remove "Toolbox Containerfile — currently referenced but not implemented" from PLAN.md (it exists now)
-- [ ] Update README to reference `bkt` instead of `shim`
-- [ ] Update any other stale references found during implementation
+- [x] Remove "Toolbox Containerfile — currently referenced but not implemented" from PLAN.md (it exists now)
+- [x] Update README to reference `bkt` instead of `shim`
+- [x] Update PLAN.md link in README (moved to docs/)
+- [x] Update repository layout in README to show bkt/ directory
 
 ---
 
