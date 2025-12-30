@@ -47,10 +47,10 @@ shim remove nmcli           # Remove a shim
 
 Shims come from two places:
 
-| Source | Location                                           | Purpose          |
-| ------ | -------------------------------------------------- | ---------------- |
-| System | `/usr/local/share/bootc-bootstrap/host-shims.json` | Baked into image |
-| User   | `~/.config/bootc/host-shims.json`                  | Your additions   |
+| Source | Location                                     | Purpose          |
+| ------ | -------------------------------------------- | ---------------- |
+| System | `/usr/share/bootc-bootstrap/host-shims.json` | Baked into image |
+| User   | `~/.config/bootc/host-shims.json`            | Your additions   |
 
 ## Making Changes Permanent
 
@@ -135,7 +135,7 @@ Your home directory persists. Only the container is recreated.
 ~/.nix-profile/bin         # Nix
 ~/.cargo/bin               # Rust
 ~/.proto/bin               # Proto
-/usr/local/bin             # Container packages
+/usr/bin                   # Container + system packages
 ...
 ```
 
