@@ -1,144 +1,131 @@
-# Workstation as Code
+# Your Personal Linux Distribution
 
 > ⚠️ **This repository and its container images are public.** Do not commit
 > secrets, passwords, API keys, personal data, or any sensitive information.
-> Machine-specific files like `system_profile.json` are gitignored for this
-> reason.
 
-This repo defines a complete, reproducible Linux workstation built on [Bazzite](https://bazzite.gg) (uBlue/Fedora Atomic). The entire system configuration lives in git, builds into immutable container images, and flows to machines through the standard bootc update mechanism.
+This repository **is** your operating system. Not config management. Not dotfiles. The complete definition of a Linux distribution that builds into bootable images and flows to your machines through standard update mechanisms.
 
-## Architecture
+You're not a user of Bazzite. You're the maintainer of a distribution that happens to be based on Bazzite.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Host (ghcr.io/wycats/bootc)                  │
-│  • Immutable Bazzite base                                       │
-│  • Desktop apps via Flatpak                                     │
-│  • Gaming (Steam, gamescope)                                    │
-│  • Update: bootc upgrade → reboot                               │
-└─────────────────────────────────────────────────────────────────┘
-         │ shares $HOME
-         ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              Toolbox (ghcr.io/wycats/bootc-toolbox)             │
-│  • Ephemeral dev environment (like WSL)                         │
-│  • Nix, Cargo, proto toolchains                                 │
-│  • GPG signing for git commits                                  │
-│  • VS Code attaches from host                                   │
-│  • Update: ujust toolbox-update (no reboot needed)              │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**Key insight:** Both images are ephemeral; `$HOME` persists. Toolbox-specific user binaries live in `~/.local/toolbox/bin` (in toolbox PATH only).
-
-## Three-Tier Configuration Model
-
-| Tier             | When           | Mechanism            | Examples                                        |
-| ---------------- | -------------- | -------------------- | ----------------------------------------------- |
-| **Baked**        | Image build    | Containerfile        | RPM packages, keyd config, ujust recipes, fonts |
-| **Bootstrapped** | First login    | systemd user oneshot | Flatpaks, GNOME extensions, toolbox setup       |
-| **Optional**     | User-activated | `ujust enable-*`     | Remote play, hardware-specific tweaks           |
-
-## Update Flows
-
-**Host image** (requires reboot):
+## The Core Loop
 
 ```
-Edit repo → push → GitHub Actions builds → bootc upgrade → reboot
+┌─────────────────────────────────────────────────────────────────────┐
+│                         This Repository                             │
+│                                                                     │
+│  Containerfile           What packages, fonts, configs are baked   │
+│  manifests/*.json        What apps, extensions get bootstrapped    │
+│  toolbox/Containerfile   What your dev environment contains        │
+└─────────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼  push (or merge PR)
+┌─────────────────────────────────────────────────────────────────────┐
+│                        GitHub Actions                               │
+│                                                                     │
+│  Builds your images, pushes to ghcr.io                             │
+│  Triggers: your commits, upstream updates, nightly                  │
+└─────────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼  images published
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Your Machines                                │
+│                                                                     │
+│  Pull updates automatically (uupd) or manually (bootc upgrade)     │
+│  Reboot to apply                                                   │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Toolbox image** (no reboot):
+**Edit repo → push → CI builds → machines update.** That's the whole model.
 
-```
-Edit repo → push → GitHub Actions builds → ujust toolbox-update → next shell
-```
+## Two Images, One Home
 
-## Quick Reference
+| Image | What it is | Update |
+|-------|------------|--------|
+| `ghcr.io/wycats/bootc` | Host OS (boots your machine) | `bootc upgrade` + reboot |
+| `ghcr.io/wycats/bootc-toolbox` | Dev container (where you code) | recreate toolbox |
 
-| What                     | Where                                                              |
-| ------------------------ | ------------------------------------------------------------------ |
-| Host image definition    | [Containerfile](Containerfile)                                     |
-| Toolbox image definition | [toolbox/Containerfile](toolbox/Containerfile)                     |
-| Flatpak apps             | [manifests/flatpak-apps.json](manifests/flatpak-apps.json)         |
-| GNOME extensions         | [manifests/gnome-extensions.json](manifests/gnome-extensions.json) |
-| ujust recipes            | [ujust/60-custom.just](ujust/60-custom.just)                       |
-| Migration plan           | [PLAN.md](PLAN.md)                                                 |
-| Package analysis         | [docs/ANALYSIS.md](docs/ANALYSIS.md)                               |
+Both are disposable. `$HOME` persists across everything.
 
-## Toolbox as Primary Dev Environment
+## Local Changes That Become Permanent
 
-The toolbox is where development happens. Terminals (ddterm, etc.) are configured to run `toolbox enter dev` as the shell command.
-
-**Why this works:**
-
-- PATH is set via container metadata, not shell init — works regardless of how you enter
-- `~/.local/toolbox/bin` holds toolbox-specific scripts (like `code` wrapper)
-- VS Code on host attaches to the container via "Remote - Containers"
-- Home directory is shared, so files persist across toolbox recreation
-
-**The `code` wrapper** (in `~/.local/toolbox/bin/code`):
+The key workflow insight: for things that don't require a reboot, you want **immediate local effect** AND **a PR to make it canonical**.
 
 ```bash
-# Launches host VS Code attached to this container
-flatpak-spawn --host /usr/bin/code --folder-uri "vscode-remote://attached-container+${hex_name}${folder}"
+# Today: local-only
+shim add nmcli
+
+# Vision: apply locally AND open PR
+shim add --pr nmcli
 ```
 
-## Bootstrap Service
+This applies to:
+- Host command shims
+- Flatpak apps
+- GNOME extensions
+- GSettings
 
-On login, `bootc-bootstrap.service` ensures the system matches manifests:
+One command, two effects: works now, becomes permanent via PR merge.
 
-1. **Flatpak remotes** — configured from [manifests/flatpak-remotes.json](manifests/flatpak-remotes.json)
-2. **Flatpak apps** — installed/updated from [manifests/flatpak-apps.json](manifests/flatpak-apps.json)
-3. **GNOME extensions** — installed/enabled from [manifests/gnome-extensions.json](manifests/gnome-extensions.json)
-4. **Toolbox** — recreated if image digest changed (preserves container name)
-5. **Toolbox bin** — ensures `~/.local/toolbox/bin/code` exists
+## Three Tiers of Configuration
 
-The service is idempotent and hash-cached — it only runs when manifests change.
+| Tier | Applied | Requires reboot | Examples |
+|------|---------|-----------------|----------|
+| **Baked** | Image build | Yes | Packages, fonts, system units |
+| **Bootstrapped** | First login | No | Flatpaks, extensions, shims |
+| **Optional** | User-activated | Depends | Remote play, HW-specific tweaks |
 
-## Optional Features
-
-Shipped in the image but disabled by default. Activate via ujust:
-
-| Feature                               | Enable                     | Disable                     |
-| ------------------------------------- | -------------------------- | --------------------------- |
-| Remote Play (tty2 + Steam gamepad UI) | `ujust enable-remote-play` | `ujust disable-remote-play` |
-
-## Drift Detection
-
-Check if your system matches the sources of truth:
+## Quick Start
 
 ```bash
-ujust check-drift        # Human-readable output
-ujust check-drift-json   # JSON for scripting
+# Update your OS
+sudo bootc upgrade && systemctl reboot
+
+# Check for drift from declared state  
+check-drift
+
+# Enter dev environment
+toolbox enter
+
+# Add a host command shim (from toolbox)
+shim add nmcli
 ```
 
-Drift is categorized by tier:
+## Repository Layout
 
-- **Baked/Bootstrapped** = something's wrong (exit code 1)
-- **Optional** = user-installed extras, totally fine (exit code 0)
-
-## System Profile (Migration Preflight)
-
-Capture full system state for migration planning:
-
-```bash
-./scripts/build-system-profile --output system_profile.json --text-output system_profile.txt
+```
+├── Containerfile                 # Host image definition
+├── toolbox/Containerfile         # Dev environment definition
+├── manifests/
+│   ├── flatpak-apps.json        # Apps to install at first login
+│   ├── gnome-extensions.json    # Extensions to enable
+│   ├── host-shims.json          # Commands to delegate to host
+│   └── gsettings.json           # GNOME settings to apply
+├── scripts/
+│   ├── bootc-bootstrap          # First-login automation
+│   ├── check-drift              # Drift detection
+│   └── shim                     # Shim management CLI
+├── system/                       # Configs baked into /etc
+├── skel/                         # Default dotfiles for new users
+└── upstream/                     # Pinned upstream versions
 ```
 
-## Source Files
+## Documentation
 
-### Host configuration (baked into image)
+| Doc | Purpose |
+|-----|---------|
+| [WORKFLOW.md](docs/WORKFLOW.md) | Day-to-day usage patterns |
+| [MIGRATION.md](docs/MIGRATION.md) | Switching from stock Bazzite |
+| [PLAN.md](PLAN.md) | Architecture decisions |
 
-- keyd: [system/keyd/default.conf](system/keyd/default.conf)
-- NetworkManager (optional): [system/NetworkManager/conf.d/](system/NetworkManager/conf.d/)
-- systemd tweaks (optional): [system/systemd/](system/systemd/)
+## Philosophy
 
-### Shell defaults (skel)
+1. **The repo is the source of truth.** Your machine follows the repo.
 
-- [skel/.bashrc](skel/.bashrc)
-- [skel/.config/nushell/](skel/.config/nushell/)
+2. **Local changes should flow upstream.** Like a change? One command makes it permanent.
 
-### Upstream pinning (auto-updated by CI)
+3. **Updates are boring.** CI rebuilds. Machines pull. Reboots apply cleanly.
 
-- [upstream/bazzite-stable.digest](upstream/bazzite-stable.digest)
-- [upstream/getnf.ref](upstream/getnf.ref), [upstream/getnf.sha256](upstream/getnf.sha256)
+4. **Recovery is trivial.** Bad update? Reboot, pick previous deployment, done.
+
+5. **Dev happens in the toolbox.** Host runs apps and games. Toolbox builds software.
+

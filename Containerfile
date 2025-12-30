@@ -140,8 +140,9 @@ COPY manifests/host-shims.json /usr/local/share/bootc-bootstrap/host-shims.json
 COPY scripts/bootc-bootstrap /usr/local/bin/bootc-bootstrap
 COPY scripts/check-drift /usr/local/bin/check-drift
 COPY scripts/shim /usr/local/bin/shim
+COPY scripts/bootc-repo /usr/local/bin/bootc-repo
 COPY systemd/user/bootc-bootstrap.service /usr/lib/systemd/user/bootc-bootstrap.service
-RUN chmod 0755 /usr/local/bin/bootc-bootstrap /usr/local/bin/check-drift /usr/local/bin/shim && \
+RUN chmod 0755 /usr/local/bin/bootc-bootstrap /usr/local/bin/check-drift /usr/local/bin/shim /usr/local/bin/bootc-repo && \
     mkdir -p /usr/lib/systemd/user/default.target.wants && \
     ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service
 

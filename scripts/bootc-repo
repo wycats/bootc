@@ -1,0 +1,240 @@
+#!/bin/bash
+# bootc-repo - Manage your bootc repository
+#
+# This command bridges local changes to your git repo, enabling the
+# "apply locally + open PR" workflow.
+#
+# Usage:
+#   bootc-repo init                    Set repo path in config
+#   bootc-repo status                  Show repo status
+#   bootc-repo sync <manifest>         Sync local changes to repo
+#   bootc-repo pr <message>            Create PR from current changes
+#
+# Configuration:
+#   ~/.config/bootc/repo.json          {"path": "/path/to/repo"}
+
+set -euo pipefail
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/bootc"
+CONFIG_FILE="$CONFIG_DIR/repo.json"
+
+# Ensure jq and gh are available
+need_cmd() {
+    command -v "$1" >/dev/null 2>&1 || {
+        echo "error: $1 is required but not installed" >&2
+        exit 1
+    }
+}
+
+get_repo_path() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        jq -r '.path // empty' "$CONFIG_FILE" 2>/dev/null
+    fi
+}
+
+require_repo() {
+    local repo_path
+    repo_path=$(get_repo_path)
+    if [[ -z "$repo_path" ]]; then
+        echo "error: repo not configured. Run 'bootc-repo init <path>'" >&2
+        exit 1
+    fi
+    if [[ ! -d "$repo_path/.git" ]]; then
+        echo "error: $repo_path is not a git repository" >&2
+        exit 1
+    fi
+    echo "$repo_path"
+}
+
+cmd_init() {
+    local path="${1:-}"
+    
+    if [[ -z "$path" ]]; then
+        echo "usage: bootc-repo init <path-to-repo>" >&2
+        echo "" >&2
+        echo "Example: bootc-repo init ~/Code/Config/bootc" >&2
+        exit 1
+    fi
+    
+    # Expand to absolute path
+    path=$(cd "$path" && pwd)
+    
+    if [[ ! -d "$path/.git" ]]; then
+        echo "error: $path is not a git repository" >&2
+        exit 1
+    fi
+    
+    mkdir -p "$CONFIG_DIR"
+    jq -n --arg path "$path" '{path: $path}' > "$CONFIG_FILE"
+    echo "✓ Configured repo: $path"
+}
+
+cmd_status() {
+    local repo_path
+    repo_path=$(require_repo)
+    
+    echo "Repository: $repo_path"
+    echo ""
+    
+    (cd "$repo_path" && git status --short)
+    
+    local branch
+    branch=$(cd "$repo_path" && git branch --show-current)
+    echo ""
+    echo "Branch: $branch"
+    
+    # Check if there are unpushed commits
+    local ahead
+    ahead=$(cd "$repo_path" && git rev-list --count "@{upstream}..HEAD" 2>/dev/null || echo "0")
+    if [[ "$ahead" -gt 0 ]]; then
+        echo "Unpushed commits: $ahead"
+    fi
+}
+
+cmd_sync() {
+    local manifest="${1:-}"
+    local repo_path
+    repo_path=$(require_repo)
+    
+    case "$manifest" in
+        shims|host-shims)
+            sync_shims "$repo_path"
+            ;;
+        "")
+            echo "usage: bootc-repo sync <manifest>" >&2
+            echo "" >&2
+            echo "Manifests:" >&2
+            echo "  shims       Sync user shims to host-shims.json" >&2
+            echo "  (more coming: flatpaks, extensions, gsettings)" >&2
+            exit 1
+            ;;
+        *)
+            echo "error: unknown manifest '$manifest'" >&2
+            echo "Known manifests: shims" >&2
+            exit 1
+            ;;
+    esac
+}
+
+sync_shims() {
+    local repo_path="$1"
+    local user_manifest="$CONFIG_DIR/host-shims.json"
+    local repo_manifest="$repo_path/manifests/host-shims.json"
+    
+    if [[ ! -f "$user_manifest" ]]; then
+        echo "No user shims to sync (no $user_manifest)"
+        return 0
+    fi
+    
+    need_cmd jq
+    
+    # Read user shims
+    local user_shims
+    user_shims=$(jq -c '.shims // []' "$user_manifest")
+    
+    if [[ "$user_shims" == "[]" ]]; then
+        echo "No user shims to sync"
+        return 0
+    fi
+    
+    echo "User shims to sync:"
+    echo "$user_shims" | jq -r '.[] | "  \(.name) -> \(.host // .name)"'
+    echo ""
+    
+    # Merge into repo manifest
+    local merged
+    merged=$(jq -s '
+        (.[0].shims + .[1]) |
+        group_by(.name) |
+        map(last) |
+        sort_by(.name) |
+        {shims: .}
+    ' "$repo_manifest" <(echo "$user_shims"))
+    
+    echo "$merged" > "$repo_manifest"
+    echo "✓ Updated $repo_manifest"
+    
+    # Show git diff
+    echo ""
+    (cd "$repo_path" && git diff --stat manifests/host-shims.json)
+}
+
+cmd_pr() {
+    local message="${1:-}"
+    local repo_path
+    repo_path=$(require_repo)
+    
+    need_cmd gh
+    
+    if [[ -z "$message" ]]; then
+        echo "usage: bootc-repo pr <message>" >&2
+        exit 1
+    fi
+    
+    cd "$repo_path"
+    
+    # Check for changes
+    if git diff --quiet && git diff --staged --quiet; then
+        echo "No changes to commit"
+        return 0
+    fi
+    
+    # Create branch
+    local branch_name
+    branch_name="auto/$(echo "$message" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-' | head -c 40)"
+    
+    git checkout -b "$branch_name"
+    git add -A
+    git commit -m "$message"
+    git push -u origin "$branch_name"
+    
+    # Create PR
+    gh pr create --title "$message" --body "Auto-generated by bootc-repo"
+    
+    # Go back to main
+    git checkout main
+    
+    echo ""
+    echo "✓ Created PR from branch: $branch_name"
+}
+
+cmd_help() {
+    cat << 'EOF'
+bootc-repo - Manage your bootc repository
+
+Usage:
+  bootc-repo init <path>       Configure path to your bootc repo
+  bootc-repo status            Show repo status
+  bootc-repo sync <manifest>   Sync local changes to repo
+  bootc-repo pr <message>      Create PR from current changes
+  bootc-repo help              Show this help
+
+Manifests for sync:
+  shims       Merge user shims into manifests/host-shims.json
+
+The "apply locally + PR" workflow:
+  1. shim add nmcli                    # Works immediately
+  2. bootc-repo sync shims             # Merge to repo
+  3. bootc-repo pr "feat: add nmcli"   # Open PR
+
+Or use the --pr flag (coming soon):
+  shim add --pr nmcli                  # Both at once
+
+Configuration:
+  ~/.config/bootc/repo.json    {"path": "/path/to/repo"}
+EOF
+}
+
+# Main dispatch
+case "${1:-help}" in
+    init)    shift; need_cmd jq; cmd_init "$@" ;;
+    status)  cmd_status ;;
+    sync)    shift; cmd_sync "$@" ;;
+    pr)      shift; cmd_pr "$@" ;;
+    help|-h|--help) cmd_help ;;
+    *)
+        echo "unknown command: $1" >&2
+        echo "run 'bootc-repo help' for usage" >&2
+        exit 1
+        ;;
+esac

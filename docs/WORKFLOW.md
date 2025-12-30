@@ -1,220 +1,164 @@
-# Workflow Guide
+# Daily Workflow
 
-This guide explains the day-to-day workflow for managing your workstation using this repo.
+You maintain your own Linux distribution. This guide covers the day-to-day patterns.
 
-## The Big Picture
+## The Mental Model
 
-Your workstation has three layers:
+You have two modes:
 
-| Layer | What | Where | How to change |
-|-------|------|-------|---------------|
-| **Host** | Immutable OS image | `/` (read-only) | Edit this repo, push, `bootc upgrade` |
-| **Toolbox** | Ephemeral dev container | `toolbox enter` | Recreate from updated image |
-| **Home** | Your files, configs, toolchains | `~` | Direct editing |
+| Mode | What you're doing | Where |
+|------|-------------------|-------|
+| **Using** | Running apps, gaming, browsing | Host |
+| **Building** | Writing code, building software | Toolbox |
 
-The host is your "baked" system — packages, fonts, system configs. Changes require rebuilding the image.
+Both share your home directory. The toolbox is a container that mounts `~`.
 
-The toolbox is where you do development. It mounts your home directory, so your code and dotfiles persist.
+## Developing in the Toolbox
 
-## Daily Development
-
-### Entering the toolbox
+### Enter the toolbox
 
 ```bash
 toolbox enter
 ```
 
-You're now in an ephemeral container with your dev tools. Your home directory is bind-mounted, so:
-- Your code is there (`~/Code/...`)
-- Your dotfiles work (`~/.config/...`)
-- Your toolchains work (`~/.cargo/bin`, `~/.nix-profile/bin`, etc.)
+You're now in your dev environment. Everything in `~` is available — your code, dotfiles, and toolchains.
 
-### Running host commands from toolbox
+### Host commands work transparently
 
-Certain commands need to run on the host (system management, containers, etc.). These are available as **shims**:
+From inside the toolbox, these run on the host automatically:
 
 ```bash
-bootc status      # Actually runs on host
-systemctl status  # Actually runs on host
-podman ps         # Actually runs on host
+bootc status      # System status
+systemctl status  # System services
+podman ps         # Containers (on host)
+ujust update      # System update
 ```
 
-The shims are transparent — they look like regular commands but delegate to the host via `flatpak-spawn`.
+These are **shims** — small scripts that delegate to the host. They're managed via the `shim` command.
 
 ### Managing shims
 
 ```bash
-# See what shims exist
-shim list
-
-# Add a shim for a host command
-shim add nmcli              # shim 'nmcli' -> host 'nmcli'
-shim add dc docker-compose  # shim 'dc' -> host 'docker-compose'
-
-# Remove a shim
-shim remove nmcli
-
-# Regenerate shims from manifest
-shim sync
+shim list                   # See all shims
+shim add nmcli              # Add a shim
+shim add dc docker-compose  # Alias: 'dc' runs 'docker-compose' on host
+shim remove nmcli           # Remove a shim
 ```
 
-**Where shims come from:**
+Shims come from two places:
 
-| Manifest | Location | Purpose |
-|----------|----------|---------|
-| System | `/usr/local/share/bootc-bootstrap/host-shims.json` | Baked defaults |
+| Source | Location | Purpose |
+|--------|----------|---------|
+| System | `/usr/local/share/bootc-bootstrap/host-shims.json` | Baked into image |
 | User | `~/.config/bootc/host-shims.json` | Your additions |
 
-User shims override system shims with the same name.
+## Making Changes Permanent
 
-## Making Permanent Changes
+Here's the key pattern: **apply locally for immediate effect, open a PR to make it permanent**.
 
-### Change types
+### For things that don't require reboot
 
-| Change | Where to make it |
-|--------|-----------------|
-| Add a system package | `Containerfile` (dnf install) |
-| Add a Flatpak | `manifests/flatpak-apps.json` |
-| Add a GNOME extension | `manifests/gnome-extensions.json` |
-| Add a default shim | `manifests/host-shims.json` |
-| Change system config | `system/...` + `Containerfile` |
-| Change dotfiles | `skel/...` (for new users) or just edit `~` |
+These apply immediately and can be synced to the repo:
 
-### The gitops workflow
+| What | Local command | To bake permanently |
+|------|---------------|---------------------|
+| Add a shim | `shim add nmcli` | Edit `manifests/host-shims.json`, push |
+| Install Flatpak | `flatpak install ...` | Edit `manifests/flatpak-apps.json`, push |
+| Enable extension | `gnome-extensions enable ...` | Edit `manifests/gnome-extensions.json`, push |
 
-1. **Edit the repo** (you can do this from your toolbox):
-   ```bash
-   cd ~/Code/Config/bootc
-   # Make your changes
-   git add -A && git commit -m "feat: add thing"
-   git push
-   ```
-
-2. **CI builds new image** (automatic, takes ~10 min)
-
-3. **Upgrade your machine**:
-   ```bash
-   sudo bootc upgrade  # or: ujust update
-   systemctl reboot
-   ```
-
-### Quick iteration (local testing)
-
-If you want to test before pushing:
-
+**Coming soon:** `--pr` flag to do both at once:
 ```bash
-# Build locally
-podman build -t localhost/bootc-test .
-
-# Inspect it
-podman run --rm -it localhost/bootc-test bash
+shim add --pr nmcli   # Apply locally AND open PR
 ```
 
-Note: You can't `bootc switch` to a local image easily, but you can verify packages/configs are correct.
+### For things that require reboot
+
+These require editing the repo and rebuilding:
+
+| What | Where to edit |
+|------|---------------|
+| Add system package | `Containerfile` |
+| Add system font | `Containerfile` |
+| Change system config | `system/...` + `Containerfile` |
+| Add toolbox package | `toolbox/Containerfile` |
+
+The workflow:
+
+```bash
+cd ~/Code/Config/bootc
+# Edit the file
+git add -A && git commit -m "feat: add thing"
+git push
+# Wait for CI (~10 min)
+sudo bootc upgrade
+systemctl reboot
+```
 
 ## Checking for Drift
 
-"Drift" means your running system differs from what the manifests declare.
+"Drift" = your running system differs from what the repo declares.
 
 ```bash
-check-drift --repo-root /usr/local/share/bootc-bootstrap
+check-drift
 ```
 
-This compares:
-- Installed Flatpaks vs manifest
-- Enabled GNOME extensions vs manifest
+If you find drift you want to keep, update the manifests and push. If you don't want it, the next bootstrap will fix it.
 
-If you find drift you want to keep, update the manifests and push.
+## Updating
 
-## Updating the Toolbox
-
-When the toolbox image is updated:
+### Host OS (requires reboot)
 
 ```bash
-# Pull new image
+sudo bootc upgrade
+systemctl reboot
+```
+
+Or let `uupd` handle it automatically — it checks hourly and stages updates.
+
+### Toolbox (no reboot)
+
+```bash
 podman pull ghcr.io/wycats/bootc-toolbox:latest
-
-# Recreate your toolbox
-toolbox rm -f fedora-toolbox-42
-toolbox create --image ghcr.io/wycats/bootc-toolbox:latest
+toolbox rm -f dev
+toolbox create --image ghcr.io/wycats/bootc-toolbox:latest dev
 ```
 
-Your home directory persists — only the container environment is recreated.
+Your home directory persists. Only the container is recreated.
 
-## Common Tasks
-
-### Add a CLI tool to the host
-
-```dockerfile
-# In Containerfile, find the dnf install section
-RUN dnf install -y \
-    ... \
-    new-package \  # Add here
-    ...
-```
-
-### Add a CLI tool to the toolbox
-
-```dockerfile
-# In toolbox/Containerfile
-RUN dnf install -y \
-    ... \
-    new-package \
-    ...
-```
-
-### Add a Flatpak app
-
-```json
-// In manifests/flatpak-apps.json, add to "apps" array:
-{
-  "id": "org.example.App",
-  "remote": "flathub",
-  "scope": "user"
-}
-```
-
-### Add a host shim (baked default)
-
-```json
-// In manifests/host-shims.json, add to "shims" array:
-{ "name": "nmcli", "host": "nmcli" }
-```
-
-### Add a personal shim (not baked)
-
-```bash
-shim add nmcli
-```
-
-This edits `~/.config/bootc/host-shims.json` and regenerates shims.
-
-## Understanding the PATH
-
-In your toolbox, PATH is ordered:
+## The PATH in Toolbox
 
 ```
-~/.local/bin               # Your scripts (shared with host)
-~/.local/toolbox/bin       # Toolbox-specific scripts
+~/.local/bin               # Your scripts (works on host too)
+~/.local/toolbox/bin       # Toolbox-only scripts
 ~/.local/toolbox/shims     # Host command delegates
-~/.nix-profile/bin         # Nix packages
-~/.cargo/bin               # Rust toolchain
-~/.proto/bin               # Proto toolchains
-/usr/local/bin             # Container binaries
+~/.nix-profile/bin         # Nix
+~/.cargo/bin               # Rust
+~/.proto/bin               # Proto
+/usr/local/bin             # Container packages
 ...
 ```
 
-This means:
-- Your scripts override everything
-- Shims make host commands available
-- Toolchains from your home directory work
+Your scripts take precedence over everything.
 
-## Emergency Recovery
+## Recovery
 
-If something breaks after upgrading:
+Something broke after upgrading?
 
-1. **Reboot** and select the previous deployment in GRUB
-2. You're back to the working state
-3. Fix the issue in the repo, push, upgrade again
+1. Reboot
+2. In GRUB, select the previous deployment
+3. You're back to working state
+4. Fix the issue in repo, push, try again
 
 bootc always keeps the previous deployment. You're never stuck.
+
+## Quick Reference
+
+| Task | Command |
+|------|---------|
+| Enter toolbox | `toolbox enter` |
+| Update host | `sudo bootc upgrade && systemctl reboot` |
+| Check drift | `check-drift` |
+| Add shim | `shim add <name>` |
+| List shims | `shim list` |
+| Host status | `bootc status` |
+
