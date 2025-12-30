@@ -9,6 +9,7 @@ use clap::{Parser, Subcommand};
 mod commands;
 mod error;
 mod manifest;
+mod pr;
 mod repo;
 
 #[derive(Debug, Parser)]

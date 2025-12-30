@@ -12,3 +12,5 @@ serde_json = "1"
 anyhow = "1"
 thiserror = "2"
 directories = "6"
+chrono = { version = "0.4", features = ["serde"] }
+whoami = "1"

@@ -9,12 +9,12 @@ This document tracks the improvements identified during the codebase review. Wor
 | ID  | Item                                                                | Priority  | Status |
 | --- | ------------------------------------------------------------------- | --------- | ------ |
 | 1   | [Unified manifest CLI (`bkt`)](#1-unified-manifest-cli-bkt)         | 🔴 High   | 🟡     |
-| 2   | [PR automation (`--pr` flag)](#2-pr-automation---pr-flag)           | 🔴 High   | ⬜     |
-| 3   | [Repository identity metadata](#3-repository-identity-metadata)     | 🔴 High   | ⬜     |
-| 4   | [System profile rationalization](#4-system-profile-rationalization) | 🔴 High   | ⬜     |
-| 5   | [Skel management philosophy](#5-skel-management-philosophy)         | 🟡 Medium | ⬜     |
+| 2   | [PR automation (`--pr` flag)](#2-pr-automation---pr-flag)           | 🔴 High   | ✅     |
+| 3   | [Repository identity metadata](#3-repository-identity-metadata)     | 🔴 High   | ✅     |
+| 4   | [System profile rationalization](#4-system-profile-rationalization) | 🔴 High   | ✅     |
+| 5   | [Skel management philosophy](#5-skel-management-philosophy)         | 🟡 Medium | ✅     |
 | 6   | [JSON schema validation](#6-json-schema-validation)                 | 🟡 Medium | ⬜     |
-| 7   | [Toolbox update recipe](#7-toolbox-update-recipe)                   | 🟡 Medium | ⬜     |
+| 7   | [Toolbox update recipe](#7-toolbox-update-recipe)                   | 🟡 Medium | ✅     |
 | 8   | [Machine detection](#8-machine-detection)                           | 🟢 Low    | ⬜     |
 | 9   | [Secrets documentation](#9-secrets-documentation)                   | 🟢 Low    | ⬜     |
 | 10  | [Structural cleanup](#10-structural-cleanup)                        | 🟢 Low    | ⬜     |
@@ -24,7 +24,7 @@ This document tracks the improvements identified during the codebase review. Wor
 
 ## 1. Unified Manifest CLI (`bkt`)
 
-**Status:** 🟡 In progress — Rust scaffold complete
+**Status:** 🟡 In progress — `bkt shim` fully implemented, other commands are stubs
 
 ### Problem
 
@@ -40,30 +40,31 @@ Currently only `shim` has a CLI. Flatpaks, extensions, and gsettings require dir
 
 ### Current State
 
-Rust scaffold created in `bkt/`:
+Rust CLI in `bkt/`:
 
 ```
 bkt/
-├── Cargo.toml              # clap, serde, serde_json, anyhow, thiserror, directories
+├── Cargo.toml              # clap, serde, serde_json, anyhow, thiserror, directories, chrono, whoami
 └── src/
     ├── main.rs             # CLI entry with clap derive, 7 subcommands
     ├── error.rs            # BktError enum with thiserror
     ├── repo.rs             # RepoConfig struct + find_repo_path()
+    ├── pr.rs               # PR automation workflow (✅ complete)
     ├── commands/
     │   ├── mod.rs
-    │   ├── flatpak.rs      # add/remove/list/sync (stubs)
-    │   ├── shim.rs         # add/remove/list/sync (stubs)
-    │   ├── extension.rs    # add/remove/list (stubs)
-    │   ├── gsetting.rs     # set/unset/list/apply (stubs)
-    │   ├── skel.rs         # add/diff/list/migrate (stubs)
-    │   ├── profile.rs      # capture/diff/unowned (stubs)
+    │   ├── flatpak.rs      # add/remove/list/sync (✅ complete with --pr)
+    │   ├── shim.rs         # add/remove/list/sync (✅ complete with --pr)
+    │   ├── extension.rs    # add/remove/list/sync (✅ complete with --pr)
+    │   ├── gsetting.rs     # set/unset/list/apply (✅ complete with --pr)
+    │   ├── skel.rs         # add/diff/list/sync (✅ complete with --pr)
+    │   ├── profile.rs      # capture/diff/unowned (✅ complete)
     │   └── repo.rs         # info/path (partially implemented)
     └── manifest/
         ├── mod.rs
-        ├── flatpak.rs      # FlatpakApp, FlatpakRemote structs
-        ├── extension.rs    # GnomeExtension struct
-        ├── gsetting.rs     # GSetting struct
-        └── shim.rs         # Shim struct
+        ├── flatpak.rs      # FlatpakApp, FlatpakRemote with load/save/merge (✅ complete)
+        ├── extension.rs    # GnomeExtensionsManifest with load/save/merge (✅ complete)
+        ├── gsetting.rs     # GSettingsManifest with load/save/merge (✅ complete)
+        └── shim.rs         # Shim struct with load/save/merge (✅ complete)
 ```
 
 **CLI Aliases:**
@@ -131,7 +132,7 @@ The existing `shim` CLI will be consolidated into `bkt shim`. Benefits:
 
 ## 2. PR Automation (`--pr` flag)
 
-**Status:** ⬜ Not started
+**Status:** ✅ Complete
 
 ### Problem
 
@@ -142,64 +143,47 @@ README promises the "apply locally AND open PR" workflow, but it's not implement
 shim add --pr nmcli
 ```
 
-### Proposed Interface
+### Implementation
 
-```bash
-bkt flatpak add --pr org.mozilla.firefox
-bkt shim add --pr nmcli
-bkt extension add --pr some-extension@author
+Created `bkt/src/pr.rs` with complete PR workflow:
+
+```rust
+pub struct PrChange {
+    pub manifest_type: String,  // "shim", "flatpak", etc.
+    pub action: String,         // "add", "remove"
+    pub name: String,           // item name
+    pub manifest_file: String,  // target file
+}
+
+pub fn run_pr_workflow(change: &PrChange, manifest_content: &str) -> Result<()>
 ```
 
-The `--pr` flag should:
+Workflow steps:
 
-1. Apply the change locally (immediate effect)
-2. Clone/update the source repo (see [#3](#3-repository-identity-metadata))
-3. Create a feature branch
-4. Update the system manifest file
-5. Commit with a descriptive message
-6. Push and open a PR via `gh pr create`
+1. Ensure repo exists at `~/.local/share/bootc/source/` (clones if needed)
+2. Check `gh auth status`
+3. Create branch: `bkt/<type>-<action>-<name>-<timestamp>`
+4. Write manifest content
+5. Commit with message: `feat(manifests): <action> <type> <name>`
+6. Push and create PR via `gh pr create`
 
-### Dependencies
-
-- Requires [#3 Repository identity metadata](#3-repository-identity-metadata) to know where to push
-- Requires `gh` CLI (already installed)
-
-### Implementation Plan
-
-1. Add `--pr` flag parsing to `bkt` CLI
-2. Implement `bkt_pr_workflow()` function:
-   - Determine repo path from metadata
-   - Create branch: `bkt/<type>-<name>-<timestamp>`
-   - Edit appropriate manifest file
-   - Commit with message: `feat(manifests): add <type> <name>`
-   - Push and create PR
-3. Handle error cases (not logged in, no permissions, etc.)
+Integrated into `bkt shim add --pr` and `bkt shim remove --pr`.
 
 ---
 
 ## 3. Repository Identity Metadata
 
-**Status:** ⬜ Not started
+**Status:** ✅ Complete
 
 ### Problem
 
 The `--pr` workflow needs to know the source repository. This should be baked into the image, not configured per-machine.
 
-### Proposed Solution
+### Implementation
 
-Bake repository metadata into the container image at build time:
+Created `/usr/share/bootc/repo.json` with repository metadata:
 
-```dockerfile
-# In Containerfile
-LABEL org.wycats.bootc.repo.owner="wycats"
-LABEL org.wycats.bootc.repo.name="bootc"
-LABEL org.wycats.bootc.repo.url="https://github.com/wycats/bootc"
-```
-
-Or create a static file:
-
-```bash
-# /usr/share/bootc/repo.json
+```json
 {
   "owner": "wycats",
   "name": "bootc",
@@ -208,17 +192,14 @@ Or create a static file:
 }
 ```
 
-### Design Considerations
+Added to Containerfile:
 
-- **Labels vs file:** Labels are OCI-standard but harder to read from scripts. A JSON file is easier to consume.
-- **Recommendation:** Use both — labels for OCI tooling, file for scripts.
+```dockerfile
+RUN mkdir -p /usr/share/bootc
+COPY repo.json /usr/share/bootc/repo.json
+```
 
-### Implementation Plan
-
-1. Add `LABEL` statements to Containerfile
-2. Create `/usr/share/bootc/repo.json` during build
-3. Update `bkt` CLI to read from `/usr/share/bootc/repo.json`
-4. Add helper function: `bkt repo info` to display metadata
+`bkt` CLI reads this file to determine where to clone/push for PR workflow.
 
 ### Decision: Repo Detection Strategy
 
@@ -251,54 +232,36 @@ find_repo() {
 
 ## 4. System Profile Rationalization
 
-**Status:** ⬜ Not started
+**Status:** ✅ Complete
 
 ### Problem
 
 The system profile (`build-system-profile`) and drift detection (`check-drift`) are separate tools that duplicate effort. The profile's role in the workflow isn't clearly articulated.
 
-### Insight: Profile as Ground Truth
+### Implementation
 
-The system profile is the **ground truth snapshot** — "what actually exists on this machine right now." It's the inverse of manifests:
-
-| Artifact       | Direction        | Purpose                   |
-| -------------- | ---------------- | ------------------------- |
-| Manifests      | Desired → Actual | "Make reality match this" |
-| System Profile | Actual → Record  | "Capture what reality is" |
-
-### Workflow Implications
-
-1. **Migration:** Profile → diff against manifests → add missing items to manifests
-2. **Drift detection:** Profile captures actual; compare to manifests; report gaps
-3. **Debugging:** "Why is X installed?" Check if it's in manifests or profile-only
-4. **Archaeology:** When did this package appear? Git history of profile snapshots
-
-### Proposed Interface
+Created `bkt profile` with three subcommands:
 
 ```bash
-# Capture current state
-bkt profile capture              # outputs JSON to stdout
-bkt profile capture -o file.json # saves to file
-
-# Compare to manifests (what check-drift does)
-bkt profile diff                 # shows drift
-
-# Check for unowned binaries (new!)
-bkt profile unowned              # binaries not from packages
+bkt profile capture              # Capture system state as JSON
+bkt profile capture -o file.json # Save to file
+bkt profile diff                 # Compare system vs manifests
+bkt profile diff -s flatpak      # Diff specific section
+bkt profile unowned              # Show files not owned by RPM
+bkt profile unowned -d /usr/bin  # Scan specific directory
 ```
 
-### Implementation Plan
+Features:
 
-1. Refactor `build-system-profile` into `bkt profile capture`
-2. Refactor `check-drift` to use profile internally: `bkt profile diff`
-3. Add `bkt profile unowned` (inspired by `host-unowned-executables.txt`)
-4. Keep `check-drift` as ujust alias for discoverability: `ujust check-drift` → `bkt profile diff`
+- `capture`: Gets installed flatpaks, GNOME extensions, enabled extensions
+- `diff`: Compares against system manifests, shows missing/extra items
+- `unowned`: Uses `rpm -qf` to find unpackaged binaries
 
 ---
 
 ## 5. Skel Management Philosophy
 
-**Status:** ⬜ Not started
+**Status:** ✅ Complete
 
 ### Problem
 
@@ -318,43 +281,27 @@ The current approach copies files to `/etc/skel` but has no mechanism to:
    - Open a PR to make it permanent
 3. **Apply it:** On next image build + upgrade, new users get the new skel
 
-### Key Insight
+### Implementation
 
-We don't want an "escape valve for customizations" — we want a **fast path from experiment to permanent**. The escape valve is just "don't merge the PR yet."
-
-### Proposed Interface
+Created `bkt skel` with four subcommands:
 
 ```bash
-# Copy a dotfile from $HOME to skel and open PR
-bkt skel add .bashrc --pr
-
-# View diff between current $HOME and baked skel
-bkt skel diff
-
-# List managed skel files
-bkt skel list
-
-# Migrate custom dotfiles to repo (new!)
-bkt skel migrate
+bkt skel list              # List all files in skel/
+bkt skel diff              # Diff all skel files vs $HOME
+bkt skel diff .bashrc      # Diff specific file
+bkt skel add .bashrc       # Copy from $HOME to skel/
+bkt skel add .bashrc --pr  # Same + open PR
+bkt skel sync              # Copy skel files to $HOME
+bkt skel sync --dry-run    # Preview what would be copied
+bkt skel sync --force      # Overwrite existing files
 ```
 
-### What About Existing Users?
+Features:
 
-**Decision:** Automatic sync for new setups, opt-in for existing.
-
-1. **New installs:** `bootc-bootstrap` auto-syncs skel on first login
-2. **Existing users:** `bkt skel diff` shows differences; `ujust skel-sync` applies
-3. **Migration helper:** `bkt skel migrate` scans for customizations in managed files and helps move them to the repo with PRs
-
-### Implementation Plan
-
-1. Add `bkt skel` subcommand
-2. Implement `skel diff` (compare `/etc/skel` to `$HOME`)
-3. Implement `skel add <file>` (copy from `$HOME` to repo's `skel/`)
-4. Implement `skel migrate` (interactive helper to move customizations)
-5. Add `ujust skel-sync` for opt-in sync
-6. Update `bootc-bootstrap` to auto-sync for new users
-7. Integrate `--pr` flag
+- Lists files from repo's `skel/` directory
+- Shows colorized unified diff between skel and $HOME
+- Copies files preserving directory structure
+- Supports `--pr` flag for PR automation
 
 ---
 
@@ -393,7 +340,7 @@ Manifests reference `$schema` URLs that don't exist:
 
 ## 7. Toolbox Update Recipe
 
-**Status:** ⬜ Not started
+**Status:** ✅ Complete
 
 ### Problem
 
@@ -406,9 +353,9 @@ PLAN.md references `ujust toolbox-update` but it doesn't exist.
 - `bootc upgrade` updates the host
 - Toolbox must be explicitly recreated to pick up new toolbox image
 
-### Proposed Recipe
+### Implementation
 
-Add to `ujust/60-custom.just`:
+Added to `ujust/60-custom.just`:
 
 ```just
 # Recreate toolbox with latest image
@@ -423,11 +370,6 @@ toolbox-update:
     toolbox create -i ghcr.io/wycats/bootc-toolbox:latest dev
     echo "✓ Toolbox 'dev' recreated. Run: toolbox enter dev"
 ```
-
-### Implementation Plan
-
-1. Add recipe to `ujust/60-custom.just`
-2. Test from host and from inside toolbox (should work from both via flatpak-spawn)
 
 ---
 

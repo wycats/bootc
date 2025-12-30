@@ -157,12 +157,14 @@ RUN mkdir -p /usr/lib/systemd/system/multi-user.target.wants && \
     ln -sf ../keyd.service /usr/lib/systemd/system/multi-user.target.wants/keyd.service
 
 # First-login bootstrap (Flatpak + GNOME extensions + host shims)
-RUN mkdir -p /usr/share/bootc-bootstrap
+RUN mkdir -p /usr/share/bootc-bootstrap /usr/share/bootc
 COPY manifests/flatpak-remotes.json /usr/share/bootc-bootstrap/flatpak-remotes.json
 COPY manifests/flatpak-apps.json /usr/share/bootc-bootstrap/flatpak-apps.json
 COPY manifests/gnome-extensions.json /usr/share/bootc-bootstrap/gnome-extensions.json
 COPY manifests/gsettings.json /usr/share/bootc-bootstrap/gsettings.json
 COPY manifests/host-shims.json /usr/share/bootc-bootstrap/host-shims.json
+# Repository identity (for bkt --pr workflow)
+COPY repo.json /usr/share/bootc/repo.json
 COPY scripts/bootc-bootstrap /usr/bin/bootc-bootstrap
 COPY scripts/check-drift /usr/bin/check-drift
 COPY scripts/shim /usr/bin/shim

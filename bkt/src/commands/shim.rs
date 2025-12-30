@@ -6,6 +6,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 use crate::manifest::{Shim, ShimsManifest};
+use crate::pr::{run_pr_workflow, PrChange};
 
 #[derive(Debug, Args)]
 pub struct ShimArgs {
@@ -152,7 +153,22 @@ pub fn run(args: ShimArgs) -> Result<()> {
             sync_shims(false)?;
 
             if pr {
-                println!("TODO: --pr flag not yet implemented");
+                // Load system manifest, add the shim, and create PR
+                let mut system = ShimsManifest::load_system()?;
+                let shim_for_pr = Shim {
+                    name: name.clone(),
+                    host: if host_cmd == name { None } else { Some(host_cmd.clone()) },
+                };
+                system.upsert(shim_for_pr);
+                let manifest_content = serde_json::to_string_pretty(&system)?;
+
+                let change = PrChange {
+                    manifest_type: "shim".to_string(),
+                    action: "add".to_string(),
+                    name: name.clone(),
+                    manifest_file: "host-shims.json".to_string(),
+                };
+                run_pr_workflow(&change, &manifest_content)?;
             }
         }
         ShimAction::Remove { name, pr } => {
@@ -178,7 +194,21 @@ pub fn run(args: ShimArgs) -> Result<()> {
             sync_shims(false)?;
 
             if pr {
-                println!("TODO: --pr flag not yet implemented");
+                // Load system manifest, remove the shim, and create PR
+                let mut system_manifest = ShimsManifest::load_system()?;
+                if system_manifest.remove(&name) {
+                    let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
+
+                    let change = PrChange {
+                        manifest_type: "shim".to_string(),
+                        action: "remove".to_string(),
+                        name: name.clone(),
+                        manifest_file: "host-shims.json".to_string(),
+                    };
+                    run_pr_workflow(&change, &manifest_content)?;
+                } else {
+                    println!("Note: '{}' not in system manifest, no PR needed", name);
+                }
             }
         }
         ShimAction::List { format } => {
