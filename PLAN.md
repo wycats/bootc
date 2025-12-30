@@ -101,10 +101,15 @@ If something goes wrong:
 
 ### Post-Switch Validation
 
+```bash
+ujust check-drift   # Should show only optional-tier differences
+```
+
 - [ ] Home data present
 - [ ] Flatpaks working
 - [ ] `bootc-bootstrap` ran (check `~/.local/state/bootc-bootstrap/`)
 - [ ] Toolbox created and functional
+- [ ] `ujust check-drift` exits 0
 
 ## Phase 3: Normal Operations
 
@@ -178,8 +183,17 @@ Shipped in image but disabled by default:
 |---------|--------|---------|--------|
 | Remote Play (tty2 + Steam gamepad UI) | `ujust enable-remote-play` | `ujust disable-remote-play` | `ujust remote-play-status` |
 
+## Operational Tools
+
+| Tool | Purpose | Command |
+|------|---------|--------|
+| **check-drift** | Verify system matches manifests | `ujust check-drift` |
+| **bootc-bootstrap** | Re-apply bootstrap tier | `ujust bootc-bootstrap` |
+| **build-system-profile** | Full state dump (dev) | `./scripts/build-system-profile` |
+
 ## Future Considerations
 
 - **Secrets handling** — pattern for API keys, credentials (1Password CLI integration?)
 - **Skel sync for existing users** — mechanism to update dotfiles in existing home directories
 - **Multi-machine variants** — if needed, handle via ujust runtime detection rather than separate builds
+- **Toolbox Containerfile** — currently referenced but not implemented
