@@ -31,7 +31,7 @@ RUN dnf install -y \
 RUN curl -fsSL https://github.com/starship/starship/releases/latest/download/starship-x86_64-unknown-linux-gnu.tar.gz \
     | tar xz -C /usr/local/bin starship \
     && curl -fsSL https://github.com/eza-community/eza/releases/latest/download/eza_x86_64-unknown-linux-gnu.tar.gz \
-    | tar xz -C /usr/local/bin eza
+    | tar xz --strip-components=0 -C /usr/local/bin
 
 # Rust toolchain support (actual toolchain lives in ~/.cargo)
 RUN dnf install -y \
