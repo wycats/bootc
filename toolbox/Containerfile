@@ -27,12 +27,11 @@ RUN dnf install -y \
     npm \
     && dnf clean all
 
-# Starship and eza are not in Fedora repos — install from COPR
-RUN dnf install -y 'dnf-command(copr)' \
-    && dnf copr enable -y atim/starship \
-    && dnf copr enable -y atim/eza \
-    && dnf install -y starship eza \
-    && dnf clean all
+# Starship and eza: download from GitHub releases (not in Fedora repos, COPR lacks F42)
+RUN curl -fsSL https://github.com/starship/starship/releases/latest/download/starship-x86_64-unknown-linux-gnu.tar.gz \
+    | tar xz -C /usr/local/bin starship \
+    && curl -fsSL https://github.com/eza-community/eza/releases/latest/download/eza_x86_64-unknown-linux-gnu.tar.gz \
+    | tar xz -C /usr/local/bin eza
 
 # Rust toolchain support (actual toolchain lives in ~/.cargo)
 RUN dnf install -y \
