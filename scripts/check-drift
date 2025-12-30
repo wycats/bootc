@@ -433,18 +433,18 @@ def main() -> None:
     )
     parser.add_argument(
         "--repo-root", default=None,
-        help="Repository root path (for development; defaults to /usr/local/share/bootc-bootstrap)"
+        help="Repository root path (for development; defaults to /usr/share/bootc-bootstrap)"
     )
     args = parser.parse_args()
 
-    # In the baked image, manifests live at /usr/local/share/bootc-bootstrap
+    # In the baked image, manifests live at /usr/share/bootc-bootstrap
     # During development, use --repo-root to point to the repo
     if args.repo_root:
         repo_root = Path(args.repo_root)
         manifests_dir = repo_root / "manifests"
     else:
         # Check if we're in the baked image or in a dev environment
-        baked_manifests = Path("/usr/local/share/bootc-bootstrap")
+        baked_manifests = Path("/usr/share/bootc-bootstrap")
         if baked_manifests.exists():
             manifests_dir = baked_manifests
             repo_root = Path("/")  # Not used for Containerfile in production

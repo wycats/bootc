@@ -3,7 +3,7 @@ set -euo pipefail
 
 cmd="${1:-apply}"
 
-share_dir="/usr/local/share/bootc-bootstrap"
+share_dir="/usr/share/bootc-bootstrap"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/bootc-bootstrap"
 state_file="${state_dir}/last-applied.sha256"
 

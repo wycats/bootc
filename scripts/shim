@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-SYSTEM_MANIFEST="/usr/local/share/bootc-bootstrap/host-shims.json"
+SYSTEM_MANIFEST="/usr/share/bootc-bootstrap/host-shims.json"
 USER_MANIFEST="${XDG_CONFIG_HOME:-$HOME/.config}/bootc/host-shims.json"
 SHIMS_DIR="$HOME/.local/toolbox/shims"
 
@@ -208,7 +208,7 @@ commands to the host via flatpak-spawn. This lets you run host
 commands like 'bootc' or 'systemctl' transparently from a toolbox.
 
 Manifests:
-  System: /usr/local/share/bootc-bootstrap/host-shims.json
+  System: /usr/share/bootc-bootstrap/host-shims.json
   User:   ~/.config/bootc/host-shims.json
 
 The user manifest can add or override system shims.

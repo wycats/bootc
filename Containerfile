@@ -55,8 +55,8 @@ RUN set -eu; \
     curl -fsSL "https://github.com/starship/starship/releases/download/${tag}/${asset}.sha256" -o /tmp/${asset}.sha256; \
     expected="$(cat /tmp/${asset}.sha256)"; \
     echo "${expected}  /tmp/${asset}" | sha256sum -c -; \
-    tar -xzf /tmp/${asset} -C /usr/local/bin starship; \
-    chmod 0755 /usr/local/bin/starship; \
+    tar -xzf /tmp/${asset} -C /usr/bin starship; \
+    chmod 0755 /usr/bin/starship; \
     rm -f /tmp/${asset} /tmp/${asset}.sha256 /tmp/starship.version
 
 # lazygit (pinned to upstream version + verified by checksums.txt)
@@ -68,8 +68,8 @@ RUN set -eu; \
     curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/${tag}/${asset}" -o /tmp/${asset}; \
     curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/${tag}/checksums.txt" -o /tmp/lazygit.checksums.txt; \
     (cd /tmp && grep " ${asset}$" lazygit.checksums.txt | sha256sum -c -); \
-    tar -xzf /tmp/${asset} -C /usr/local/bin lazygit; \
-    chmod 0755 /usr/local/bin/lazygit; \
+    tar -xzf /tmp/${asset} -C /usr/bin lazygit; \
+    chmod 0755 /usr/bin/lazygit; \
     rm -f /tmp/${asset} /tmp/lazygit.checksums.txt /tmp/lazygit.version
 
 # keyd (built from source at a pinned upstream tag)
@@ -79,7 +79,7 @@ RUN set -eu; \
     dnf install -y git gcc make systemd-devel; \
     git clone --depth 1 --branch "${ref}" https://github.com/rvaiya/keyd.git /tmp/keyd; \
     make -C /tmp/keyd; \
-    make -C /tmp/keyd install; \
+    make -C /tmp/keyd PREFIX=/usr install; \
     rm -rf /tmp/keyd /tmp/keyd.ref; \
     dnf remove -y git gcc make systemd-devel || true; \
     dnf clean all
@@ -96,8 +96,8 @@ RUN set -eu; \
             --retry 5 \
             --retry-delay 2 \
             "https://raw.githubusercontent.com/getnf/getnf/${ref}/getnf" \
-            -o /usr/local/bin/getnf; \
-        if echo "${expected_sha}  /usr/local/bin/getnf" | sha256sum -c -; then \
+            -o /usr/bin/getnf; \
+        if echo "${expected_sha}  /usr/bin/getnf" | sha256sum -c -; then \
             ok=1; \
             break; \
         fi; \
@@ -105,7 +105,7 @@ RUN set -eu; \
         sleep $((attempt * 2)); \
     done; \
     test "${ok}" = 1; \
-    chmod 0755 /usr/local/bin/getnf; \
+    chmod 0755 /usr/bin/getnf; \
     rm -f /tmp/getnf.ref /tmp/getnf.sha256
 
 # Fonts (system-wide): Inter (RPM) + JetBrainsMono Nerd Font (zip from nerd-fonts)
@@ -129,20 +129,21 @@ COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
 
 # Host-level config extracted from wycats/asahi-env (now sourced here)
 COPY system/keyd/default.conf /etc/keyd/default.conf
+RUN systemctl enable keyd.service
 
 # First-login bootstrap (Flatpak + GNOME extensions + host shims)
-RUN mkdir -p /usr/local/share/bootc-bootstrap
-COPY manifests/flatpak-remotes.json /usr/local/share/bootc-bootstrap/flatpak-remotes.json
-COPY manifests/flatpak-apps.json /usr/local/share/bootc-bootstrap/flatpak-apps.json
-COPY manifests/gnome-extensions.json /usr/local/share/bootc-bootstrap/gnome-extensions.json
-COPY manifests/gsettings.json /usr/local/share/bootc-bootstrap/gsettings.json
-COPY manifests/host-shims.json /usr/local/share/bootc-bootstrap/host-shims.json
-COPY scripts/bootc-bootstrap /usr/local/bin/bootc-bootstrap
-COPY scripts/check-drift /usr/local/bin/check-drift
-COPY scripts/shim /usr/local/bin/shim
-COPY scripts/bootc-repo /usr/local/bin/bootc-repo
+RUN mkdir -p /usr/share/bootc-bootstrap
+COPY manifests/flatpak-remotes.json /usr/share/bootc-bootstrap/flatpak-remotes.json
+COPY manifests/flatpak-apps.json /usr/share/bootc-bootstrap/flatpak-apps.json
+COPY manifests/gnome-extensions.json /usr/share/bootc-bootstrap/gnome-extensions.json
+COPY manifests/gsettings.json /usr/share/bootc-bootstrap/gsettings.json
+COPY manifests/host-shims.json /usr/share/bootc-bootstrap/host-shims.json
+COPY scripts/bootc-bootstrap /usr/bin/bootc-bootstrap
+COPY scripts/check-drift /usr/bin/check-drift
+COPY scripts/shim /usr/bin/shim
+COPY scripts/bootc-repo /usr/bin/bootc-repo
 COPY systemd/user/bootc-bootstrap.service /usr/lib/systemd/user/bootc-bootstrap.service
-RUN chmod 0755 /usr/local/bin/bootc-bootstrap /usr/local/bin/check-drift /usr/local/bin/shim /usr/local/bin/bootc-repo && \
+RUN chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/check-drift /usr/bin/shim /usr/bin/bootc-repo && \
     mkdir -p /usr/lib/systemd/user/default.target.wants && \
     ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service
 
@@ -151,57 +152,57 @@ RUN mkdir -p /usr/share/ublue-os/just
 COPY ujust/60-custom.just /usr/share/ublue-os/just/60-custom.just
 
 # Optional: remote play / console mode (off by default; enabled via `ujust enable-remote-play`)
-RUN mkdir -p /usr/local/share/bootc-optional/remote-play/bin \
-    /usr/local/share/bootc-optional/remote-play/systemd
-COPY system/remote-play/bootc-remote-play-tty2 /usr/local/share/bootc-optional/remote-play/bin/bootc-remote-play-tty2
-COPY system/remote-play/bootc-remote-play-tty2@.service /usr/local/share/bootc-optional/remote-play/systemd/bootc-remote-play-tty2@.service
+RUN mkdir -p /usr/share/bootc-optional/remote-play/bin \
+    /usr/share/bootc-optional/remote-play/systemd
+COPY system/remote-play/bootc-remote-play-tty2 /usr/share/bootc-optional/remote-play/bin/bootc-remote-play-tty2
+COPY system/remote-play/bootc-remote-play-tty2@.service /usr/share/bootc-optional/remote-play/systemd/bootc-remote-play-tty2@.service
 
 # Optional host tweaks (off by default)
 # NetworkManager: disable Wi-Fi power save (wifi.powersave=2)
 ARG ENABLE_NM_DISABLE_WIFI_POWERSAVE=0
-RUN mkdir -p /usr/local/share/bootc-optional/NetworkManager/conf.d
-COPY system/NetworkManager/conf.d/default-wifi-powersave-on.conf /usr/local/share/bootc-optional/NetworkManager/conf.d/default-wifi-powersave-on.conf
+RUN mkdir -p /usr/share/bootc-optional/NetworkManager/conf.d
+COPY system/NetworkManager/conf.d/default-wifi-powersave-on.conf /usr/share/bootc-optional/NetworkManager/conf.d/default-wifi-powersave-on.conf
 RUN if [ "${ENABLE_NM_DISABLE_WIFI_POWERSAVE}" = "1" ]; then \
-            install -Dpm0644 /usr/local/share/bootc-optional/NetworkManager/conf.d/default-wifi-powersave-on.conf /etc/NetworkManager/conf.d/default-wifi-powersave-on.conf; \
+            install -Dpm0644 /usr/share/bootc-optional/NetworkManager/conf.d/default-wifi-powersave-on.conf /etc/NetworkManager/conf.d/default-wifi-powersave-on.conf; \
         fi
 
 # NetworkManager: use iwd backend (wifi.backend=iwd) (Asahi-focused; off by default)
 ARG ENABLE_NM_IWD_BACKEND=0
-COPY system/NetworkManager/conf.d/wifi_backend.conf /usr/local/share/bootc-optional/NetworkManager/conf.d/wifi_backend.conf
+COPY system/NetworkManager/conf.d/wifi_backend.conf /usr/share/bootc-optional/NetworkManager/conf.d/wifi_backend.conf
 RUN if [ "${ENABLE_NM_IWD_BACKEND}" = "1" ]; then \
-            install -Dpm0644 /usr/local/share/bootc-optional/NetworkManager/conf.d/wifi_backend.conf /etc/NetworkManager/conf.d/wifi_backend.conf; \
+            install -Dpm0644 /usr/share/bootc-optional/NetworkManager/conf.d/wifi_backend.conf /etc/NetworkManager/conf.d/wifi_backend.conf; \
         fi
 
 # Asahi-only artifacts (off by default)
 # NOTE: titdb.service.template contains a placeholder input device path; enable only after customizing it.
 ARG ENABLE_ASAHI_TITDB=0
-COPY system/asahi/titdb.service.template /usr/local/share/bootc-optional/asahi/titdb.service
+COPY system/asahi/titdb.service.template /usr/share/bootc-optional/asahi/titdb.service
 RUN if [ "${ENABLE_ASAHI_TITDB}" = "1" ]; then \
-            install -Dpm0644 /usr/local/share/bootc-optional/asahi/titdb.service /etc/systemd/system/titdb.service; \
+            install -Dpm0644 /usr/share/bootc-optional/asahi/titdb.service /etc/systemd/system/titdb.service; \
             systemctl enable titdb.service || true; \
         fi
 
 ARG ENABLE_ASAHI_BRCMFMAC=0
-RUN mkdir -p /usr/local/share/bootc-optional/modprobe.d
-COPY system/asahi/modprobe.d/brcmfmac.conf /usr/local/share/bootc-optional/modprobe.d/brcmfmac.conf
+RUN mkdir -p /usr/share/bootc-optional/modprobe.d
+COPY system/asahi/modprobe.d/brcmfmac.conf /usr/share/bootc-optional/modprobe.d/brcmfmac.conf
 RUN if [ "${ENABLE_ASAHI_BRCMFMAC}" = "1" ]; then \
-            install -Dpm0644 /usr/local/share/bootc-optional/modprobe.d/brcmfmac.conf /etc/modprobe.d/brcmfmac.conf; \
+            install -Dpm0644 /usr/share/bootc-optional/modprobe.d/brcmfmac.conf /etc/modprobe.d/brcmfmac.conf; \
         fi
 
 # systemd: journald log cap (off by default)
 ARG ENABLE_JOURNALD_LOG_CAP=0
-RUN mkdir -p /usr/local/share/bootc-optional/systemd/journald.conf.d
-COPY system/systemd/journald.conf.d/10-journal-cap.conf /usr/local/share/bootc-optional/systemd/journald.conf.d/10-journal-cap.conf
+RUN mkdir -p /usr/share/bootc-optional/systemd/journald.conf.d
+COPY system/systemd/journald.conf.d/10-journal-cap.conf /usr/share/bootc-optional/systemd/journald.conf.d/10-journal-cap.conf
 RUN if [ "${ENABLE_JOURNALD_LOG_CAP}" = "1" ]; then \
-            install -Dpm0644 /usr/local/share/bootc-optional/systemd/journald.conf.d/10-journal-cap.conf /etc/systemd/journald.conf.d/10-journal-cap.conf; \
+            install -Dpm0644 /usr/share/bootc-optional/systemd/journald.conf.d/10-journal-cap.conf /etc/systemd/journald.conf.d/10-journal-cap.conf; \
         fi
 
 # systemd: logind lid policy (off by default)
 ARG ENABLE_LOGIND_LID_POLICY=0
-RUN mkdir -p /usr/local/share/bootc-optional/systemd/logind.conf.d
-COPY system/systemd/logind.conf.d/10-lid-policy.conf /usr/local/share/bootc-optional/systemd/logind.conf.d/10-lid-policy.conf
+RUN mkdir -p /usr/share/bootc-optional/systemd/logind.conf.d
+COPY system/systemd/logind.conf.d/10-lid-policy.conf /usr/share/bootc-optional/systemd/logind.conf.d/10-lid-policy.conf
 RUN if [ "${ENABLE_LOGIND_LID_POLICY}" = "1" ]; then \
-            install -Dpm0644 /usr/local/share/bootc-optional/systemd/logind.conf.d/10-lid-policy.conf /etc/systemd/logind.conf.d/10-lid-policy.conf; \
+            install -Dpm0644 /usr/share/bootc-optional/systemd/logind.conf.d/10-lid-policy.conf /etc/systemd/logind.conf.d/10-lid-policy.conf; \
         fi
 
 # Dotfiles detected in system_profile.txt
