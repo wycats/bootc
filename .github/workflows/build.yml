@@ -234,6 +234,23 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bkt
+
+      - name: Build bkt (release)
+        run: |
+          cd bkt
+          cargo build --release --target x86_64-unknown-linux-gnu
+          chmod +x target/x86_64-unknown-linux-gnu/release/bkt
+          cp target/x86_64-unknown-linux-gnu/release/bkt ../scripts/bkt
+
       - name: Free disk space
         shell: bash
         run: |

@@ -8,7 +8,7 @@ This document tracks the improvements identified during the codebase review. Wor
 
 | ID  | Item                                                                | Priority  | Status |
 | --- | ------------------------------------------------------------------- | --------- | ------ |
-| 1   | [Unified manifest CLI (`bkt`)](#1-unified-manifest-cli-bkt)         | 🔴 High   | ⬜     |
+| 1   | [Unified manifest CLI (`bkt`)](#1-unified-manifest-cli-bkt)         | 🔴 High   | 🟡     |
 | 2   | [PR automation (`--pr` flag)](#2-pr-automation---pr-flag)           | 🔴 High   | ⬜     |
 | 3   | [Repository identity metadata](#3-repository-identity-metadata)     | 🔴 High   | ⬜     |
 | 4   | [System profile rationalization](#4-system-profile-rationalization) | 🔴 High   | ⬜     |
@@ -24,7 +24,7 @@ This document tracks the improvements identified during the codebase review. Wor
 
 ## 1. Unified Manifest CLI (`bkt`)
 
-**Status:** ⬜ Not started
+**Status:** 🟡 In progress — Rust scaffold complete
 
 ### Problem
 
@@ -33,6 +33,44 @@ Currently only `shim` has a CLI. Flatpaks, extensions, and gsettings require dir
 ### Decision: CLI Name
 
 **`bkt`** (bucket) — 3 characters, evokes "collecting things into buckets", no conflicts (`dnf provides bkt` is empty).
+
+### Decision: Implementation Language
+
+**Rust** — Single binary, type-safe manifest handling, clap for CLI, proper error handling, testable.
+
+### Current State
+
+Rust scaffold created in `bkt/`:
+
+```
+bkt/
+├── Cargo.toml              # clap, serde, serde_json, anyhow, thiserror, directories
+└── src/
+    ├── main.rs             # CLI entry with clap derive, 7 subcommands
+    ├── error.rs            # BktError enum with thiserror
+    ├── repo.rs             # RepoConfig struct + find_repo_path()
+    ├── commands/
+    │   ├── mod.rs
+    │   ├── flatpak.rs      # add/remove/list/sync (stubs)
+    │   ├── shim.rs         # add/remove/list/sync (stubs)
+    │   ├── extension.rs    # add/remove/list (stubs)
+    │   ├── gsetting.rs     # set/unset/list/apply (stubs)
+    │   ├── skel.rs         # add/diff/list/migrate (stubs)
+    │   ├── profile.rs      # capture/diff/unowned (stubs)
+    │   └── repo.rs         # info/path (partially implemented)
+    └── manifest/
+        ├── mod.rs
+        ├── flatpak.rs      # FlatpakApp, FlatpakRemote structs
+        ├── extension.rs    # GnomeExtension struct
+        ├── gsetting.rs     # GSetting struct
+        └── shim.rs         # Shim struct
+```
+
+**CLI Aliases:**
+
+- `bkt flatpak` (alias: `fp`)
+- `bkt extension` (alias: `ext`)
+- `bkt gsetting` (alias: `gs`)
 
 ### Proposed Interface
 
@@ -77,14 +115,17 @@ The existing `shim` CLI will be consolidated into `bkt shim`. Benefits:
 
 ### Implementation Plan
 
-1. Create `/usr/bin/bkt` script with subcommand dispatch
-2. Port `shim` logic into `bkt shim` subcommand
-3. Add `bkt flatpak` subcommand
-4. Add `bkt extension` subcommand
-5. Add `bkt gsetting` subcommand
-6. Add `bkt skel` subcommand (see #5)
-7. Add `bkt profile` subcommand (see #4)
-8. Remove standalone `/usr/bin/shim`
+1. ✅ Create Rust scaffold with clap CLI structure
+2. ✅ Define manifest structs matching existing JSON
+3. ✅ Implement `bkt shim` (port from bash `shim` script)
+4. ⬜ Implement `bkt flatpak` subcommand
+5. ⬜ Implement `bkt extension` subcommand
+6. ⬜ Implement `bkt gsetting` subcommand
+7. ⬜ Implement `bkt skel` subcommand (see #5)
+8. ⬜ Implement `bkt profile` subcommand (see #4)
+9. ✅ Add CI build step for bkt binary
+10. ✅ Update Containerfile to install bkt
+11. ⬜ Remove standalone `/usr/bin/shim`
 
 ---
 
