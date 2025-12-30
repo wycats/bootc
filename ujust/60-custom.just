@@ -73,3 +73,11 @@ remote-play-status:
         host systemctl is-enabled "bootc-remote-play-tty2@${user}.service" || true
         host systemctl status --no-pager "bootc-remote-play-tty2@${user}.service" || true
     '
+
+# Check for drift between system state and sources of truth (Containerfile, manifests)
+check-drift:
+    @/usr/local/bin/check-drift
+
+# Check drift with JSON output
+check-drift-json:
+    @/usr/local/bin/check-drift --json

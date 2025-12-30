@@ -126,8 +126,9 @@ COPY manifests/flatpak-apps.txt /usr/local/share/bootc-bootstrap/flatpak-apps.tx
 COPY manifests/gnome-extensions.txt /usr/local/share/bootc-bootstrap/gnome-extensions.txt
 COPY manifests/gsettings.txt /usr/local/share/bootc-bootstrap/gsettings.txt
 COPY scripts/bootc-bootstrap /usr/local/bin/bootc-bootstrap
+COPY scripts/check-drift /usr/local/bin/check-drift
 COPY systemd/user/bootc-bootstrap.service /usr/lib/systemd/user/bootc-bootstrap.service
-RUN chmod 0755 /usr/local/bin/bootc-bootstrap && \
+RUN chmod 0755 /usr/local/bin/bootc-bootstrap /usr/local/bin/check-drift && \
     mkdir -p /usr/lib/systemd/user/default.target.wants && \
     ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service
 
