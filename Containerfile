@@ -130,16 +130,18 @@ COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
 # Host-level config extracted from wycats/asahi-env (now sourced here)
 COPY system/keyd/default.conf /etc/keyd/default.conf
 
-# First-login bootstrap (Flatpak + GNOME extensions)
+# First-login bootstrap (Flatpak + GNOME extensions + host shims)
 RUN mkdir -p /usr/local/share/bootc-bootstrap
 COPY manifests/flatpak-remotes.json /usr/local/share/bootc-bootstrap/flatpak-remotes.json
 COPY manifests/flatpak-apps.json /usr/local/share/bootc-bootstrap/flatpak-apps.json
 COPY manifests/gnome-extensions.json /usr/local/share/bootc-bootstrap/gnome-extensions.json
 COPY manifests/gsettings.json /usr/local/share/bootc-bootstrap/gsettings.json
+COPY manifests/host-shims.json /usr/local/share/bootc-bootstrap/host-shims.json
 COPY scripts/bootc-bootstrap /usr/local/bin/bootc-bootstrap
 COPY scripts/check-drift /usr/local/bin/check-drift
+COPY scripts/shim /usr/local/bin/shim
 COPY systemd/user/bootc-bootstrap.service /usr/lib/systemd/user/bootc-bootstrap.service
-RUN chmod 0755 /usr/local/bin/bootc-bootstrap /usr/local/bin/check-drift && \
+RUN chmod 0755 /usr/local/bin/bootc-bootstrap /usr/local/bin/check-drift /usr/local/bin/shim && \
     mkdir -p /usr/lib/systemd/user/default.target.wants && \
     ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service
 

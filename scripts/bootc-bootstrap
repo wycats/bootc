@@ -154,6 +154,17 @@ apply_gsettings() {
   done
 }
 
+apply_host_shims() {
+  # Generate host shims from manifest
+  # The 'shim' command handles merging system + user manifests
+  if need_cmd shim; then
+    log "Syncing host shims"
+    shim sync || log "shim sync failed (non-fatal)"
+  else
+    log "shim command not found; skipping host shims"
+  fi
+}
+
 apply_all() {
   local hash
   hash="$(manifest_hash)"
@@ -172,6 +183,7 @@ apply_all() {
   apply_flatpak_apps || failed=1
   apply_gnome_extensions || failed=1
   apply_gsettings || failed=1
+  apply_host_shims  # Non-fatal; don't set failed
 
   if [[ $failed -ne 0 ]]; then
     log "One or more steps failed; will retry next login"

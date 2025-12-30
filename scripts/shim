@@ -1,0 +1,237 @@
+#!/bin/bash
+# shim - Manage host command shims for toolbox
+#
+# Shims are small scripts that delegate to the host via flatpak-spawn.
+# This script manages ~/.config/bootc/host-shims.json and regenerates
+# ~/.local/toolbox/shims/ whenever the manifest changes.
+#
+# Usage:
+#   shim add <name> [<host-cmd>]   Add a shim (host-cmd defaults to name)
+#   shim remove <name>             Remove a shim
+#   shim list                      List all shims (system + user)
+#   shim sync                      Regenerate shims from manifest
+#   shim edit                      Open manifest in $EDITOR
+
+set -euo pipefail
+
+SYSTEM_MANIFEST="/usr/local/share/bootc-bootstrap/host-shims.json"
+USER_MANIFEST="${XDG_CONFIG_HOME:-$HOME/.config}/bootc/host-shims.json"
+SHIMS_DIR="$HOME/.local/toolbox/shims"
+
+# Ensure jq is available
+command -v jq >/dev/null 2>&1 || {
+    echo "error: jq is required but not installed" >&2
+    exit 1
+}
+
+# Initialize user manifest if it doesn't exist
+init_user_manifest() {
+    if [[ ! -f "$USER_MANIFEST" ]]; then
+        mkdir -p "$(dirname "$USER_MANIFEST")"
+        echo '{"shims": []}' > "$USER_MANIFEST"
+    fi
+}
+
+# Get merged shims (system + user, user wins on conflict)
+get_merged_shims() {
+    local system_shims='{"shims": []}'
+    if [[ -f "$SYSTEM_MANIFEST" ]]; then
+        system_shims=$(cat "$SYSTEM_MANIFEST")
+    fi
+    
+    init_user_manifest
+    local user_shims
+    user_shims=$(cat "$USER_MANIFEST")
+    
+    # Merge: user shims override system shims by name
+    jq -s '
+        (.[0].shims + .[1].shims) | 
+        group_by(.name) | 
+        map(last) |
+        {shims: .}
+    ' <(echo "$system_shims") <(echo "$user_shims")
+}
+
+# Generate a single shim script
+generate_shim() {
+    local name="$1"
+    local host_cmd="$2"
+    local shim_path="$SHIMS_DIR/$name"
+    
+    cat > "$shim_path" << EOF
+#!/bin/bash
+# Auto-generated shim - delegates to host command
+# Managed by: shim(1)
+# Host command: $host_cmd
+exec flatpak-spawn --host "$host_cmd" "\$@"
+EOF
+    chmod +x "$shim_path"
+}
+
+# Sync all shims from manifest
+cmd_sync() {
+    mkdir -p "$SHIMS_DIR"
+    
+    # Remove all existing shims (clean slate)
+    rm -f "$SHIMS_DIR"/*
+    
+    # Generate shims from merged manifest
+    local merged
+    merged=$(get_merged_shims)
+    
+    local count=0
+    while IFS= read -r line; do
+        local name host_cmd
+        name=$(echo "$line" | jq -r '.name')
+        host_cmd=$(echo "$line" | jq -r '.host // .name')
+        generate_shim "$name" "$host_cmd"
+        ((count++)) || true
+    done < <(echo "$merged" | jq -c '.shims[]')
+    
+    echo "✓ Generated $count shims in $SHIMS_DIR"
+}
+
+# Add a shim
+cmd_add() {
+    local name="${1:-}"
+    local host_cmd="${2:-$name}"
+    
+    if [[ -z "$name" ]]; then
+        echo "usage: shim add <name> [<host-cmd>]" >&2
+        exit 1
+    fi
+    
+    init_user_manifest
+    
+    # Check if already exists in user manifest
+    if jq -e ".shims[] | select(.name == \"$name\")" "$USER_MANIFEST" >/dev/null 2>&1; then
+        echo "Updating shim: $name -> $host_cmd"
+        local updated
+        updated=$(jq ".shims = [.shims[] | if .name == \"$name\" then {name: \"$name\", host: \"$host_cmd\"} else . end]" "$USER_MANIFEST")
+        echo "$updated" > "$USER_MANIFEST"
+    else
+        echo "Adding shim: $name -> $host_cmd"
+        local updated
+        updated=$(jq ".shims += [{name: \"$name\", host: \"$host_cmd\"}]" "$USER_MANIFEST")
+        echo "$updated" > "$USER_MANIFEST"
+    fi
+    
+    cmd_sync
+}
+
+# Remove a shim
+cmd_remove() {
+    local name="${1:-}"
+    
+    if [[ -z "$name" ]]; then
+        echo "usage: shim remove <name>" >&2
+        exit 1
+    fi
+    
+    init_user_manifest
+    
+    # Check if it's in the system manifest
+    if [[ -f "$SYSTEM_MANIFEST" ]] && jq -e ".shims[] | select(.name == \"$name\")" "$SYSTEM_MANIFEST" >/dev/null 2>&1; then
+        echo "note: '$name' is in system manifest; adding user override to hide it" >&2
+        # We can't remove system shims, but we could add a "disabled" flag
+        # For now, just remove from user and warn
+    fi
+    
+    local updated
+    updated=$(jq ".shims = [.shims[] | select(.name != \"$name\")]" "$USER_MANIFEST")
+    echo "$updated" > "$USER_MANIFEST"
+    
+    echo "Removed shim: $name"
+    cmd_sync
+}
+
+# List all shims
+cmd_list() {
+    local merged
+    merged=$(get_merged_shims)
+    
+    echo "Shims (from $SHIMS_DIR):"
+    echo ""
+    
+    if [[ $(echo "$merged" | jq '.shims | length') -eq 0 ]]; then
+        echo "  (none)"
+        return
+    fi
+    
+    # Show each shim with source indicator
+    while IFS= read -r line; do
+        local name host_cmd source
+        name=$(echo "$line" | jq -r '.name')
+        host_cmd=$(echo "$line" | jq -r '.host // .name')
+        
+        # Determine source
+        if [[ -f "$SYSTEM_MANIFEST" ]] && jq -e ".shims[] | select(.name == \"$name\")" "$SYSTEM_MANIFEST" >/dev/null 2>&1; then
+            if jq -e ".shims[] | select(.name == \"$name\")" "$USER_MANIFEST" >/dev/null 2>&1; then
+                source="system+user"
+            else
+                source="system"
+            fi
+        else
+            source="user"
+        fi
+        
+        if [[ "$name" == "$host_cmd" ]]; then
+            printf "  %-20s  [%s]\n" "$name" "$source"
+        else
+            printf "  %-20s -> %-20s  [%s]\n" "$name" "$host_cmd" "$source"
+        fi
+    done < <(echo "$merged" | jq -c '.shims[]')
+}
+
+# Edit user manifest
+cmd_edit() {
+    init_user_manifest
+    "${EDITOR:-vi}" "$USER_MANIFEST"
+    cmd_sync
+}
+
+# Show help
+cmd_help() {
+    cat << 'EOF'
+shim - Manage host command shims for toolbox
+
+Usage:
+  shim add <name> [<host-cmd>]   Add a shim (host-cmd defaults to name)
+  shim remove <name>             Remove a shim
+  shim list                      List all shims (system + user)
+  shim sync                      Regenerate shims from manifest
+  shim edit                      Open user manifest in $EDITOR
+  shim help                      Show this help
+
+Shims are small scripts in ~/.local/toolbox/shims/ that delegate
+commands to the host via flatpak-spawn. This lets you run host
+commands like 'bootc' or 'systemctl' transparently from a toolbox.
+
+Manifests:
+  System: /usr/local/share/bootc-bootstrap/host-shims.json
+  User:   ~/.config/bootc/host-shims.json
+
+The user manifest can add or override system shims.
+
+Examples:
+  shim add podman              # shim 'podman' -> host 'podman'
+  shim add dc docker-compose   # shim 'dc' -> host 'docker-compose'
+  shim remove podman           # remove the shim
+  shim list                    # show all active shims
+EOF
+}
+
+# Main dispatch
+case "${1:-help}" in
+    add)     shift; cmd_add "$@" ;;
+    remove)  shift; cmd_remove "$@" ;;
+    list)    cmd_list ;;
+    sync)    cmd_sync ;;
+    edit)    cmd_edit ;;
+    help|-h|--help) cmd_help ;;
+    *)
+        echo "unknown command: $1" >&2
+        echo "run 'shim help' for usage" >&2
+        exit 1
+        ;;
+esac

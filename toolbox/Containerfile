@@ -65,8 +65,9 @@ LABEL com.github.containers.toolbox="true"
 # Additional PATH entries for user-installed toolchains
 # Note: In toolbox, $HOME is bind-mounted from host, so username matches host user
 # Using ARG with default for build-time, but at runtime toolbox handles this
+# Order: custom scripts > host shims > toolchains
 ARG USERNAME=wycats
-ENV PATH="/home/${USERNAME}/.local/toolbox/bin:/home/${USERNAME}/.nix-profile/bin:/home/${USERNAME}/.cargo/bin:/home/${USERNAME}/.proto/bin:${PATH}"
+ENV PATH="/home/${USERNAME}/.local/bin:/home/${USERNAME}/.local/toolbox/bin:/home/${USERNAME}/.local/toolbox/shims:/home/${USERNAME}/.nix-profile/bin:/home/${USERNAME}/.cargo/bin:/home/${USERNAME}/.proto/bin:${PATH}"
 
 # Default shell
 ENV SHELL=/usr/bin/bash
