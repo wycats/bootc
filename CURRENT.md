@@ -8,7 +8,7 @@ This document tracks the improvements identified during the codebase review. Wor
 
 | ID  | Item                                                                | Priority  | Status |
 | --- | ------------------------------------------------------------------- | --------- | ------ |
-| 1   | [Unified manifest CLI (`bkt`)](#1-unified-manifest-cli-bkt)         | 🔴 High   | 🟡     |
+| 1   | [Unified manifest CLI (`bkt`)](#1-unified-manifest-cli-bkt)         | 🔴 High   | ✅     |
 | 2   | [PR automation (`--pr` flag)](#2-pr-automation---pr-flag)           | 🔴 High   | ✅     |
 | 3   | [Repository identity metadata](#3-repository-identity-metadata)     | 🔴 High   | ✅     |
 | 4   | [System profile rationalization](#4-system-profile-rationalization) | 🔴 High   | ✅     |
@@ -18,13 +18,13 @@ This document tracks the improvements identified during the codebase review. Wor
 | 8   | [Machine detection](#8-machine-detection)                           | 🟢 Low    | ⬜     |
 | 9   | [Secrets documentation](#9-secrets-documentation)                   | 🟢 Low    | ⬜     |
 | 10  | [Structural cleanup](#10-structural-cleanup)                        | 🟢 Low    | ⬜     |
-| 11  | [Stale documentation fixes](#11-stale-documentation-fixes)          | 🟢 Low    | ⬜     |
+| 11  | [Stale documentation fixes](#11-stale-documentation-fixes)          | 🟢 Low    | 🟡     |
 
 ---
 
 ## 1. Unified Manifest CLI (`bkt`)
 
-**Status:** 🟡 In progress — `bkt shim` fully implemented, other commands are stubs
+**Status:** ✅ Complete — all commands implemented with `--pr` support, comprehensive test suite (105 tests)
 
 ### Problem
 
@@ -45,6 +45,9 @@ Rust CLI in `bkt/`:
 ```
 bkt/
 ├── Cargo.toml              # clap, serde, serde_json, anyhow, thiserror, directories, chrono, whoami
+├── tests/
+│   ├── cli.rs              # 34 integration tests using assert_cmd
+│   └── properties.rs       # 11 property-based tests using proptest
 └── src/
     ├── main.rs             # CLI entry with clap derive, 7 subcommands
     ├── error.rs            # BktError enum with thiserror
@@ -58,14 +61,16 @@ bkt/
     │   ├── gsetting.rs     # set/unset/list/apply (✅ complete with --pr)
     │   ├── skel.rs         # add/diff/list/sync (✅ complete with --pr)
     │   ├── profile.rs      # capture/diff/unowned (✅ complete)
-    │   └── repo.rs         # info/path (partially implemented)
+    │   └── repo.rs         # info/path (✅ complete)
     └── manifest/
         ├── mod.rs
         ├── flatpak.rs      # FlatpakApp, FlatpakRemote with load/save/merge (✅ complete)
         ├── extension.rs    # GnomeExtensionsManifest with load/save/merge (✅ complete)
         ├── gsetting.rs     # GSettingsManifest with load/save/merge (✅ complete)
-        └── shim.rs         # Shim struct with load/save/merge (✅ complete)
+        └── shim.rs         # Shim struct with load/save/merge (✅ complete) + 60 unit tests
 ```
+
+**CI/CD:** GitHub Actions workflow (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy`, `cargo test`, and `cargo build --release` on every push/PR.
 
 **CLI Aliases:**
 
@@ -119,14 +124,15 @@ The existing `shim` CLI will be consolidated into `bkt shim`. Benefits:
 1. ✅ Create Rust scaffold with clap CLI structure
 2. ✅ Define manifest structs matching existing JSON
 3. ✅ Implement `bkt shim` (port from bash `shim` script)
-4. ⬜ Implement `bkt flatpak` subcommand
-5. ⬜ Implement `bkt extension` subcommand
-6. ⬜ Implement `bkt gsetting` subcommand
-7. ⬜ Implement `bkt skel` subcommand (see #5)
-8. ⬜ Implement `bkt profile` subcommand (see #4)
+4. ✅ Implement `bkt flatpak` subcommand
+5. ✅ Implement `bkt extension` subcommand
+6. ✅ Implement `bkt gsetting` subcommand
+7. ✅ Implement `bkt skel` subcommand (see #5)
+8. ✅ Implement `bkt profile` subcommand (see #4)
 9. ✅ Add CI build step for bkt binary
 10. ✅ Update Containerfile to install bkt
 11. ⬜ Remove standalone `/usr/bin/shim`
+12. ✅ Add comprehensive test suite (60 unit + 34 integration + 11 property tests)
 
 ---
 

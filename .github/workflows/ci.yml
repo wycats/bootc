@@ -4,13 +4,13 @@ on:
   push:
     branches: [main]
     paths:
-      - 'bkt/**'
-      - '.github/workflows/ci.yml'
+      - "bkt/**"
+      - ".github/workflows/ci.yml"
   pull_request:
     branches: [main]
     paths:
-      - 'bkt/**'
-      - '.github/workflows/ci.yml'
+      - "bkt/**"
+      - ".github/workflows/ci.yml"
 
 env:
   CARGO_TERM_COLOR: always
