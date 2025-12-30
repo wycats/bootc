@@ -49,8 +49,14 @@ RUN dnf install -y \
     pinentry-gnome3 \
     && dnf clean all
 
-# Nushell
-RUN dnf install -y nushell && dnf clean all
+# Nushell: not in Fedora 42 repos, download from GitHub releases
+RUN curl -fsSL https://github.com/nushell/nushell/releases/latest/download/nu-0.109.1-x86_64-unknown-linux-gnu.tar.gz \
+    | tar xz --strip-components=1 -C /usr/local/bin \
+        nu-0.109.1-x86_64-unknown-linux-gnu/nu \
+        nu-0.109.1-x86_64-unknown-linux-gnu/nu_plugin_query \
+        nu-0.109.1-x86_64-unknown-linux-gnu/nu_plugin_polars \
+        nu-0.109.1-x86_64-unknown-linux-gnu/nu_plugin_formats \
+        nu-0.109.1-x86_64-unknown-linux-gnu/nu_plugin_gstat
 
 # Set PATH via container labels so it works regardless of entry method
 # This is read by toolbox/podman and prepended to PATH
