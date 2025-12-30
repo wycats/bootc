@@ -33,6 +33,15 @@ env:
   GETNF_SHA256_FILE: upstream/getnf.sha256
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check ostree filesystem patterns
+        run: ./scripts/check-ostree-paths Containerfile
+
   check-upstream:
     runs-on: ubuntu-latest
     outputs:

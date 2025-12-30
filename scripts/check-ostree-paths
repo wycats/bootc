@@ -1,0 +1,127 @@
+#!/bin/bash
+# check-ostree-paths - Detect common ostree filesystem mistakes in the image
+#
+# Run this during CI or locally to catch issues before they hit the live system.
+
+set -euo pipefail
+
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+ERRORS=0
+WARNINGS=0
+
+error() {
+    echo -e "${RED}ERROR:${NC} $1"
+    ERRORS=$((ERRORS + 1))
+}
+
+warn() {
+    echo -e "${YELLOW}WARNING:${NC} $1"
+    WARNINGS=$((WARNINGS + 1))
+}
+
+ok() {
+    echo -e "${GREEN}OK:${NC} $1"
+}
+
+echo "Checking Containerfile for ostree filesystem patterns..."
+echo
+
+CONTAINERFILE="${1:-Containerfile}"
+
+if [[ ! -f "$CONTAINERFILE" ]]; then
+    echo "Usage: $0 [Containerfile]"
+    exit 1
+fi
+
+# Check for /usr/local usage (should be /usr instead)
+echo "=== Checking /usr/local usage ==="
+if grep -n '/usr/local/bin' "$CONTAINERFILE" | grep -v '^#' | grep -v 'grep' >/dev/null 2>&1; then
+    error "/usr/local/bin found in Containerfile"
+    echo "       On ostree, /usr/local -> /var/usrlocal (persistent, not updated)"
+    echo "       Use /usr/bin instead"
+    grep -n '/usr/local/bin' "$CONTAINERFILE" | grep -v '^#' | head -5
+    echo
+else
+    ok "No /usr/local/bin references"
+fi
+
+if grep -n '/usr/local/share' "$CONTAINERFILE" | grep -v '^#' | grep -v 'grep' >/dev/null 2>&1; then
+    error "/usr/local/share found in Containerfile"
+    echo "       Use /usr/share instead"
+    grep -n '/usr/local/share' "$CONTAINERFILE" | grep -v '^#' | head -5
+    echo
+else
+    ok "No /usr/local/share references"
+fi
+
+# Check for packages that install to /opt
+echo
+echo "=== Checking /opt handling ==="
+
+# Known packages that install to /opt
+OPT_PACKAGES="1password microsoft-edge-stable google-chrome"
+NEEDS_OPT_FIX=0
+
+for pkg in $OPT_PACKAGES; do
+    if grep -q "$pkg" "$CONTAINERFILE"; then
+        warn "Package '$pkg' installs to /opt"
+        NEEDS_OPT_FIX=1
+    fi
+done
+
+if [[ $NEEDS_OPT_FIX -eq 1 ]]; then
+    # Check if we have the optfix pattern
+    if grep -q '/usr/lib/opt' "$CONTAINERFILE" && grep -q 'tmpfiles.d' "$CONTAINERFILE"; then
+        ok "Found /opt relocation pattern (copy to /usr/lib/opt + tmpfiles.d)"
+    else
+        error "Packages install to /opt but no relocation pattern found"
+        echo "       Add the /opt -> /usr/lib/opt copy and tmpfiles.d symlinks"
+        echo "       See docs/OSTREE-PATTERNS.md for details"
+    fi
+fi
+echo
+
+# Check for keyd PREFIX
+echo "=== Checking keyd installation ==="
+if grep -q 'keyd' "$CONTAINERFILE"; then
+    if grep -q 'PREFIX=/usr' "$CONTAINERFILE" || grep -q 'DESTDIR.*usr' "$CONTAINERFILE"; then
+        ok "keyd uses PREFIX=/usr (installs to /usr, not /usr/local)"
+    else
+        warn "keyd found but no PREFIX=/usr - it may install to /usr/local"
+        echo "       Use: make -C /tmp/keyd PREFIX=/usr install"
+    fi
+fi
+echo
+
+# Check scripts for /usr/local references
+echo "=== Checking scripts for /usr/local ==="
+SCRIPT_ISSUES=0
+for script in scripts/*; do
+    # Skip this script itself (it mentions /usr/local in comments/docs)
+    [[ "$script" == "scripts/check-ostree-paths" ]] && continue
+    if [[ -f "$script" ]] && grep -v '^#' "$script" | grep -q '/usr/local' 2>/dev/null; then
+        error "Script $script contains /usr/local references"
+        SCRIPT_ISSUES=1
+    fi
+done
+if [[ $SCRIPT_ISSUES -eq 0 ]]; then
+    ok "No scripts reference /usr/local"
+fi
+echo
+
+# Summary
+echo "========================================="
+if [[ $ERRORS -gt 0 ]]; then
+    echo -e "${RED}FAILED:${NC} $ERRORS error(s), $WARNINGS warning(s)"
+    exit 1
+elif [[ $WARNINGS -gt 0 ]]; then
+    echo -e "${YELLOW}PASSED with warnings:${NC} $WARNINGS warning(s)"
+    exit 0
+else
+    echo -e "${GREEN}PASSED:${NC} No issues found"
+    exit 0
+fi
