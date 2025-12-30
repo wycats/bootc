@@ -154,6 +154,7 @@ impl FlatpakAppsManifest {
 }
 
 /// A Flatpak remote entry.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlatpakRemote {
     /// Remote name
@@ -168,9 +169,184 @@ pub struct FlatpakRemote {
 }
 
 /// The flatpak-remotes.json manifest.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FlatpakRemotesManifest {
     #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,
     pub remotes: Vec<FlatpakRemote>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_app(id: &str) -> FlatpakApp {
+        FlatpakApp {
+            id: id.to_string(),
+            remote: "flathub".to_string(),
+            scope: FlatpakScope::System,
+        }
+    }
+
+    fn sample_app_user(id: &str) -> FlatpakApp {
+        FlatpakApp {
+            id: id.to_string(),
+            remote: "flathub".to_string(),
+            scope: FlatpakScope::User,
+        }
+    }
+
+    // FlatpakScope tests
+    #[test]
+    fn scope_display() {
+        assert_eq!(FlatpakScope::System.to_string(), "system");
+        assert_eq!(FlatpakScope::User.to_string(), "user");
+    }
+
+    #[test]
+    fn scope_from_str() {
+        assert_eq!(
+            "system".parse::<FlatpakScope>().unwrap(),
+            FlatpakScope::System
+        );
+        assert_eq!("user".parse::<FlatpakScope>().unwrap(), FlatpakScope::User);
+        assert_eq!("USER".parse::<FlatpakScope>().unwrap(), FlatpakScope::User);
+        assert!("invalid".parse::<FlatpakScope>().is_err());
+    }
+
+    // FlatpakAppsManifest tests
+    #[test]
+    fn manifest_default_is_empty() {
+        let manifest = FlatpakAppsManifest::default();
+        assert!(manifest.apps.is_empty());
+        assert!(manifest.schema.is_none());
+    }
+
+    #[test]
+    fn manifest_find_returns_matching_app() {
+        let mut manifest = FlatpakAppsManifest::default();
+        manifest.apps.push(sample_app("org.gnome.Calculator"));
+
+        let found = manifest.find("org.gnome.Calculator");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().id, "org.gnome.Calculator");
+    }
+
+    #[test]
+    fn manifest_find_returns_none_for_missing() {
+        let manifest = FlatpakAppsManifest::default();
+        assert!(manifest.find("nonexistent").is_none());
+    }
+
+    #[test]
+    fn manifest_upsert_adds_new_app() {
+        let mut manifest = FlatpakAppsManifest::default();
+        manifest.upsert(sample_app("org.gnome.Calculator"));
+
+        assert_eq!(manifest.apps.len(), 1);
+        assert_eq!(manifest.apps[0].id, "org.gnome.Calculator");
+    }
+
+    #[test]
+    fn manifest_upsert_updates_existing_app() {
+        let mut manifest = FlatpakAppsManifest::default();
+        manifest.upsert(sample_app("org.gnome.Calculator"));
+        manifest.upsert(sample_app_user("org.gnome.Calculator"));
+
+        assert_eq!(manifest.apps.len(), 1);
+        assert_eq!(manifest.apps[0].scope, FlatpakScope::User);
+    }
+
+    #[test]
+    fn manifest_upsert_maintains_sorted_order() {
+        let mut manifest = FlatpakAppsManifest::default();
+        manifest.upsert(sample_app("org.z.App"));
+        manifest.upsert(sample_app("org.a.App"));
+        manifest.upsert(sample_app("org.m.App"));
+
+        let ids: Vec<_> = manifest.apps.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, vec!["org.a.App", "org.m.App", "org.z.App"]);
+    }
+
+    #[test]
+    fn manifest_remove_returns_true_when_found() {
+        let mut manifest = FlatpakAppsManifest::default();
+        manifest.apps.push(sample_app("org.gnome.Calculator"));
+
+        assert!(manifest.remove("org.gnome.Calculator"));
+        assert!(manifest.apps.is_empty());
+    }
+
+    #[test]
+    fn manifest_remove_returns_false_when_not_found() {
+        let mut manifest = FlatpakAppsManifest::default();
+        assert!(!manifest.remove("nonexistent"));
+    }
+
+    #[test]
+    fn manifest_merged_combines_system_and_user() {
+        let mut system = FlatpakAppsManifest::default();
+        system.apps.push(sample_app("org.gnome.Calculator"));
+
+        let mut user = FlatpakAppsManifest::default();
+        user.apps.push(sample_app("org.custom.App"));
+
+        let merged = FlatpakAppsManifest::merged(&system, &user);
+
+        assert_eq!(merged.apps.len(), 2);
+        assert!(merged.find("org.gnome.Calculator").is_some());
+        assert!(merged.find("org.custom.App").is_some());
+    }
+
+    #[test]
+    fn manifest_merged_user_overrides_system() {
+        let mut system = FlatpakAppsManifest::default();
+        system.apps.push(sample_app("org.gnome.Calculator"));
+
+        let mut user = FlatpakAppsManifest::default();
+        user.apps.push(sample_app_user("org.gnome.Calculator"));
+
+        let merged = FlatpakAppsManifest::merged(&system, &user);
+
+        assert_eq!(merged.apps.len(), 1);
+        assert_eq!(
+            merged.find("org.gnome.Calculator").unwrap().scope,
+            FlatpakScope::User
+        );
+    }
+
+    #[test]
+    fn manifest_serialization_roundtrip() {
+        let mut manifest = FlatpakAppsManifest::default();
+        manifest.apps.push(sample_app("org.gnome.Calculator"));
+        manifest.apps.push(sample_app_user("org.custom.App"));
+
+        let json = serde_json::to_string(&manifest).unwrap();
+        let parsed: FlatpakAppsManifest = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.apps.len(), 2);
+    }
+
+    #[test]
+    fn manifest_load_save_roundtrip() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let path = tmp_dir.path().join("test-flatpak.json");
+
+        let mut manifest = FlatpakAppsManifest::default();
+        manifest.apps.push(sample_app("org.gnome.Calculator"));
+
+        manifest.save(&path).unwrap();
+        let loaded = FlatpakAppsManifest::load(&path).unwrap();
+
+        assert_eq!(loaded.apps.len(), 1);
+        assert!(loaded.find("org.gnome.Calculator").is_some());
+    }
+
+    #[test]
+    fn manifest_load_nonexistent_returns_default() {
+        let path = PathBuf::from("/nonexistent/path/flatpak.json");
+        let manifest = FlatpakAppsManifest::load(&path).unwrap();
+        assert!(manifest.apps.is_empty());
+    }
 }

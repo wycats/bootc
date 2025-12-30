@@ -1,7 +1,7 @@
 //! Flatpak command implementation.
 
 use crate::manifest::{FlatpakApp, FlatpakAppsManifest, FlatpakScope};
-use crate::pr::{run_pr_workflow, PrChange};
+use crate::pr::{PrChange, run_pr_workflow};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use std::process::Command;
@@ -273,7 +273,7 @@ pub fn run(args: FlatpakArgs) -> Result<()> {
                     return Ok(());
                 }
 
-                println!("{:<50} {:<12} {:<8} {}", "ID", "REMOTE", "SCOPE", "SOURCE");
+                println!("{:<50} {:<12} {:<8} SOURCE", "ID", "REMOTE", "SCOPE");
                 println!("{}", "-".repeat(80));
 
                 for app in &merged.apps {

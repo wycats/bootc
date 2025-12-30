@@ -2,7 +2,7 @@
 //!
 //! Captures current system state and compares against manifests.
 
-use crate::manifest::{FlatpakAppsManifest, GnomeExtensionsManifest, GSettingsManifest};
+use crate::manifest::{FlatpakAppsManifest, GSettingsManifest, GnomeExtensionsManifest};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
@@ -107,7 +107,11 @@ fn get_installed_extensions() -> Result<Vec<String>> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(stdout.lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+    Ok(stdout
+        .lines()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect())
 }
 
 /// Get list of enabled GNOME extensions.
@@ -122,7 +126,7 @@ fn get_enabled_extensions() -> Result<Vec<String>> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    
+
     // Parse GVariant array format: ['ext1@author', 'ext2@author']
     // Remove brackets and split by comma
     let trimmed = stdout.trim_start_matches('[').trim_end_matches(']');
@@ -149,7 +153,7 @@ fn get_hostname() -> String {
 /// Capture the full system profile.
 fn capture_profile() -> Result<SystemProfile> {
     let now = chrono::Utc::now().to_rfc3339();
-    
+
     let flatpaks = get_installed_flatpaks().unwrap_or_default();
     let installed_exts = get_installed_extensions().unwrap_or_default();
     let enabled_exts = get_enabled_extensions().unwrap_or_default();
@@ -173,10 +177,10 @@ fn show_diff(section: Option<&str>) -> Result<()> {
     // Flatpak diff
     if show_all || section == "flatpak" || section == "fp" {
         println!("=== FLATPAK DIFF ===\n");
-        
+
         let manifest = FlatpakAppsManifest::load_system()?;
         let installed = get_installed_flatpaks()?;
-        
+
         let manifest_ids: HashSet<String> = manifest.apps.iter().map(|a| a.id.clone()).collect();
         let installed_ids: HashSet<String> = installed.iter().map(|a| a.id.clone()).collect();
 
@@ -206,10 +210,10 @@ fn show_diff(section: Option<&str>) -> Result<()> {
     // Extension diff
     if show_all || section == "extension" || section == "ext" {
         println!("=== EXTENSION DIFF ===\n");
-        
+
         let manifest = GnomeExtensionsManifest::load_system()?;
         let installed = get_installed_extensions()?;
-        
+
         let manifest_set: HashSet<String> = manifest.extensions.into_iter().collect();
         let installed_set: HashSet<String> = installed.into_iter().collect();
 
@@ -239,9 +243,9 @@ fn show_diff(section: Option<&str>) -> Result<()> {
     // GSettings diff
     if show_all || section == "gsetting" || section == "gs" {
         println!("=== GSETTINGS DIFF ===\n");
-        
+
         let manifest = GSettingsManifest::load_system()?;
-        
+
         if manifest.settings.is_empty() {
             println!("(no gsettings in manifest)\n");
         } else {
@@ -263,13 +267,19 @@ fn show_diff(section: Option<&str>) -> Result<()> {
                         drifted += 1;
                     }
                 } else {
-                    println!("? {}.{} (could not read current value)\n", setting.schema, setting.key);
+                    println!(
+                        "? {}.{} (could not read current value)\n",
+                        setting.schema, setting.key
+                    );
                     drifted += 1;
                 }
             }
 
             if drifted == 0 {
-                println!("✓ All {} settings match manifest\n", manifest.settings.len());
+                println!(
+                    "✓ All {} settings match manifest\n",
+                    manifest.settings.len()
+                );
             }
         }
     }

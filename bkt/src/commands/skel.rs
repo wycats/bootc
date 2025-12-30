@@ -2,7 +2,7 @@
 //!
 //! Manages dotfiles that get copied to /etc/skel in the image.
 
-use crate::pr::{run_pr_workflow, PrChange};
+use crate::pr::{PrChange, run_pr_workflow};
 use crate::repo::find_repo_path;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -142,11 +142,7 @@ pub fn run(args: SkelArgs) -> Result<()> {
 
             // Copy the file
             fs::copy(&source, &dest).with_context(|| {
-                format!(
-                    "Failed to copy {} to {}",
-                    source.display(),
-                    dest.display()
-                )
+                format!("Failed to copy {} to {}", source.display(), dest.display())
             })?;
 
             println!("Added to skel: {}", file);

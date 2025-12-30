@@ -6,7 +6,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 use crate::manifest::{Shim, ShimsManifest};
-use crate::pr::{run_pr_workflow, PrChange};
+use crate::pr::{PrChange, run_pr_workflow};
 
 #[derive(Debug, Args)]
 pub struct ShimArgs {
@@ -73,8 +73,9 @@ fn sync_shims(dry_run: bool) -> Result<()> {
 
     if !dry_run {
         // Create shims directory
-        fs::create_dir_all(&shims_dir)
-            .with_context(|| format!("Failed to create shims directory: {}", shims_dir.display()))?;
+        fs::create_dir_all(&shims_dir).with_context(|| {
+            format!("Failed to create shims directory: {}", shims_dir.display())
+        })?;
 
         // Remove all existing shims (clean slate)
         if shims_dir.exists() {
@@ -134,7 +135,11 @@ pub fn run(args: ShimArgs) -> Result<()> {
             let host_cmd = host.clone().unwrap_or_else(|| name.clone());
             let shim = Shim {
                 name: name.clone(),
-                host: if host_cmd == name { None } else { Some(host_cmd.clone()) },
+                host: if host_cmd == name {
+                    None
+                } else {
+                    Some(host_cmd.clone())
+                },
             };
 
             // Load and update user manifest
@@ -157,7 +162,11 @@ pub fn run(args: ShimArgs) -> Result<()> {
                 let mut system = ShimsManifest::load_system()?;
                 let shim_for_pr = Shim {
                     name: name.clone(),
-                    host: if host_cmd == name { None } else { Some(host_cmd.clone()) },
+                    host: if host_cmd == name {
+                        None
+                    } else {
+                        Some(host_cmd.clone())
+                    },
                 };
                 system.upsert(shim_for_pr);
                 let manifest_content = serde_json::to_string_pretty(&system)?;
@@ -232,7 +241,12 @@ pub fn run(args: ShimArgs) -> Result<()> {
                         if shim.name == shim.host_cmd() {
                             println!("  {:<20}  [{}]", shim.name, source);
                         } else {
-                            println!("  {:<20} -> {:<20}  [{}]", shim.name, shim.host_cmd(), source);
+                            println!(
+                                "  {:<20} -> {:<20}  [{}]",
+                                shim.name,
+                                shim.host_cmd(),
+                                source
+                            );
                         }
                     }
                 }

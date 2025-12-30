@@ -49,10 +49,7 @@ impl GSettingsManifest {
             format!("Failed to read gsettings manifest from {}", path.display())
         })?;
         let manifest: Self = serde_json::from_str(&content).with_context(|| {
-            format!(
-                "Failed to parse gsettings manifest from {}",
-                path.display()
-            )
+            format!("Failed to parse gsettings manifest from {}", path.display())
         })?;
         Ok(manifest)
     }
@@ -65,12 +62,8 @@ impl GSettingsManifest {
         }
         let content =
             serde_json::to_string_pretty(self).context("Failed to serialize gsettings manifest")?;
-        fs::write(path, content).with_context(|| {
-            format!(
-                "Failed to write gsettings manifest to {}",
-                path.display()
-            )
-        })?;
+        fs::write(path, content)
+            .with_context(|| format!("Failed to write gsettings manifest to {}", path.display()))?;
         Ok(())
     }
 
@@ -111,7 +104,7 @@ impl GSettingsManifest {
         }
 
         let mut settings: Vec<GSetting> = by_key.into_values().collect();
-        settings.sort_by(|a, b| a.unique_key().cmp(&b.unique_key()));
+        settings.sort_by_key(|a| a.unique_key());
 
         Self {
             schema: None,
@@ -137,8 +130,7 @@ impl GSettingsManifest {
         } else {
             self.settings.push(setting);
         }
-        self.settings
-            .sort_by(|a, b| a.unique_key().cmp(&b.unique_key()));
+        self.settings.sort_by_key(|a| a.unique_key());
     }
 
     /// Remove a setting. Returns true if removed.
@@ -147,5 +139,237 @@ impl GSettingsManifest {
         self.settings
             .retain(|s| !(s.schema == schema && s.key == key));
         self.settings.len() < len_before
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_setting(schema: &str, key: &str, value: &str) -> GSetting {
+        GSetting {
+            schema: schema.to_string(),
+            key: key.to_string(),
+            value: value.to_string(),
+            comment: None,
+        }
+    }
+
+    fn sample_setting_with_comment(
+        schema: &str,
+        key: &str,
+        value: &str,
+        comment: &str,
+    ) -> GSetting {
+        GSetting {
+            schema: schema.to_string(),
+            key: key.to_string(),
+            value: value.to_string(),
+            comment: Some(comment.to_string()),
+        }
+    }
+
+    #[test]
+    fn gsetting_unique_key() {
+        let setting = sample_setting(
+            "org.gnome.desktop.interface",
+            "color-scheme",
+            "'prefer-dark'",
+        );
+        assert_eq!(
+            setting.unique_key(),
+            "org.gnome.desktop.interface.color-scheme"
+        );
+    }
+
+    #[test]
+    fn manifest_default_is_empty() {
+        let manifest = GSettingsManifest::default();
+        assert!(manifest.settings.is_empty());
+        assert!(manifest.schema.is_none());
+    }
+
+    #[test]
+    fn manifest_find_returns_matching_setting() {
+        let mut manifest = GSettingsManifest::default();
+        manifest.settings.push(sample_setting(
+            "org.gnome.desktop.interface",
+            "color-scheme",
+            "'prefer-dark'",
+        ));
+
+        let found = manifest.find("org.gnome.desktop.interface", "color-scheme");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().value, "'prefer-dark'");
+    }
+
+    #[test]
+    fn manifest_find_returns_none_for_missing() {
+        let manifest = GSettingsManifest::default();
+        assert!(manifest.find("nonexistent.schema", "key").is_none());
+    }
+
+    #[test]
+    fn manifest_upsert_adds_new_setting() {
+        let mut manifest = GSettingsManifest::default();
+        manifest.upsert(sample_setting(
+            "org.gnome.desktop.interface",
+            "color-scheme",
+            "'prefer-dark'",
+        ));
+
+        assert_eq!(manifest.settings.len(), 1);
+    }
+
+    #[test]
+    fn manifest_upsert_updates_existing_setting() {
+        let mut manifest = GSettingsManifest::default();
+        manifest.upsert(sample_setting(
+            "org.gnome.desktop.interface",
+            "color-scheme",
+            "'prefer-dark'",
+        ));
+        manifest.upsert(sample_setting(
+            "org.gnome.desktop.interface",
+            "color-scheme",
+            "'prefer-light'",
+        ));
+
+        assert_eq!(manifest.settings.len(), 1);
+        assert_eq!(
+            manifest
+                .find("org.gnome.desktop.interface", "color-scheme")
+                .unwrap()
+                .value,
+            "'prefer-light'"
+        );
+    }
+
+    #[test]
+    fn manifest_upsert_maintains_sorted_order() {
+        let mut manifest = GSettingsManifest::default();
+        manifest.upsert(sample_setting("z.schema", "key", "val"));
+        manifest.upsert(sample_setting("a.schema", "key", "val"));
+
+        assert_eq!(manifest.settings[0].schema, "a.schema");
+        assert_eq!(manifest.settings[1].schema, "z.schema");
+    }
+
+    #[test]
+    fn manifest_remove_returns_true_when_found() {
+        let mut manifest = GSettingsManifest::default();
+        manifest.settings.push(sample_setting(
+            "org.gnome.desktop.interface",
+            "color-scheme",
+            "'prefer-dark'",
+        ));
+
+        assert!(manifest.remove("org.gnome.desktop.interface", "color-scheme"));
+        assert!(manifest.settings.is_empty());
+    }
+
+    #[test]
+    fn manifest_remove_returns_false_when_not_found() {
+        let mut manifest = GSettingsManifest::default();
+        assert!(!manifest.remove("nonexistent.schema", "key"));
+    }
+
+    #[test]
+    fn manifest_merged_combines_settings() {
+        let mut system = GSettingsManifest::default();
+        system
+            .settings
+            .push(sample_setting("system.schema", "key", "sys-val"));
+
+        let mut user = GSettingsManifest::default();
+        user.settings
+            .push(sample_setting("user.schema", "key", "user-val"));
+
+        let merged = GSettingsManifest::merged(&system, &user);
+
+        assert_eq!(merged.settings.len(), 2);
+        assert!(merged.find("system.schema", "key").is_some());
+        assert!(merged.find("user.schema", "key").is_some());
+    }
+
+    #[test]
+    fn manifest_merged_user_overrides_system() {
+        let mut system = GSettingsManifest::default();
+        system
+            .settings
+            .push(sample_setting("shared.schema", "key", "system-value"));
+
+        let mut user = GSettingsManifest::default();
+        user.settings
+            .push(sample_setting("shared.schema", "key", "user-value"));
+
+        let merged = GSettingsManifest::merged(&system, &user);
+
+        assert_eq!(merged.settings.len(), 1);
+        assert_eq!(
+            merged.find("shared.schema", "key").unwrap().value,
+            "user-value"
+        );
+    }
+
+    #[test]
+    fn manifest_merged_is_sorted() {
+        let mut system = GSettingsManifest::default();
+        system
+            .settings
+            .push(sample_setting("z.schema", "key", "val"));
+
+        let mut user = GSettingsManifest::default();
+        user.settings.push(sample_setting("a.schema", "key", "val"));
+
+        let merged = GSettingsManifest::merged(&system, &user);
+
+        assert_eq!(merged.settings[0].schema, "a.schema");
+        assert_eq!(merged.settings[1].schema, "z.schema");
+    }
+
+    #[test]
+    fn manifest_serialization_roundtrip() {
+        let mut manifest = GSettingsManifest::default();
+        manifest.settings.push(sample_setting_with_comment(
+            "org.gnome.desktop.interface",
+            "color-scheme",
+            "'prefer-dark'",
+            "Enable dark mode",
+        ));
+
+        let json = serde_json::to_string(&manifest).unwrap();
+        let parsed: GSettingsManifest = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.settings.len(), 1);
+        assert_eq!(
+            parsed.settings[0].comment,
+            Some("Enable dark mode".to_string())
+        );
+    }
+
+    #[test]
+    fn manifest_load_save_roundtrip() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let path = tmp_dir.path().join("test-gsettings.json");
+
+        let mut manifest = GSettingsManifest::default();
+        manifest.upsert(sample_setting(
+            "org.gnome.desktop.interface",
+            "color-scheme",
+            "'prefer-dark'",
+        ));
+
+        manifest.save(&path).unwrap();
+        let loaded = GSettingsManifest::load(&path).unwrap();
+
+        assert_eq!(loaded.settings.len(), 1);
+    }
+
+    #[test]
+    fn manifest_load_nonexistent_returns_default() {
+        let path = PathBuf::from("/nonexistent/path/gsettings.json");
+        let manifest = GSettingsManifest::load(&path).unwrap();
+        assert!(manifest.settings.is_empty());
     }
 }

@@ -26,10 +26,7 @@ impl GnomeExtensionsManifest {
             return Ok(Self::default());
         }
         let content = fs::read_to_string(path).with_context(|| {
-            format!(
-                "Failed to read extensions manifest from {}",
-                path.display()
-            )
+            format!("Failed to read extensions manifest from {}", path.display())
         })?;
         let manifest: Self = serde_json::from_str(&content).with_context(|| {
             format!(
@@ -49,10 +46,7 @@ impl GnomeExtensionsManifest {
         let content = serde_json::to_string_pretty(self)
             .context("Failed to serialize extensions manifest")?;
         fs::write(path, content).with_context(|| {
-            format!(
-                "Failed to write extensions manifest to {}",
-                path.display()
-            )
+            format!("Failed to write extensions manifest to {}", path.display())
         })?;
         Ok(())
     }
@@ -126,6 +120,7 @@ impl GnomeExtensionsManifest {
 }
 
 /// A GNOME Shell extension.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GnomeExtension {
     /// Extension UUID (e.g., "dash-to-dock@micxgx.gmail.com")
@@ -143,5 +138,164 @@ impl From<&str> for GnomeExtension {
         Self {
             uuid: uuid.to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manifest_default_is_empty() {
+        let manifest = GnomeExtensionsManifest::default();
+        assert!(manifest.extensions.is_empty());
+        assert!(manifest.schema.is_none());
+    }
+
+    #[test]
+    fn manifest_contains_checks_existence() {
+        let mut manifest = GnomeExtensionsManifest::default();
+        manifest
+            .extensions
+            .push("dash-to-dock@micxgx.gmail.com".to_string());
+
+        assert!(manifest.contains("dash-to-dock@micxgx.gmail.com"));
+        assert!(!manifest.contains("nonexistent@example.com"));
+    }
+
+    #[test]
+    fn manifest_add_inserts_new_extension() {
+        let mut manifest = GnomeExtensionsManifest::default();
+
+        assert!(manifest.add("dash-to-dock@micxgx.gmail.com".to_string()));
+        assert_eq!(manifest.extensions.len(), 1);
+    }
+
+    #[test]
+    fn manifest_add_returns_false_if_exists() {
+        let mut manifest = GnomeExtensionsManifest::default();
+        manifest.add("dash-to-dock@micxgx.gmail.com".to_string());
+
+        assert!(!manifest.add("dash-to-dock@micxgx.gmail.com".to_string()));
+        assert_eq!(manifest.extensions.len(), 1);
+    }
+
+    #[test]
+    fn manifest_add_maintains_sorted_order() {
+        let mut manifest = GnomeExtensionsManifest::default();
+        manifest.add("z-ext@example.com".to_string());
+        manifest.add("a-ext@example.com".to_string());
+        manifest.add("m-ext@example.com".to_string());
+
+        assert_eq!(
+            manifest.extensions,
+            vec![
+                "a-ext@example.com",
+                "m-ext@example.com",
+                "z-ext@example.com"
+            ]
+        );
+    }
+
+    #[test]
+    fn manifest_remove_returns_true_when_found() {
+        let mut manifest = GnomeExtensionsManifest::default();
+        manifest
+            .extensions
+            .push("dash-to-dock@micxgx.gmail.com".to_string());
+
+        assert!(manifest.remove("dash-to-dock@micxgx.gmail.com"));
+        assert!(manifest.extensions.is_empty());
+    }
+
+    #[test]
+    fn manifest_remove_returns_false_when_not_found() {
+        let mut manifest = GnomeExtensionsManifest::default();
+        assert!(!manifest.remove("nonexistent@example.com"));
+    }
+
+    #[test]
+    fn manifest_merged_combines_extensions() {
+        let mut system = GnomeExtensionsManifest::default();
+        system.extensions.push("system-ext@example.com".to_string());
+
+        let mut user = GnomeExtensionsManifest::default();
+        user.extensions.push("user-ext@example.com".to_string());
+
+        let merged = GnomeExtensionsManifest::merged(&system, &user);
+
+        assert_eq!(merged.extensions.len(), 2);
+        assert!(merged.contains("system-ext@example.com"));
+        assert!(merged.contains("user-ext@example.com"));
+    }
+
+    #[test]
+    fn manifest_merged_deduplicates() {
+        let mut system = GnomeExtensionsManifest::default();
+        system.extensions.push("shared@example.com".to_string());
+
+        let mut user = GnomeExtensionsManifest::default();
+        user.extensions.push("shared@example.com".to_string());
+
+        let merged = GnomeExtensionsManifest::merged(&system, &user);
+
+        assert_eq!(merged.extensions.len(), 1);
+    }
+
+    #[test]
+    fn manifest_merged_is_sorted() {
+        let mut system = GnomeExtensionsManifest::default();
+        system.extensions.push("z@example.com".to_string());
+
+        let mut user = GnomeExtensionsManifest::default();
+        user.extensions.push("a@example.com".to_string());
+
+        let merged = GnomeExtensionsManifest::merged(&system, &user);
+
+        assert_eq!(merged.extensions, vec!["a@example.com", "z@example.com"]);
+    }
+
+    #[test]
+    fn manifest_serialization_roundtrip() {
+        let mut manifest = GnomeExtensionsManifest::default();
+        manifest
+            .extensions
+            .push("dash-to-dock@micxgx.gmail.com".to_string());
+
+        let json = serde_json::to_string(&manifest).unwrap();
+        let parsed: GnomeExtensionsManifest = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.extensions.len(), 1);
+        assert!(parsed.contains("dash-to-dock@micxgx.gmail.com"));
+    }
+
+    #[test]
+    fn manifest_load_save_roundtrip() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let path = tmp_dir.path().join("test-extensions.json");
+
+        let mut manifest = GnomeExtensionsManifest::default();
+        manifest.add("dash-to-dock@micxgx.gmail.com".to_string());
+
+        manifest.save(&path).unwrap();
+        let loaded = GnomeExtensionsManifest::load(&path).unwrap();
+
+        assert_eq!(loaded.extensions.len(), 1);
+    }
+
+    #[test]
+    fn manifest_load_nonexistent_returns_default() {
+        let path = PathBuf::from("/nonexistent/path/extensions.json");
+        let manifest = GnomeExtensionsManifest::load(&path).unwrap();
+        assert!(manifest.extensions.is_empty());
+    }
+
+    #[test]
+    fn gnome_extension_from_string() {
+        let ext: GnomeExtension = "test@example.com".into();
+        assert_eq!(ext.uuid, "test@example.com");
+
+        let ext2: GnomeExtension = "test@example.com".to_string().into();
+        assert_eq!(ext2.uuid, "test@example.com");
     }
 }

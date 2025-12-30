@@ -61,6 +61,7 @@ pub fn find_repo_path() -> Result<PathBuf> {
 }
 
 /// Get the path to the manifests directory.
+#[allow(dead_code)]
 pub fn manifests_path() -> Result<PathBuf> {
     Ok(find_repo_path()?.join("manifests"))
 }

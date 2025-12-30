@@ -1,6 +1,6 @@
 //! Repository info command implementation.
 
-use crate::repo::{find_repo_path, RepoConfig};
+use crate::repo::{RepoConfig, find_repo_path};
 use anyhow::Result;
 use clap::{Args, Subcommand};
 

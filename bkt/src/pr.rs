@@ -2,17 +2,17 @@
 //!
 //! Provides the `--pr` flag functionality: apply locally AND open a PR.
 
-use crate::repo::{find_repo_path, RepoConfig};
-use anyhow::{bail, Context, Result};
+use crate::repo::{RepoConfig, find_repo_path};
+use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
 use std::process::Command;
 
 /// Information about a manifest change for PR creation.
 pub struct PrChange {
-    pub manifest_type: String,  // "shim", "flatpak", "extension", etc.
-    pub action: String,         // "add", "remove"
-    pub name: String,           // Item name
-    pub manifest_file: String,  // e.g., "host-shims.json"
+    pub manifest_type: String, // "shim", "flatpak", "extension", etc.
+    pub action: String,        // "add", "remove"
+    pub name: String,          // Item name
+    pub manifest_file: String, // e.g., "host-shims.json"
 }
 
 impl PrChange {
@@ -21,11 +21,17 @@ impl PrChange {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        format!("bkt/{}-{}-{}-{}", self.manifest_type, self.action, self.name, timestamp)
+        format!(
+            "bkt/{}-{}-{}-{}",
+            self.manifest_type, self.action, self.name, timestamp
+        )
     }
 
     pub fn commit_message(&self) -> String {
-        format!("feat(manifests): {} {} {}", self.action, self.manifest_type, self.name)
+        format!(
+            "feat(manifests): {} {} {}",
+            self.action, self.manifest_type, self.name
+        )
     }
 
     pub fn pr_title(&self) -> String {
@@ -39,8 +45,13 @@ impl PrChange {
              - {} `{}` in `manifests/{}`\n\n\
              ---\n\
              *Created by bkt CLI*",
-            self.manifest_type, self.action,
-            if self.action == "add" { "Added" } else { "Removed" },
+            self.manifest_type,
+            self.action,
+            if self.action == "add" {
+                "Added"
+            } else {
+                "Removed"
+            },
             self.name,
             self.manifest_file
         )
@@ -166,9 +177,12 @@ pub fn run_pr_workflow(change: &PrChange, manifest_content: &str) -> Result<()> 
     println!("Creating pull request...");
     let status = Command::new("gh")
         .args([
-            "pr", "create",
-            "--title", &change.pr_title(),
-            "--body", &change.pr_body(),
+            "pr",
+            "create",
+            "--title",
+            &change.pr_title(),
+            "--body",
+            &change.pr_body(),
         ])
         .current_dir(&repo_path)
         .status()?;

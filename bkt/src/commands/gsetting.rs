@@ -1,7 +1,7 @@
 //! GSettings command implementation.
 
 use crate::manifest::{GSetting, GSettingsManifest};
-use crate::pr::{run_pr_workflow, PrChange};
+use crate::pr::{PrChange, run_pr_workflow};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use std::process::Command;
@@ -99,7 +99,10 @@ fn apply_settings(dry_run: bool) -> Result<()> {
                 current.as_deref().unwrap_or("(unset)")
             );
         } else {
-            print!("Setting {}.{} = {}... ", setting.schema, setting.key, setting.value);
+            print!(
+                "Setting {}.{} = {}... ",
+                setting.schema, setting.key, setting.value
+            );
             if set_gsetting(&setting.schema, &setting.key, &setting.value)? {
                 println!("✓");
                 applied += 1;
@@ -263,8 +266,8 @@ pub fn run(args: GSettingArgs) -> Result<()> {
                 }
 
                 println!(
-                    "{:<45} {:<20} {:<10} {}",
-                    "SCHEMA.KEY", "VALUE", "SOURCE", "CURRENT"
+                    "{:<45} {:<20} {:<10} CURRENT",
+                    "SCHEMA.KEY", "VALUE", "SOURCE"
                 );
                 println!("{}", "-".repeat(90));
 
@@ -276,7 +279,11 @@ pub fn run(args: GSettingArgs) -> Result<()> {
                     };
                     let current = get_current_value(&setting.schema, &setting.key)
                         .unwrap_or_else(|| "(unset)".to_string());
-                    let matches = if current == setting.value { "✓" } else { "≠" };
+                    let matches = if current == setting.value {
+                        "✓"
+                    } else {
+                        "≠"
+                    };
 
                     println!(
                         "{:<45} {:<20} {:<10} {} {}",

@@ -1,7 +1,7 @@
 //! GNOME extension command implementation.
 
 use crate::manifest::GnomeExtensionsManifest;
-use crate::pr::{run_pr_workflow, PrChange};
+use crate::pr::{PrChange, run_pr_workflow};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use std::process::Command;
@@ -59,8 +59,7 @@ fn is_enabled(uuid: &str) -> bool {
         .args(["info", uuid])
         .output()
         .map(|o| {
-            o.status.success()
-                && String::from_utf8_lossy(&o.stdout).contains("State: ENABLED")
+            o.status.success() && String::from_utf8_lossy(&o.stdout).contains("State: ENABLED")
         })
         .unwrap_or(false)
 }
@@ -244,11 +243,15 @@ pub fn run(args: ExtensionArgs) -> Result<()> {
                     return Ok(());
                 }
 
-                println!("{:<50} {:<10} {}", "UUID", "SOURCE", "STATUS");
+                println!("{:<50} {:<10} STATUS", "UUID", "SOURCE");
                 println!("{}", "-".repeat(70));
 
                 for uuid in &merged.extensions {
-                    let source = if user.contains(uuid) { "user" } else { "system" };
+                    let source = if user.contains(uuid) {
+                        "user"
+                    } else {
+                        "system"
+                    };
                     let status = if is_enabled(uuid) {
                         "✓ enabled"
                     } else if is_installed(uuid) {
