@@ -90,13 +90,14 @@ RUN set -eu; \
     rm -f /tmp/${asset} /tmp/lazygit.checksums.txt /tmp/lazygit.version
 
 # keyd (built from source at a pinned upstream tag)
+# FORCE_SYSTEMD=1 is needed because /run/systemd/system doesn't exist in container builds
 COPY upstream/keyd.ref /tmp/keyd.ref
 RUN set -eu; \
     ref="$(cat /tmp/keyd.ref)"; \
     dnf install -y git gcc make systemd-devel; \
     git clone --depth 1 --branch "${ref}" https://github.com/rvaiya/keyd.git /tmp/keyd; \
     make -C /tmp/keyd; \
-    make -C /tmp/keyd PREFIX=/usr install; \
+    make -C /tmp/keyd PREFIX=/usr FORCE_SYSTEMD=1 install; \
     rm -rf /tmp/keyd /tmp/keyd.ref; \
     dnf remove -y git gcc make systemd-devel || true; \
     dnf clean all
