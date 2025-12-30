@@ -353,39 +353,37 @@ def _gnome_enabled_extensions() -> dict:
 
 
 def _load_bootstrap_manifests(repo_root: Path) -> dict:
-    apps_path = repo_root / "manifests" / "flatpak-apps.txt"
-    remotes_path = repo_root / "manifests" / "flatpak-remotes.txt"
-    gnome_ext_path = repo_root / "manifests" / "gnome-extensions.txt"
+    apps_path = repo_root / "manifests" / "flatpak-apps.json"
+    remotes_path = repo_root / "manifests" / "flatpak-remotes.json"
+    gnome_ext_path = repo_root / "manifests" / "gnome-extensions.json"
 
     want_apps: set[str] = set()
     if apps_path.exists():
-        for line in apps_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            # scope \t appid \t remote
-            parts = line.split("\t")
-            if len(parts) >= 2:
-                want_apps.add(parts[1].strip())
+        try:
+            data = json.loads(apps_path.read_text(encoding="utf-8", errors="replace"))
+            for app in data.get("apps", []):
+                if app.get("id"):
+                    want_apps.add(app["id"])
+        except Exception:
+            pass
 
     want_remotes: set[str] = set()
     if remotes_path.exists():
-        for line in remotes_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            # name \t url \t scope
-            parts = line.split("\t")
-            if parts:
-                want_remotes.add(parts[0].strip())
+        try:
+            data = json.loads(remotes_path.read_text(encoding="utf-8", errors="replace"))
+            for remote in data.get("remotes", []):
+                if remote.get("name"):
+                    want_remotes.add(remote["name"])
+        except Exception:
+            pass
 
     want_gnome_exts: set[str] = set()
     if gnome_ext_path.exists():
-        for line in gnome_ext_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            want_gnome_exts.add(line)
+        try:
+            data = json.loads(gnome_ext_path.read_text(encoding="utf-8", errors="replace"))
+            want_gnome_exts = set(data.get("extensions", []))
+        except Exception:
+            pass
 
     return {
         "flatpak-appids": sorted(want_apps),

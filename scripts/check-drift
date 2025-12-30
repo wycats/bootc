@@ -117,66 +117,51 @@ def parse_containerfile_packages(containerfile: Path) -> set[str]:
     return packages
 
 
-def parse_manifest_file(path: Path) -> set[str]:
-    """Parse a tab-separated manifest file, extracting the relevant ID column."""
+def parse_gnome_extensions_manifest(path: Path) -> set[str]:
+    """Parse gnome-extensions.json and return set of extension UUIDs."""
     if not path.exists():
         return set()
 
-    items: set[str] = set()
-    for line in path.read_text(errors="replace").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split("\t")
-        # flatpak-apps.txt: scope, appid, remote -> take appid (column 1)
-        # flatpak-remotes.txt: name, url, scope -> take name (column 0)
-        # gnome-extensions.txt: just the uuid
-        if len(parts) >= 2:
-            items.add(parts[1].strip())  # appid for flatpak-apps
-        else:
-            items.add(parts[0].strip())  # uuid for extensions or remote name
-    return items
+    try:
+        data = json.loads(path.read_text(errors="replace"))
+        return set(data.get("extensions", []))
+    except Exception:
+        return set()
 
 
 def parse_flatpak_apps_manifest(path: Path) -> tuple[set[str], set[str]]:
-    """Returns (system_apps, user_apps) from flatpak-apps.txt."""
+    """Returns (system_apps, user_apps) from flatpak-apps.json."""
     if not path.exists():
         return set(), set()
 
-    system_apps: set[str] = set()
-    user_apps: set[str] = set()
+    try:
+        data = json.loads(path.read_text(errors="replace"))
+        system_apps: set[str] = set()
+        user_apps: set[str] = set()
 
-    for line in path.read_text(errors="replace").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split("\t")
-        if len(parts) >= 2:
-            scope = parts[0].strip()
-            appid = parts[1].strip()
+        for app in data.get("apps", []):
+            appid = app.get("id", "")
+            scope = app.get("scope", "system")
             if scope == "system":
                 system_apps.add(appid)
             elif scope == "user":
                 user_apps.add(appid)
 
-    return system_apps, user_apps
+        return system_apps, user_apps
+    except Exception:
+        return set(), set()
 
 
 def parse_flatpak_remotes_manifest(path: Path) -> set[str]:
-    """Returns remote names from flatpak-remotes.txt."""
+    """Returns remote names from flatpak-remotes.json."""
     if not path.exists():
         return set()
 
-    remotes: set[str] = set()
-    for line in path.read_text(errors="replace").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split("\t")
-        if parts:
-            remotes.add(parts[0].strip())
-
-    return remotes
+    try:
+        data = json.loads(path.read_text(errors="replace"))
+        return {r.get("name", "") for r in data.get("remotes", []) if r.get("name")}
+    except Exception:
+        return set()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -310,7 +295,7 @@ def detect_drift(repo_root: Path, manifests_dir: Path) -> DriftReport:
 
     # ─── Bootstrapped Tier: Flatpak apps ───
     manifest_system_apps, manifest_user_apps = parse_flatpak_apps_manifest(
-        manifests_dir / "flatpak-apps.txt"
+        manifests_dir / "flatpak-apps.json"
     )
     manifest_apps = manifest_system_apps | manifest_user_apps
 
@@ -326,7 +311,7 @@ def detect_drift(repo_root: Path, manifests_dir: Path) -> DriftReport:
         report.add("flatpak-apps", "bootstrapped", "missing", app)
 
     # ─── Bootstrapped Tier: Flatpak remotes ───
-    manifest_remotes = parse_flatpak_remotes_manifest(manifests_dir / "flatpak-remotes.txt")
+    manifest_remotes = parse_flatpak_remotes_manifest(manifests_dir / "flatpak-remotes.json")
     installed_remotes = get_flatpak_remotes()
 
     for remote in sorted(manifest_remotes - installed_remotes):
@@ -337,7 +322,7 @@ def detect_drift(repo_root: Path, manifests_dir: Path) -> DriftReport:
         report.add("flatpak-remotes", "optional", "extra", remote)
 
     # ─── Bootstrapped Tier: GNOME extensions ───
-    manifest_extensions = parse_manifest_file(manifests_dir / "gnome-extensions.txt")
+    manifest_extensions = parse_gnome_extensions_manifest(manifests_dir / "gnome-extensions.json")
     system_extensions, user_extensions = get_gnome_extensions()
     installed_extensions = system_extensions | user_extensions
 

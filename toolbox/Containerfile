@@ -1,0 +1,61 @@
+# Toolbox image: ghcr.io/wycats/bootc-toolbox
+#
+# This is the development environment container. It's ephemeral — rebuild and
+# recreate as needed. $HOME persists on the host.
+#
+# Key design principles:
+# - PATH set via container labels (works regardless of how you enter)
+# - ~/.local/toolbox/bin for toolbox-specific scripts (in PATH)
+# - VS Code attaches from host via Remote - Containers
+# - GPG signing works via gpg-agent forwarding
+
+FROM registry.fedoraproject.org/fedora-toolbox:42
+
+# Basic dev tools
+RUN dnf install -y \
+    git \
+    gh \
+    jq \
+    ripgrep \
+    fd-find \
+    fzf \
+    bat \
+    eza \
+    zoxide \
+    starship \
+    ShellCheck \
+    python3 \
+    python3-pip \
+    nodejs \
+    npm \
+    && dnf clean all
+
+# Rust toolchain support (actual toolchain lives in ~/.cargo)
+RUN dnf install -y \
+    gcc \
+    gcc-c++ \
+    make \
+    cmake \
+    pkg-config \
+    openssl-devel \
+    && dnf clean all
+
+# GPG support for git commit signing
+RUN dnf install -y \
+    gnupg2 \
+    pinentry-gnome3 \
+    && dnf clean all
+
+# Nushell
+RUN dnf install -y nushell && dnf clean all
+
+# Set PATH via container labels so it works regardless of entry method
+# This is read by toolbox/podman and prepended to PATH
+LABEL com.github.containers.toolbox="true"
+
+# Additional PATH entries for user-installed toolchains
+# These are set via environment so they're available in all contexts
+ENV PATH="/home/${USER:-wycats}/.local/toolbox/bin:/home/${USER:-wycats}/.nix-profile/bin:/home/${USER:-wycats}/.cargo/bin:/home/${USER:-wycats}/.proto/bin:${PATH}"
+
+# Default shell
+ENV SHELL=/usr/bin/bash

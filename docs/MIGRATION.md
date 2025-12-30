@@ -80,9 +80,9 @@ Then open a new shell (or `source ~/.bashrc`) so `GPG_TTY` is set.
 
 This image ships a user `systemd` oneshot that runs on first login to apply:
 
-- Flatpak remotes + installs from `manifests/flatpak-remotes.txt` and `manifests/flatpak-apps.txt`
-- GNOME Shell extensions from `manifests/gnome-extensions.txt`
-- GNOME power defaults from `manifests/gsettings.txt` (AC: no auto-suspend; battery: unchanged)
+- Flatpak remotes + installs from `manifests/flatpak-remotes.json` and `manifests/flatpak-apps.json`
+- GNOME Shell extensions from `manifests/gnome-extensions.json`
+- GNOME power defaults from `manifests/gsettings.json` (AC: no auto-suspend; battery: unchanged)
 
 Note: your current Flatpak manifest includes `system` installs; those may prompt once for admin authentication (via `pkexec`) on first login.
 

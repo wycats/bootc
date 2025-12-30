@@ -1,0 +1,16 @@
+{
+  "$schema": "./schemas/gsettings.schema.json",
+  "settings": [
+    {
+      "schema": "org.gnome.settings-daemon.plugins.power",
+      "key": "sleep-inactive-ac-type",
+      "value": "'nothing'",
+      "comment": "Disable auto-suspend on AC power (keep battery behavior as system default)"
+    },
+    {
+      "schema": "org.gnome.settings-daemon.plugins.power",
+      "key": "sleep-inactive-ac-timeout",
+      "value": "0"
+    }
+  ]
+}

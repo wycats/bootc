@@ -55,15 +55,15 @@ Edit repo → push → GitHub Actions builds → ujust toolbox-update → next s
 
 ## Quick Reference
 
-| What                     | Where                                                            |
-| ------------------------ | ---------------------------------------------------------------- |
-| Host image definition    | [Containerfile](Containerfile)                                   |
-| Toolbox image definition | [toolbox/Containerfile](toolbox/Containerfile)                   |
-| Flatpak apps             | [manifests/flatpak-apps.txt](manifests/flatpak-apps.txt)         |
-| GNOME extensions         | [manifests/gnome-extensions.txt](manifests/gnome-extensions.txt) |
-| ujust recipes            | [ujust/60-custom.just](ujust/60-custom.just)                     |
-| Migration plan           | [PLAN.md](PLAN.md)                                               |
-| Package analysis         | [docs/ANALYSIS.md](docs/ANALYSIS.md)                             |
+| What                     | Where                                                              |
+| ------------------------ | ------------------------------------------------------------------ |
+| Host image definition    | [Containerfile](Containerfile)                                     |
+| Toolbox image definition | [toolbox/Containerfile](toolbox/Containerfile)                     |
+| Flatpak apps             | [manifests/flatpak-apps.json](manifests/flatpak-apps.json)         |
+| GNOME extensions         | [manifests/gnome-extensions.json](manifests/gnome-extensions.json) |
+| ujust recipes            | [ujust/60-custom.just](ujust/60-custom.just)                       |
+| Migration plan           | [PLAN.md](PLAN.md)                                                 |
+| Package analysis         | [docs/ANALYSIS.md](docs/ANALYSIS.md)                               |
 
 ## Toolbox as Primary Dev Environment
 
@@ -87,9 +87,9 @@ flatpak-spawn --host /usr/bin/code --folder-uri "vscode-remote://attached-contai
 
 On login, `bootc-bootstrap.service` ensures the system matches manifests:
 
-1. **Flatpak remotes** — configured from [manifests/flatpak-remotes.txt](manifests/flatpak-remotes.txt)
-2. **Flatpak apps** — installed/updated from [manifests/flatpak-apps.txt](manifests/flatpak-apps.txt)
-3. **GNOME extensions** — installed/enabled from [manifests/gnome-extensions.txt](manifests/gnome-extensions.txt)
+1. **Flatpak remotes** — configured from [manifests/flatpak-remotes.json](manifests/flatpak-remotes.json)
+2. **Flatpak apps** — installed/updated from [manifests/flatpak-apps.json](manifests/flatpak-apps.json)
+3. **GNOME extensions** — installed/enabled from [manifests/gnome-extensions.json](manifests/gnome-extensions.json)
 4. **Toolbox** — recreated if image digest changed (preserves container name)
 5. **Toolbox bin** — ensures `~/.local/toolbox/bin/code` exists
 
@@ -113,6 +113,7 @@ ujust check-drift-json   # JSON for scripting
 ```
 
 Drift is categorized by tier:
+
 - **Baked/Bootstrapped** = something's wrong (exit code 1)
 - **Optional** = user-installed extras, totally fine (exit code 0)
 

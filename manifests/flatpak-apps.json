@@ -1,0 +1,140 @@
+{
+  "$schema": "./schemas/flatpak-apps.schema.json",
+  "apps": [
+    { "id": "app.xemu.xemu", "remote": "flathub", "scope": "user" },
+    {
+      "id": "be.alexandervanhee.gradia",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    {
+      "id": "com.bambulab.BambuStudio",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    {
+      "id": "com.dec05eba.gpu_screen_recorder",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    { "id": "com.discordapp.Discord", "remote": "flathub", "scope": "system" },
+    { "id": "com.fightcade.Fightcade", "remote": "flathub", "scope": "system" },
+    {
+      "id": "com.github.Matoking.protontricks",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    {
+      "id": "com.github.tchx84.Flatseal",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    {
+      "id": "com.mattjakeman.ExtensionManager",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    { "id": "com.obsproject.Studio", "remote": "flathub", "scope": "system" },
+    {
+      "id": "com.raggesilver.BlackBox",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    { "id": "com.ranfdev.DistroShelf", "remote": "flathub", "scope": "system" },
+    { "id": "com.slack.Slack", "remote": "flathub", "scope": "system" },
+    { "id": "com.stremio.Stremio", "remote": "flathub", "scope": "system" },
+    {
+      "id": "com.supermodel3.Supermodel",
+      "remote": "flathub",
+      "scope": "user"
+    },
+    { "id": "com.termius.Termius", "remote": "flathub", "scope": "system" },
+    { "id": "com.vysp3r.ProtonPlus", "remote": "flathub", "scope": "system" },
+    { "id": "com.yubico.yubioath", "remote": "flathub", "scope": "system" },
+    { "id": "dev.deedles.Trayscale", "remote": "flathub", "scope": "system" },
+    { "id": "fr.handbrake.ghb", "remote": "flathub", "scope": "system" },
+    {
+      "id": "io.github.dvlv.boxbuddyrs",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    {
+      "id": "io.github.flattool.Warehouse",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    {
+      "id": "io.github.rfrench3.scopebuddy-gui",
+      "remote": "flathub",
+      "scope": "user"
+    },
+    {
+      "id": "io.github.shiiion.primehack",
+      "remote": "flathub",
+      "scope": "user"
+    },
+    {
+      "id": "io.github.tntwise.REAL-Video-Enhancer",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    {
+      "id": "io.missioncenter.MissionCenter",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    { "id": "it.mijorus.gearlever", "remote": "flathub", "scope": "system" },
+    { "id": "net.kuribo64.melonDS", "remote": "flathub", "scope": "user" },
+    { "id": "net.meshlab.MeshLab", "remote": "flathub", "scope": "system" },
+    { "id": "net.retrodeck.retrodeck", "remote": "flathub", "scope": "system" },
+    { "id": "org.altlinux.Tuner", "remote": "flathub", "scope": "system" },
+    { "id": "org.blender.Blender", "remote": "flathub", "scope": "system" },
+    { "id": "org.deskflow.deskflow", "remote": "flathub", "scope": "system" },
+    {
+      "id": "org.DolphinEmu.dolphin-emu",
+      "remote": "flathub",
+      "scope": "user"
+    },
+    {
+      "id": "org.fedoraproject.MediaWriter",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    { "id": "org.gnome.baobab", "remote": "flathub", "scope": "system" },
+    { "id": "org.gnome.Calculator", "remote": "flathub", "scope": "system" },
+    { "id": "org.gnome.Calendar", "remote": "flathub", "scope": "system" },
+    { "id": "org.gnome.Characters", "remote": "flathub", "scope": "system" },
+    { "id": "org.gnome.clocks", "remote": "flathub", "scope": "system" },
+    { "id": "org.gnome.Contacts", "remote": "flathub", "scope": "system" },
+    { "id": "org.gnome.font-viewer", "remote": "flathub", "scope": "system" },
+    { "id": "org.gnome.Logs", "remote": "flathub", "scope": "system" },
+    { "id": "org.gnome.Loupe", "remote": "flathub", "scope": "system" },
+    {
+      "id": "org.gnome.NautilusPreviewer",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    { "id": "org.gnome.Papers", "remote": "flathub", "scope": "system" },
+    { "id": "org.gnome.Snapshot", "remote": "flathub", "scope": "system" },
+    { "id": "org.gnome.TextEditor", "remote": "flathub", "scope": "system" },
+    { "id": "org.gnome.Totem", "remote": "flathub", "scope": "system" },
+    { "id": "org.gnome.Weather", "remote": "flathub", "scope": "system" },
+    {
+      "id": "org.gustavoperedo.FontDownloader",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    { "id": "org.libretro.RetroArch", "remote": "flathub", "scope": "user" },
+    { "id": "org.mozilla.firefox", "remote": "flathub", "scope": "system" },
+    { "id": "org.openscad.OpenSCAD", "remote": "flathub", "scope": "system" },
+    { "id": "org.ppsspp.PPSSPP", "remote": "flathub", "scope": "user" },
+    { "id": "org.scummvm.ScummVM", "remote": "flathub", "scope": "user" },
+    { "id": "org.telegram.desktop", "remote": "flathub", "scope": "system" },
+    { "id": "org.videolan.VLC", "remote": "flathub", "scope": "system" },
+    {
+      "id": "org.virt_manager.virt-manager",
+      "remote": "flathub",
+      "scope": "system"
+    }
+  ]
+}

@@ -121,10 +121,10 @@ COPY system/keyd/default.conf /etc/keyd/default.conf
 
 # First-login bootstrap (Flatpak + GNOME extensions)
 RUN mkdir -p /usr/local/share/bootc-bootstrap
-COPY manifests/flatpak-remotes.txt /usr/local/share/bootc-bootstrap/flatpak-remotes.txt
-COPY manifests/flatpak-apps.txt /usr/local/share/bootc-bootstrap/flatpak-apps.txt
-COPY manifests/gnome-extensions.txt /usr/local/share/bootc-bootstrap/gnome-extensions.txt
-COPY manifests/gsettings.txt /usr/local/share/bootc-bootstrap/gsettings.txt
+COPY manifests/flatpak-remotes.json /usr/local/share/bootc-bootstrap/flatpak-remotes.json
+COPY manifests/flatpak-apps.json /usr/local/share/bootc-bootstrap/flatpak-apps.json
+COPY manifests/gnome-extensions.json /usr/local/share/bootc-bootstrap/gnome-extensions.json
+COPY manifests/gsettings.json /usr/local/share/bootc-bootstrap/gsettings.json
 COPY scripts/bootc-bootstrap /usr/local/bin/bootc-bootstrap
 COPY scripts/check-drift /usr/local/bin/check-drift
 COPY systemd/user/bootc-bootstrap.service /usr/lib/systemd/user/bootc-bootstrap.service

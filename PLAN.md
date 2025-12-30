@@ -10,6 +10,7 @@ This document captures the migration plan and ongoing operational model for this
 **"Workstation as Code"** — the entire system configuration lives in git, builds into immutable container images, and flows to machines through the standard bootc update mechanism.
 
 **What this solves:**
+
 - Eliminates configuration drift ("snowflake" machines)
 - Makes system state reproducible and auditable (git history = system history)
 - Provides safe migration with atomic rollbacks
@@ -44,15 +45,16 @@ This document captures the migration plan and ongoing operational model for this
 
 ## Three-Tier Configuration Model
 
-| Tier | When Applied | Mechanism | Examples |
-|------|--------------|-----------|----------|
-| **Baked** | Image build time | Containerfile | RPM packages, keyd config, fonts, ujust recipes |
-| **Bootstrapped** | First login (idempotent) | systemd user oneshot | Flatpaks, GNOME extensions, toolbox creation |
-| **Optional** | User-activated | `ujust enable-*` | Remote play, hardware-specific tweaks |
+| Tier             | When Applied             | Mechanism            | Examples                                        |
+| ---------------- | ------------------------ | -------------------- | ----------------------------------------------- |
+| **Baked**        | Image build time         | Containerfile        | RPM packages, keyd config, fonts, ujust recipes |
+| **Bootstrapped** | First login (idempotent) | systemd user oneshot | Flatpaks, GNOME extensions, toolbox creation    |
+| **Optional**     | User-activated           | `ujust enable-*`     | Remote play, hardware-specific tweaks           |
 
 ## Phase 0: Inventory (Done)
 
 Capture baseline with `./scripts/build-system-profile`:
+
 - RPM packages → decide what to bake vs leave as layered
 - Flatpaks → add to manifests
 - GNOME extensions → add to manifests
@@ -65,6 +67,7 @@ Capture baseline with `./scripts/build-system-profile`:
 1. **Workflow permissions** — `.github/workflows/build.yml` has `packages: write`
 
 2. **GHCR package settings** (https://github.com/users/wycats/packages/container/bootc/settings):
+
    - Add `bootc` repo under "Manage Actions access" with **Write** role
    - Set visibility to **Public** (required for unauthenticated `bootc upgrade`)
 
@@ -72,11 +75,11 @@ Capture baseline with `./scripts/build-system-profile`:
 
 ### What Gets Published
 
-| Image | Purpose | Update Trigger |
-|-------|---------|----------------|
-| `ghcr.io/wycats/bootc:latest` | Host OS | Push to main, upstream digest change, nightly rebuild |
-| `ghcr.io/wycats/bootc:sha-<gitsha>` | Pinned builds | Every push |
-| `ghcr.io/wycats/bootc-toolbox:latest` | Dev environment | Push to main |
+| Image                                 | Purpose         | Update Trigger                                        |
+| ------------------------------------- | --------------- | ----------------------------------------------------- |
+| `ghcr.io/wycats/bootc:latest`         | Host OS         | Push to main, upstream digest change, nightly rebuild |
+| `ghcr.io/wycats/bootc:sha-<gitsha>`   | Pinned builds   | Every push                                            |
+| `ghcr.io/wycats/bootc-toolbox:latest` | Dev environment | Push to main                                          |
 
 ## Phase 2: Host Migration
 
@@ -96,6 +99,7 @@ sudo reboot
 ### Rollback
 
 If something goes wrong:
+
 - **At boot:** Select previous deployment from boot menu
 - **After boot:** `sudo bootc rollback` then reboot
 
@@ -151,6 +155,7 @@ The toolbox container is ephemeral. `$HOME` (including `~/.cargo`, `~/.nix-profi
 ### Toolbox Container Name
 
 Fixed name `dev` so integrations (ddterm, etc.) keep working:
+
 ```bash
 toolbox enter dev
 ```
@@ -158,6 +163,7 @@ toolbox enter dev
 ### VS Code Integration
 
 The `code` wrapper in `~/.local/toolbox/bin/code`:
+
 ```bash
 # Inside toolbox, launches host VS Code attached to this container
 flatpak-spawn --host /usr/bin/code --folder-uri "vscode-remote://attached-container+${hex_name}${folder}"
@@ -179,17 +185,17 @@ Idempotent and hash-cached — only re-runs when manifests change.
 
 Shipped in image but disabled by default:
 
-| Feature | Enable | Disable | Status |
-|---------|--------|---------|--------|
+| Feature                               | Enable                     | Disable                     | Status                     |
+| ------------------------------------- | -------------------------- | --------------------------- | -------------------------- |
 | Remote Play (tty2 + Steam gamepad UI) | `ujust enable-remote-play` | `ujust disable-remote-play` | `ujust remote-play-status` |
 
 ## Operational Tools
 
-| Tool | Purpose | Command |
-|------|---------|--------|
-| **check-drift** | Verify system matches manifests | `ujust check-drift` |
-| **bootc-bootstrap** | Re-apply bootstrap tier | `ujust bootc-bootstrap` |
-| **build-system-profile** | Full state dump (dev) | `./scripts/build-system-profile` |
+| Tool                     | Purpose                         | Command                          |
+| ------------------------ | ------------------------------- | -------------------------------- |
+| **check-drift**          | Verify system matches manifests | `ujust check-drift`              |
+| **bootc-bootstrap**      | Re-apply bootstrap tier         | `ujust bootc-bootstrap`          |
+| **build-system-profile** | Full state dump (dev)           | `./scripts/build-system-profile` |
 
 ## Future Considerations
 

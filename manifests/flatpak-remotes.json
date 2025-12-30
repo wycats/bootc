@@ -1,0 +1,16 @@
+{
+  "$schema": "./schemas/flatpak-remotes.schema.json",
+  "remotes": [
+    {
+      "name": "appcenter",
+      "url": "https://flatpak.elementary.io/repo",
+      "scope": "system"
+    },
+    {
+      "name": "flathub",
+      "url": "https://dl.flathub.org/repo/",
+      "scope": "system",
+      "filtered": true
+    }
+  ]
+}

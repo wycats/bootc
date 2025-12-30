@@ -38,31 +38,43 @@ run_flatpak() {
 }
 
 apply_flatpak_remotes() {
-  local file="${share_dir}/flatpak-remotes.txt"
+  local file="${share_dir}/flatpak-remotes.json"
   [[ -f "$file" ]] || return 0
   need_cmd flatpak || { log "flatpak not found; skipping flatpak remotes"; return 1; }
+  need_cmd jq || { log "jq not found; skipping flatpak remotes"; return 1; }
 
-  while IFS=$'\t' read -r name url scope; do
-    [[ -n "${name}" ]] || continue
-    [[ "${name}" == \#* ]] && continue
+  local count
+  count="$(jq -r '.remotes | length' "$file")"
+
+  for ((i=0; i<count; i++)); do
+    local name url scope
+    name="$(jq -r ".remotes[$i].name" "$file")"
+    url="$(jq -r ".remotes[$i].url" "$file")"
+    scope="$(jq -r ".remotes[$i].scope" "$file")"
 
     log "Ensuring flatpak remote (${scope}): ${name} ${url}"
     run_flatpak "${scope}" remote-add --if-not-exists "${name}" "${url}" || return 1
-  done < "$file"
+  done
 }
 
 apply_flatpak_apps() {
-  local file="${share_dir}/flatpak-apps.txt"
+  local file="${share_dir}/flatpak-apps.json"
   [[ -f "$file" ]] || return 0
   need_cmd flatpak || { log "flatpak not found; skipping flatpak apps"; return 1; }
+  need_cmd jq || { log "jq not found; skipping flatpak apps"; return 1; }
 
-  while IFS=$'\t' read -r scope appid remote; do
-    [[ -n "${scope}" ]] || continue
-    [[ "${scope}" == \#* ]] && continue
+  local count
+  count="$(jq -r '.apps | length' "$file")"
+
+  for ((i=0; i<count; i++)); do
+    local appid remote scope
+    appid="$(jq -r ".apps[$i].id" "$file")"
+    remote="$(jq -r ".apps[$i].remote" "$file")"
+    scope="$(jq -r ".apps[$i].scope" "$file")"
 
     log "Installing/updating flatpak (${scope}): ${appid} (${remote})"
     run_flatpak "${scope}" install -y --noninteractive --or-update "${remote}" "${appid}" || return 1
-  done < "$file"
+  done
 }
 
 shell_major_version() {
@@ -73,11 +85,12 @@ shell_major_version() {
 }
 
 apply_gnome_extensions() {
-  local file="${share_dir}/gnome-extensions.txt"
+  local file="${share_dir}/gnome-extensions.json"
   [[ -f "$file" ]] || return 0
 
   need_cmd gnome-extensions || { log "gnome-extensions not found; skipping extensions"; return 1; }
   need_cmd curl || { log "curl not found; skipping extensions"; return 1; }
+  need_cmd jq || { log "jq not found; skipping extensions"; return 1; }
 
   local shell_ver
   shell_ver="$(shell_major_version)"
@@ -90,9 +103,12 @@ apply_gnome_extensions() {
   tmpdir="$(mktemp -d)"
   trap 'rm -rf "$tmpdir"' EXIT
 
-  while IFS= read -r uuid; do
-    [[ -n "${uuid}" ]] || continue
-    [[ "${uuid}" == \#* ]] && continue
+  local count
+  count="$(jq -r '.extensions | length' "$file")"
+
+  for ((i=0; i<count; i++)); do
+    local uuid
+    uuid="$(jq -r ".extensions[$i]" "$file")"
 
     if gnome-extensions info "${uuid}" >/dev/null 2>&1; then
       log "Enabling GNOME extension: ${uuid}"
@@ -103,7 +119,7 @@ apply_gnome_extensions() {
     log "Installing GNOME extension: ${uuid} (shell ${shell_ver})"
 
     info_json="$(curl -fsSL "https://extensions.gnome.org/extension-info/?uuid=${uuid}&shell_version=${shell_ver}")" || { log "Failed to fetch extension info for ${uuid}"; return 1; }
-    dl_path="$(printf "%s" "$info_json" | grep -Eo '"download_url"\s*:\s*"[^"]+"' | head -n1 | sed -E 's/.*"download_url"\s*:\s*"([^"]+)".*/\1/')"
+    dl_path="$(printf "%s" "$info_json" | jq -r '.download_url // empty')"
     if [[ -z "$dl_path" ]]; then
       log "No download_url for ${uuid}; skipping"
       continue
@@ -114,24 +130,28 @@ apply_gnome_extensions() {
 
     gnome-extensions install --force "${zip_path}" || { log "Failed to install ${uuid}"; return 1; }
     gnome-extensions enable "${uuid}" >/dev/null 2>&1 || true
-  done < "$file"
+  done
 }
 
 apply_gsettings() {
-  local file="${share_dir}/gsettings.txt"
+  local file="${share_dir}/gsettings.json"
   [[ -f "$file" ]] || return 0
 
   need_cmd gsettings || { log "gsettings not found; skipping gsettings"; return 0; }
+  need_cmd jq || { log "jq not found; skipping gsettings"; return 0; }
 
-  while IFS=$'\t' read -r schema key value; do
-    [[ -n "${schema}" ]] || continue
-    [[ "${schema}" == \#* ]] && continue
-    [[ -n "${key}" ]] || continue
-    [[ -n "${value}" ]] || continue
+  local count
+  count="$(jq -r '.settings | length' "$file")"
+
+  for ((i=0; i<count; i++)); do
+    local schema key value
+    schema="$(jq -r ".settings[$i].schema" "$file")"
+    key="$(jq -r ".settings[$i].key" "$file")"
+    value="$(jq -r ".settings[$i].value" "$file")"
 
     log "Applying gsettings: ${schema} ${key} ${value}"
     gsettings set "${schema}" "${key}" ${value} || true
-  done < "$file"
+  done
 }
 
 apply_all() {

@@ -1,0 +1,23 @@
+{
+  "$schema": "./schemas/gnome-extensions.schema.json",
+  "extensions": [
+    "add-to-steam@pupper.space",
+    "appindicatorsupport@rgcjonas.gmail.com",
+    "block-caribou-36@lxylxy123456.ercli.dev",
+    "blur-my-shell@aunetx",
+    "burn-my-windows@schneegans.github.com",
+    "caffeine@patapon.info",
+    "compiz-alike-magic-lamp-effect@hermes83.github.com",
+    "compiz-windows-effect@hermes83.github.com",
+    "dash-to-dock@micxgx.gmail.com",
+    "ddterm@amezin.github.com",
+    "desktop-cube@schneegans.github.com",
+    "grand-theft-focus@zalckos.github.com",
+    "gsconnect@andyholmes.github.io",
+    "hotedge@jonathan.jdoda.ca",
+    "logomenu@aryan_k",
+    "restartto@tiagoporsch.github.io",
+    "tilingshell@ferrarodomenico.com",
+    "user-theme@gnome-shell-extensions.gcampax.github.com"
+  ]
+}
