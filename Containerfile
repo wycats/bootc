@@ -44,6 +44,11 @@ RUN dnf install -y \
     curl \
     unzip \
     fontconfig \
+    google-noto-sans-batak-fonts \
+    google-noto-sans-inscriptional-pahlavi-fonts \
+    google-noto-sans-inscriptional-parthian-fonts \
+    google-noto-sans-meroitic-fonts \
+    google-noto-sans-mongolian-fonts \
     && dnf clean all
 
 # Relocate /opt to /usr/lib/opt for ostree compatibility
