@@ -94,6 +94,14 @@ if grep -q 'keyd' "$CONTAINERFILE"; then
         warn "keyd found but no PREFIX=/usr - it may install to /usr/local"
         echo "       Use: make -C /tmp/keyd PREFIX=/usr install"
     fi
+    # Check for FORCE_SYSTEMD (needed for container builds)
+    if grep -q 'FORCE_SYSTEMD=1' "$CONTAINERFILE"; then
+        ok "keyd uses FORCE_SYSTEMD=1 (service file installed in container builds)"
+    else
+        warn "keyd found but no FORCE_SYSTEMD=1 - service file won't be installed"
+        echo "       In container builds, /run/systemd/system doesn't exist"
+        echo "       Use: make -C /tmp/keyd PREFIX=/usr FORCE_SYSTEMD=1 install"
+    fi
 fi
 echo
 
