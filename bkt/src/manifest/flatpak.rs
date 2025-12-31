@@ -87,12 +87,15 @@ impl FlatpakAppsManifest {
     }
 
     /// Get the user manifest path.
+    ///
+    /// Respects `$HOME` environment variable for test isolation.
     pub fn user_path() -> PathBuf {
-        let config_dir = BaseDirs::new()
-            .map(|d| d.config_dir().to_path_buf())
-            .unwrap_or_else(|| {
-                PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config")
-            });
+        // Prefer $HOME for test isolation, fall back to BaseDirs
+        let config_dir = std::env::var("HOME")
+            .ok()
+            .map(|h| PathBuf::from(h).join(".config"))
+            .or_else(|| BaseDirs::new().map(|d| d.config_dir().to_path_buf()))
+            .unwrap_or_else(|| PathBuf::from(".config"));
         config_dir.join("bootc").join("flatpak-apps.json")
     }
 
