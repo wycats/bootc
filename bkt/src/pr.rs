@@ -1,11 +1,69 @@
 //! PR automation workflow.
 //!
 //! Provides the `--pr` flag functionality: apply locally AND open a PR.
+//!
+//! # Security
+//!
+//! This module handles user-controlled input that flows into git commands.
+//! All inputs are validated to prevent command injection:
+//! - Branch names are sanitized to alphanumeric, hyphens, underscores, and dots
+//! - Manifest file paths are validated against path traversal
+//! - Item names are sanitized before use in branch names
+//!
+//! # Errors
+//!
+//! The PR workflow can fail at multiple points:
+//! - Pre-flight checks: `gh` or `git` not configured
+//! - Network: Failed to clone/push to remote
+//! - Auth: GitHub authentication issues
+//! - Git state: Conflicts, dirty working directory
 
 use crate::repo::{RepoConfig, find_repo_path};
 use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
 use std::process::Command;
+
+/// Characters allowed in git ref names (conservative subset).
+/// Alphanumeric plus hyphen, underscore, and dot.
+fn is_safe_ref_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.'
+}
+
+/// Sanitize a string for use in git ref names.
+/// Replaces unsafe characters with hyphens and truncates to avoid length issues.
+fn sanitize_for_ref(s: &str) -> String {
+    let sanitized: String = s
+        .chars()
+        .map(|c| if is_safe_ref_char(c) { c } else { '-' })
+        .collect();
+    // Git has a 255-byte limit on ref names; keep it well under
+    if sanitized.len() > 50 {
+        sanitized[..50].to_string()
+    } else {
+        sanitized
+    }
+}
+
+/// Validate that a manifest file path is safe (no path traversal).
+fn validate_manifest_path(path: &str) -> Result<()> {
+    if path.contains("..") || path.starts_with('/') || path.contains('\\') {
+        bail!("Invalid manifest path: {}", path);
+    }
+    // Only allow paths within manifests/ or skel/
+    if !path.ends_with(".json") && !path.starts_with("skel/") {
+        bail!("Manifest path must be a .json file or in skel/: {}", path);
+    }
+    Ok(())
+}
+
+/// Validate that a branch name pattern is safe.
+fn validate_branch_pattern(branch: &str) -> Result<()> {
+    if branch.chars().all(|c| is_safe_ref_char(c) || c == '/') {
+        Ok(())
+    } else {
+        bail!("Invalid branch name: {}", branch);
+    }
+}
 
 /// Result of a pre-flight check.
 #[derive(Debug)]
@@ -214,14 +272,23 @@ pub struct PrChange {
 }
 
 impl PrChange {
+    /// Generate a safe branch name for this change.
+    /// All components are sanitized to prevent command injection.
     pub fn branch_name(&self) -> String {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
-            .unwrap_or(0);
+            .unwrap_or_else(|_| {
+                // Fallback: use process ID for uniqueness
+                std::process::id() as u64
+            });
+        // Sanitize all user-controlled components
+        let safe_type = sanitize_for_ref(&self.manifest_type);
+        let safe_action = sanitize_for_ref(&self.action);
+        let safe_name = sanitize_for_ref(&self.name);
         format!(
             "bkt/{}-{}-{}-{}",
-            self.manifest_type, self.action, self.name, timestamp
+            safe_type, safe_action, safe_name, timestamp
         )
     }
 
@@ -307,18 +374,38 @@ pub fn ensure_repo() -> Result<PathBuf> {
 
 /// Run the PR workflow for a manifest change.
 /// Set `skip_preflight` to true to bypass pre-flight checks.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Pre-flight checks fail (gh/git not configured)
+/// - Repository cannot be cloned or updated
+/// - Git operations fail (branch creation, commit, push)
+/// - GitHub PR creation fails
+/// - Manifest path validation fails (path traversal attempt)
 pub fn run_pr_workflow(
     change: &PrChange,
     manifest_content: &str,
     skip_preflight: bool,
 ) -> Result<()> {
+    // Validate manifest path before proceeding
+    validate_manifest_path(&change.manifest_file)?;
+
     ensure_preflight(skip_preflight)?;
 
     let repo_path = ensure_repo()?;
-    let manifest_path = repo_path.join("manifests").join(&change.manifest_file);
+
+    // Determine the full path - skel files go directly, others go in manifests/
+    let manifest_path = if change.manifest_file.starts_with("skel/") {
+        repo_path.join(&change.manifest_file)
+    } else {
+        repo_path.join("manifests").join(&change.manifest_file)
+    };
 
     // Create branch
     let branch = change.branch_name();
+    // Validate branch name is safe (should always pass due to sanitization)
+    validate_branch_pattern(&branch)?;
     println!("Creating branch: {}", branch);
 
     let status = Command::new("git")

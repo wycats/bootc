@@ -1,10 +1,16 @@
 //! Skel (skeleton files) command implementation.
 //!
 //! Manages dotfiles that get copied to /etc/skel in the image.
+//!
+//! # Security
+//!
+//! This module validates file paths to prevent path traversal attacks.
+//! Files can only be copied from within $HOME, and paths containing ".."
+//! are rejected.
 
 use crate::pr::{PrChange, run_pr_workflow};
 use crate::repo::find_repo_path;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -54,10 +60,23 @@ fn skel_dir() -> Result<PathBuf> {
 }
 
 /// Get home directory.
-fn home_dir() -> PathBuf {
-    std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/home").join(whoami::username()))
+/// Uses the directories crate for reliable cross-platform support.
+fn home_dir() -> Result<PathBuf> {
+    directories::BaseDirs::new()
+        .map(|d| d.home_dir().to_path_buf())
+        .or_else(|| std::env::var("HOME").ok().map(PathBuf::from))
+        .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))
+}
+
+/// Validate that a file path is safe (no path traversal).
+fn validate_skel_path(path: &str) -> Result<()> {
+    if path.contains("..") {
+        bail!("Path traversal not allowed: {}", path);
+    }
+    if path.starts_with('/') {
+        bail!("Absolute paths not allowed: {}", path);
+    }
+    Ok(())
 }
 
 /// List all files in skel directory recursively.
@@ -125,7 +144,7 @@ pub fn run(args: SkelArgs) -> Result<()> {
             pr,
             skip_preflight,
         } => {
-            let home = home_dir();
+            let home = home_dir()?;
             let skel = skel_dir()?;
 
             // Normalize the file path (remove leading ./ or ~/)
@@ -134,11 +153,28 @@ pub fn run(args: SkelArgs) -> Result<()> {
                 .trim_start_matches("~/")
                 .to_string();
 
+            // Validate the path is safe
+            validate_skel_path(&file)?;
+
             let source = home.join(&file);
             let dest = skel.join(&file);
 
+            // Verify source is actually within home directory
+            let canonical_source = source
+                .canonicalize()
+                .with_context(|| format!("Cannot resolve path: {}", source.display()))?;
+            let canonical_home = home
+                .canonicalize()
+                .with_context(|| "Cannot resolve home directory")?;
+            if !canonical_source.starts_with(&canonical_home) {
+                bail!(
+                    "Source file must be within home directory: {}",
+                    source.display()
+                );
+            }
+
             if !source.exists() {
-                anyhow::bail!("Source file does not exist: {}", source.display());
+                bail!("Source file does not exist: {}", source.display());
             }
 
             // Create parent directories if needed
@@ -172,7 +208,7 @@ pub fn run(args: SkelArgs) -> Result<()> {
             }
         }
         SkelAction::Diff { file } => {
-            let home = home_dir();
+            let home = home_dir()?;
             let skel = skel_dir()?;
 
             if let Some(file) = file {
@@ -244,7 +280,7 @@ pub fn run(args: SkelArgs) -> Result<()> {
             }
         }
         SkelAction::Sync { dry_run, force } => {
-            let home = home_dir();
+            let home = home_dir()?;
             let skel = skel_dir()?;
             let files = list_skel_files(&skel)?;
 

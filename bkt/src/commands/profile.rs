@@ -115,6 +115,13 @@ fn get_installed_extensions() -> Result<Vec<String>> {
 }
 
 /// Get list of enabled GNOME extensions.
+///
+/// Parses GVariant array output from `gsettings get`. This is a simplified parser
+/// that handles the common case of `['ext1@author', 'ext2@author']` format.
+/// Empty arrays may appear as `@as []` in some GVariant representations.
+///
+/// Note: This parser handles the common cases but may not handle all GVariant
+/// representations (e.g., with type annotations or nested structures).
 fn get_enabled_extensions() -> Result<Vec<String>> {
     let output = Command::new("gsettings")
         .args(["get", "org.gnome.shell", "enabled-extensions"])
@@ -128,9 +135,13 @@ fn get_enabled_extensions() -> Result<Vec<String>> {
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     // Parse GVariant array format: ['ext1@author', 'ext2@author']
-    // Remove brackets and split by comma
-    let trimmed = stdout.trim_start_matches('[').trim_end_matches(']');
-    if trimmed.is_empty() || trimmed == "@as" {
+    // Handle empty array representations: [], @as [], @as
+    let trimmed = stdout
+        .trim_start_matches("@as")
+        .trim()
+        .trim_start_matches('[')
+        .trim_end_matches(']');
+    if trimmed.is_empty() {
         return Ok(vec![]);
     }
 
