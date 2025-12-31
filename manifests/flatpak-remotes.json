@@ -1,5 +1,5 @@
 {
-  "$schema": "./schemas/flatpak-remotes.schema.json",
+  "$schema": "https://wycats.github.io/bootc/flatpak-remotes.schema.json",
   "remotes": [
     {
       "name": "appcenter",

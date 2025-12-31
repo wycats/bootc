@@ -7,6 +7,204 @@ use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
 use std::process::Command;
 
+/// Result of a pre-flight check.
+#[derive(Debug)]
+pub struct PreflightResult {
+    pub name: String,
+    pub passed: bool,
+    pub message: String,
+    pub fix_hint: Option<String>,
+}
+
+impl PreflightResult {
+    fn pass(name: &str, message: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            passed: true,
+            message: message.to_string(),
+            fix_hint: None,
+        }
+    }
+
+    fn fail(name: &str, message: &str, fix_hint: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            passed: false,
+            message: message.to_string(),
+            fix_hint: Some(fix_hint.to_string()),
+        }
+    }
+}
+
+/// Run all pre-flight checks for the PR workflow.
+/// Returns Ok if all checks pass, or Err with details about what failed.
+pub fn run_preflight_checks() -> Result<Vec<PreflightResult>> {
+    Ok(vec![
+        // Check 1: gh CLI available
+        check_gh_available(),
+        // Check 2: gh authenticated
+        check_gh_auth_status(),
+        // Check 3: git available
+        check_git_available(),
+        // Check 4: git user.name configured
+        check_git_user_name(),
+        // Check 5: git user.email configured
+        check_git_user_email(),
+        // Check 6: repo.json exists
+        check_repo_config(),
+    ])
+}
+
+fn check_gh_available() -> PreflightResult {
+    match Command::new("gh").arg("--version").output() {
+        Ok(output) if output.status.success() => {
+            let version = String::from_utf8_lossy(&output.stdout);
+            let version_line = version.lines().next().unwrap_or("gh installed");
+            PreflightResult::pass("gh CLI", version_line)
+        }
+        _ => PreflightResult::fail(
+            "gh CLI",
+            "GitHub CLI (gh) not found",
+            "Install: dnf install gh",
+        ),
+    }
+}
+
+fn check_gh_auth_status() -> PreflightResult {
+    let output = match Command::new("gh").args(["auth", "status"]).output() {
+        Ok(o) => o,
+        Err(_) => {
+            return PreflightResult::fail(
+                "gh auth",
+                "Cannot run gh auth status",
+                "Install gh first: dnf install gh",
+            );
+        }
+    };
+
+    if output.status.success() {
+        // Parse the output to get username
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let username = stderr
+            .lines()
+            .find(|l| l.contains("Logged in to"))
+            .and_then(|l| l.split("as ").nth(1))
+            .and_then(|s| s.split_whitespace().next())
+            .unwrap_or("authenticated");
+        PreflightResult::pass("gh auth", &format!("Authenticated as {}", username))
+    } else {
+        PreflightResult::fail(
+            "gh auth",
+            "GitHub CLI not authenticated",
+            "Run: gh auth login",
+        )
+    }
+}
+
+fn check_git_available() -> PreflightResult {
+    match Command::new("git").arg("--version").output() {
+        Ok(output) if output.status.success() => {
+            let version = String::from_utf8_lossy(&output.stdout);
+            PreflightResult::pass("git", version.trim())
+        }
+        _ => PreflightResult::fail("git", "git not found", "Install: dnf install git"),
+    }
+}
+
+fn check_git_user_name() -> PreflightResult {
+    let output = match Command::new("git")
+        .args(["config", "--get", "user.name"])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => {
+            return PreflightResult::fail(
+                "git user.name",
+                "Cannot run git config",
+                "Ensure git is installed",
+            );
+        }
+    };
+
+    if output.status.success() {
+        let name = String::from_utf8_lossy(&output.stdout);
+        PreflightResult::pass("git user.name", name.trim())
+    } else {
+        PreflightResult::fail(
+            "git user.name",
+            "Git user name not configured",
+            "Run: git config --global user.name \"Your Name\"",
+        )
+    }
+}
+
+fn check_git_user_email() -> PreflightResult {
+    let output = match Command::new("git")
+        .args(["config", "--get", "user.email"])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => {
+            return PreflightResult::fail(
+                "git user.email",
+                "Cannot run git config",
+                "Ensure git is installed",
+            );
+        }
+    };
+
+    if output.status.success() {
+        let email = String::from_utf8_lossy(&output.stdout);
+        PreflightResult::pass("git user.email", email.trim())
+    } else {
+        PreflightResult::fail(
+            "git user.email",
+            "Git user email not configured",
+            "Run: git config --global user.email \"you@example.com\"",
+        )
+    }
+}
+
+fn check_repo_config() -> PreflightResult {
+    match RepoConfig::load() {
+        Ok(config) => {
+            PreflightResult::pass("repo.json", &format!("{}/{}", config.owner, config.name))
+        }
+        Err(_) => PreflightResult::fail(
+            "repo.json",
+            "Repository config not found at /usr/share/bootc/repo.json",
+            "Ensure bkt is running from a properly built bootc image",
+        ),
+    }
+}
+
+/// Check all preflight conditions and return error if any fail.
+/// Set `skip` to true to bypass checks (for --skip-preflight flag).
+pub fn ensure_preflight(skip: bool) -> Result<()> {
+    if skip {
+        eprintln!("⚠ Skipping pre-flight checks (--skip-preflight)");
+        return Ok(());
+    }
+
+    let results = run_preflight_checks()?;
+    let failed: Vec<_> = results.iter().filter(|r| !r.passed).collect();
+
+    if failed.is_empty() {
+        return Ok(());
+    }
+
+    eprintln!("\n✗ Pre-flight checks failed:\n");
+    for result in &failed {
+        eprintln!("  ✗ {}: {}", result.name, result.message);
+        if let Some(hint) = &result.fix_hint {
+            eprintln!("    → {}", hint);
+        }
+    }
+    eprintln!();
+
+    bail!("Pre-flight checks failed. Fix the issues above or use --skip-preflight to bypass.");
+}
+
 /// Information about a manifest change for PR creation.
 pub struct PrChange {
     pub manifest_type: String, // "shim", "flatpak", "extension", etc.
@@ -107,25 +305,14 @@ pub fn ensure_repo() -> Result<PathBuf> {
     Ok(repo_path)
 }
 
-/// Check if gh CLI is authenticated.
-fn check_gh_auth() -> Result<()> {
-    let output = Command::new("gh")
-        .args(["auth", "status"])
-        .output()
-        .context("Failed to run gh auth status - is gh installed?")?;
-
-    if !output.status.success() {
-        bail!(
-            "GitHub CLI not authenticated. Run: gh auth login\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    Ok(())
-}
-
 /// Run the PR workflow for a manifest change.
-pub fn run_pr_workflow(change: &PrChange, manifest_content: &str) -> Result<()> {
-    check_gh_auth()?;
+/// Set `skip_preflight` to true to bypass pre-flight checks.
+pub fn run_pr_workflow(
+    change: &PrChange,
+    manifest_content: &str,
+    skip_preflight: bool,
+) -> Result<()> {
+    ensure_preflight(skip_preflight)?;
 
     let repo_path = ensure_repo()?;
     let manifest_path = repo_path.join("manifests").join(&change.manifest_file);

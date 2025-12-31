@@ -27,6 +27,9 @@ pub enum FlatpakAction {
         /// Create a PR with the change
         #[arg(long)]
         pr: bool,
+        /// Skip pre-flight checks for PR workflow
+        #[arg(long)]
+        skip_preflight: bool,
     },
     /// Remove a Flatpak app from the manifest
     Remove {
@@ -35,6 +38,9 @@ pub enum FlatpakAction {
         /// Create a PR with the change
         #[arg(long)]
         pr: bool,
+        /// Skip pre-flight checks for PR workflow
+        #[arg(long)]
+        skip_preflight: bool,
     },
     /// List all Flatpak apps in the manifest
     List {
@@ -153,6 +159,7 @@ pub fn run(args: FlatpakArgs) -> Result<()> {
             remote,
             scope,
             pr,
+            skip_preflight,
         } => {
             let scope: FlatpakScope = scope.parse()?;
 
@@ -207,10 +214,14 @@ pub fn run(args: FlatpakArgs) -> Result<()> {
                     name: app_id.clone(),
                     manifest_file: "flatpak-apps.json".to_string(),
                 };
-                run_pr_workflow(&change, &manifest_content)?;
+                run_pr_workflow(&change, &manifest_content, skip_preflight)?;
             }
         }
-        FlatpakAction::Remove { app_id, pr } => {
+        FlatpakAction::Remove {
+            app_id,
+            pr,
+            skip_preflight,
+        } => {
             let mut user = FlatpakAppsManifest::load_user()?;
             let system = FlatpakAppsManifest::load_system()?;
 
@@ -254,7 +265,7 @@ pub fn run(args: FlatpakArgs) -> Result<()> {
                         name: app_id.clone(),
                         manifest_file: "flatpak-apps.json".to_string(),
                     };
-                    run_pr_workflow(&change, &manifest_content)?;
+                    run_pr_workflow(&change, &manifest_content, skip_preflight)?;
                 } else {
                     println!("Note: '{}' not in system manifest, no PR needed", app_id);
                 }

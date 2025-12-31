@@ -28,6 +28,9 @@ pub enum GSettingAction {
         /// Create a PR with the change
         #[arg(long)]
         pr: bool,
+        /// Skip pre-flight checks for PR workflow
+        #[arg(long)]
+        skip_preflight: bool,
     },
     /// Remove a GSettings entry from the manifest
     Unset {
@@ -38,6 +41,9 @@ pub enum GSettingAction {
         /// Create a PR with the change
         #[arg(long)]
         pr: bool,
+        /// Skip pre-flight checks for PR workflow
+        #[arg(long)]
+        skip_preflight: bool,
     },
     /// List all GSettings in the manifest
     List {
@@ -137,6 +143,7 @@ pub fn run(args: GSettingArgs) -> Result<()> {
             value,
             comment,
             pr,
+            skip_preflight,
         } => {
             let system = GSettingsManifest::load_system()?;
             let mut user = GSettingsManifest::load_user()?;
@@ -198,10 +205,15 @@ pub fn run(args: GSettingArgs) -> Result<()> {
                     name: format!("{}.{}", schema, key),
                     manifest_file: "gsettings.json".to_string(),
                 };
-                run_pr_workflow(&change, &manifest_content)?;
+                run_pr_workflow(&change, &manifest_content, skip_preflight)?;
             }
         }
-        GSettingAction::Unset { schema, key, pr } => {
+        GSettingAction::Unset {
+            schema,
+            key,
+            pr,
+            skip_preflight,
+        } => {
             let mut user = GSettingsManifest::load_user()?;
             let system = GSettingsManifest::load_system()?;
 
@@ -243,7 +255,7 @@ pub fn run(args: GSettingArgs) -> Result<()> {
                         name: format!("{}.{}", schema, key),
                         manifest_file: "gsettings.json".to_string(),
                     };
-                    run_pr_workflow(&change, &manifest_content)?;
+                    run_pr_workflow(&change, &manifest_content, skip_preflight)?;
                 } else {
                     println!(
                         "Note: '{}.{}' not in system manifest, no PR needed",

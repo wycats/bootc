@@ -25,6 +25,9 @@ pub enum SkelAction {
         /// Create a PR with the change
         #[arg(long)]
         pr: bool,
+        /// Skip pre-flight checks for PR workflow
+        #[arg(long)]
+        skip_preflight: bool,
     },
     /// Show diff between skel files and current $HOME
     Diff {
@@ -117,7 +120,11 @@ fn diff_files(skel_file: &Path, home_file: &Path) -> Result<Option<String>> {
 
 pub fn run(args: SkelArgs) -> Result<()> {
     match args.action {
-        SkelAction::Add { file, pr } => {
+        SkelAction::Add {
+            file,
+            pr,
+            skip_preflight,
+        } => {
             let home = home_dir();
             let skel = skel_dir()?;
 
@@ -161,7 +168,7 @@ pub fn run(args: SkelArgs) -> Result<()> {
                 };
 
                 // For skel, we write the actual file content
-                run_pr_workflow(&change, &content)?;
+                run_pr_workflow(&change, &content, skip_preflight)?;
             }
         }
         SkelAction::Diff { file } => {

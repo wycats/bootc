@@ -1,5 +1,5 @@
 {
-  "$schema": "./schemas/flatpak-apps.schema.json",
+  "$schema": "https://wycats.github.io/bootc/flatpak-apps.schema.json",
   "apps": [
     { "id": "app.xemu.xemu", "remote": "flathub", "scope": "user" },
     {

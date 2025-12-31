@@ -1,6 +1,7 @@
 //! CLI command implementations.
 
 pub mod completions;
+pub mod doctor;
 pub mod extension;
 pub mod flatpak;
 pub mod gsetting;

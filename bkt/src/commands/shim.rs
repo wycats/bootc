@@ -26,6 +26,9 @@ pub enum ShimAction {
         /// Create a PR with the change
         #[arg(long)]
         pr: bool,
+        /// Skip pre-flight checks for PR workflow
+        #[arg(long)]
+        skip_preflight: bool,
     },
     /// Remove a shim from the manifest
     Remove {
@@ -34,6 +37,9 @@ pub enum ShimAction {
         /// Create a PR with the change
         #[arg(long)]
         pr: bool,
+        /// Skip pre-flight checks for PR workflow
+        #[arg(long)]
+        skip_preflight: bool,
     },
     /// List all shims in the manifest
     List {
@@ -134,7 +140,12 @@ fn shim_source(name: &str, system: &ShimsManifest, user: &ShimsManifest) -> &'st
 
 pub fn run(args: ShimArgs) -> Result<()> {
     match args.action {
-        ShimAction::Add { name, host, pr } => {
+        ShimAction::Add {
+            name,
+            host,
+            pr,
+            skip_preflight,
+        } => {
             let host_cmd = host.clone().unwrap_or_else(|| name.clone());
             let shim = Shim {
                 name: name.clone(),
@@ -180,10 +191,14 @@ pub fn run(args: ShimArgs) -> Result<()> {
                     name: name.clone(),
                     manifest_file: "host-shims.json".to_string(),
                 };
-                run_pr_workflow(&change, &manifest_content)?;
+                run_pr_workflow(&change, &manifest_content, skip_preflight)?;
             }
         }
-        ShimAction::Remove { name, pr } => {
+        ShimAction::Remove {
+            name,
+            pr,
+            skip_preflight,
+        } => {
             let mut user = ShimsManifest::load_user()?;
             let system = ShimsManifest::load_system()?;
 
@@ -217,7 +232,7 @@ pub fn run(args: ShimArgs) -> Result<()> {
                         name: name.clone(),
                         manifest_file: "host-shims.json".to_string(),
                     };
-                    run_pr_workflow(&change, &manifest_content)?;
+                    run_pr_workflow(&change, &manifest_content, skip_preflight)?;
                 } else {
                     println!("Note: '{}' not in system manifest, no PR needed", name);
                 }

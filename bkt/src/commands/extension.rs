@@ -21,6 +21,9 @@ pub enum ExtensionAction {
         /// Create a PR with the change
         #[arg(long)]
         pr: bool,
+        /// Skip pre-flight checks for PR workflow
+        #[arg(long)]
+        skip_preflight: bool,
     },
     /// Remove a GNOME extension from the manifest
     Remove {
@@ -29,6 +32,9 @@ pub enum ExtensionAction {
         /// Create a PR with the change
         #[arg(long)]
         pr: bool,
+        /// Skip pre-flight checks for PR workflow
+        #[arg(long)]
+        skip_preflight: bool,
     },
     /// List all GNOME extensions in the manifest
     List {
@@ -140,7 +146,11 @@ fn sync_extensions(dry_run: bool) -> Result<()> {
 
 pub fn run(args: ExtensionArgs) -> Result<()> {
     match args.action {
-        ExtensionAction::Add { uuid, pr } => {
+        ExtensionAction::Add {
+            uuid,
+            pr,
+            skip_preflight,
+        } => {
             let system = GnomeExtensionsManifest::load_system()?;
             let mut user = GnomeExtensionsManifest::load_user()?;
 
@@ -181,10 +191,14 @@ pub fn run(args: ExtensionArgs) -> Result<()> {
                     name: uuid.clone(),
                     manifest_file: "gnome-extensions.json".to_string(),
                 };
-                run_pr_workflow(&change, &manifest_content)?;
+                run_pr_workflow(&change, &manifest_content, skip_preflight)?;
             }
         }
-        ExtensionAction::Remove { uuid, pr } => {
+        ExtensionAction::Remove {
+            uuid,
+            pr,
+            skip_preflight,
+        } => {
             let mut user = GnomeExtensionsManifest::load_user()?;
             let system = GnomeExtensionsManifest::load_system()?;
 
@@ -224,7 +238,7 @@ pub fn run(args: ExtensionArgs) -> Result<()> {
                         name: uuid.clone(),
                         manifest_file: "gnome-extensions.json".to_string(),
                     };
-                    run_pr_workflow(&change, &manifest_content)?;
+                    run_pr_workflow(&change, &manifest_content, skip_preflight)?;
                 } else {
                     println!("Note: '{}' not in system manifest, no PR needed", uuid);
                 }

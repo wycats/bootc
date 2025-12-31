@@ -49,3 +49,83 @@ jobs:
 
       - name: Build release
         run: cargo build --release
+
+  validate-manifests:
+    name: Validate manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate JSON syntax
+        run: |
+          echo "Checking JSON syntax..."
+          for manifest in manifests/*.json; do
+            echo "  → $manifest"
+            jq empty "$manifest" || exit 1
+          done
+          echo "✓ All manifests have valid JSON syntax"
+
+      - name: Validate against schemas
+        run: |
+          npm install -g ajv-cli ajv-formats
+          
+          echo "Validating manifests against schemas..."
+          
+          # Map manifests to their schemas
+          declare -A SCHEMA_MAP=(
+            ["manifests/flatpak-apps.json"]="schemas/flatpak-apps.schema.json"
+            ["manifests/flatpak-remotes.json"]="schemas/flatpak-remotes.schema.json"
+            ["manifests/gnome-extensions.json"]="schemas/gnome-extensions.schema.json"
+            ["manifests/gsettings.json"]="schemas/gsettings.schema.json"
+            ["manifests/host-shims.json"]="schemas/host-shims.schema.json"
+          )
+          
+          for manifest in "${!SCHEMA_MAP[@]}"; do
+            schema="${SCHEMA_MAP[$manifest]}"
+            echo "  → $manifest against $schema"
+            ajv validate -s "$schema" -d "$manifest" --spec=draft2020 -c ajv-formats || exit 1
+          done
+          
+          echo "✓ All manifests are valid"
+
+  check-schemas-current:
+    name: Check schemas are current
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: bkt
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bkt -> target
+
+      - name: Build bkt
+        run: cargo build --release
+
+      - name: Generate schemas
+        run: |
+          mkdir -p /tmp/schemas-generated
+          ../target/release/bkt schema generate -o /tmp/schemas-generated
+
+      - name: Compare with committed schemas
+        run: |
+          echo "Checking if committed schemas match generated schemas..."
+          if ! diff -r ../schemas /tmp/schemas-generated; then
+            echo ""
+            echo "::error::Committed schemas are out of sync with Rust types!"
+            echo "Run: cd bkt && cargo run -- schema generate -o ../schemas"
+            exit 1
+          fi
+          echo "✓ Schemas are up to date"

@@ -22,10 +22,10 @@ This document tracks the improvements identified during the codebase review. Wor
 | 12  | [Code cleanup: unused BktError](#12-code-cleanup-unused-bkterror)            | 🟢 Low    | ✅          |
 | 13  | [Clean up skel placeholder](#13-clean-up-skel-placeholder)                   | 🟢 Low    | ✅          |
 | 14  | [Clean up redundant manifest fields](#14-clean-up-redundant-manifest-fields) | 🟢 Low    | ✅          |
-| 15  | [Schema hosting](#15-schema-hosting)                                         | 🟡 Medium | ⬜          |
-| 16  | [CI manifest validation](#16-ci-manifest-validation)                         | 🟡 Medium | ⬜          |
+| 15  | [Schema hosting](#15-schema-hosting)                                         | 🟡 Medium | ✅          |
+| 16  | [CI manifest validation](#16-ci-manifest-validation)                         | 🟡 Medium | ✅          |
 | 17  | [Shell completions](#17-shell-completions)                                   | 🟡 Medium | ✅          |
-| 18  | [Pre-flight checks](#18-pre-flight-checks)                                   | 🟢 Low    | ⬜          |
+| 18  | [Pre-flight checks](#18-pre-flight-checks)                                   | 🟢 Low    | ✅          |
 
 ---
 
@@ -555,18 +555,20 @@ Edited `manifests/host-shims.json` to remove redundant `host` fields. The Rust c
 
 ## 15. Schema Hosting
 
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
 ### Problem
 
-Manifests reference `$schema` URLs (e.g., `https://wycats.github.io/bootc/schemas/flatpak-apps.schema.json`) that don't actually resolve. The schemas exist locally in `schemas/` but aren't hosted anywhere.
+Manifests reference `$schema` URLs (e.g., `https://wycats.github.io/bootc/flatpak-apps.schema.json`) that don't actually resolve. The schemas exist locally in `schemas/` but aren't hosted anywhere.
 
-### Implementation Plan
+### Implementation
 
-1. Set up GitHub Pages on the repository
-2. Configure Pages to serve the `schemas/` directory
-3. Update manifest `$schema` fields to use the hosted URLs
-4. Add a CI step to ensure schemas are up-to-date before deployment
+1. ✅ Created `.github/workflows/pages.yml` to deploy schemas via GitHub Pages
+2. ✅ Updated manifest `$schema` fields to use hosted URLs:
+   - `https://wycats.github.io/bootc/flatpak-apps.schema.json`
+   - `https://wycats.github.io/bootc/gnome-extensions.schema.json`
+   - etc.
+3. ✅ Added `$schema` to `host-shims.json` (was missing)
 
 ### Benefits
 
@@ -574,20 +576,31 @@ Manifests reference `$schema` URLs (e.g., `https://wycats.github.io/bootc/schema
 - External tools can validate manifests without cloning the repo
 - Schema URLs become self-documenting
 
+**Note:** After PR merge, enable GitHub Pages in repository settings (Settings → Pages → Source: GitHub Actions).
+
 ---
 
 ## 16. CI Manifest Validation
 
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
 ### Problem
 
 Manifests can contain typos or invalid structures that aren't caught until runtime. The schemas exist but aren't enforced.
 
-### Implementation Plan
+### Implementation
 
-1. Add a CI job that validates all `manifests/*.json` files against their corresponding schemas
-2. Use a JSON Schema validator (e.g., `ajv-cli` or a Rust-based validator)
+Added two new CI jobs in `.github/workflows/ci.yml`:
+
+1. **`validate-manifests`** — Validates JSON syntax and schema compliance:
+   - Uses `jq` to check JSON syntax
+   - Uses `ajv-cli` to validate against schemas
+   - Runs on every PR and push
+
+2. **`check-schemas-current`** — Ensures committed schemas match generated:
+   - Builds bkt and runs `bkt schema generate`
+   - Compares output with committed `schemas/`
+   - Fails if they differ (prevents stale schemas)
 3. Fail the build if any manifest is invalid
 4. Optionally: validate that `bkt schema generate` output matches committed schemas
 
@@ -644,30 +657,36 @@ source ~/.config/nushell/completions/bkt.nu
 
 ## 18. Pre-flight Checks
 
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
 ### Problem
 
 The `--pr` workflow depends on external tools (`gh`, `git`) being properly configured. If `gh auth status` fails or git isn't configured, the workflow fails partway through with a confusing error.
 
-### Implementation Plan
+### Implementation
 
-1. Add a pre-flight check function in `pr.rs`
-2. Before starting any PR workflow, verify:
-   - `gh auth status` succeeds
+Added comprehensive pre-flight checking in `pr.rs`:
+
+1. ✅ Created `PreflightResult` struct with pass/fail status, message, and fix hints
+2. ✅ Added `run_preflight_checks()` that verifies:
+   - `gh` CLI is installed
+   - `gh auth status` succeeds (user is authenticated)
+   - `git` is available
    - `git config user.name` is set
    - `git config user.email` is set
-   - Network connectivity to GitHub (optional)
-3. Provide clear, actionable error messages:
-   - "GitHub CLI not authenticated. Run: gh auth login"
-   - "Git user not configured. Run: git config --global user.name 'Your Name'"
-4. Add `--skip-preflight` flag for advanced users who want to bypass checks
+   - `/usr/share/bootc/repo.json` exists
+3. ✅ Added `--skip-preflight` flag to all `--pr` commands
+4. ✅ Created `bkt doctor` command for standalone system check
 
-### Benefits
+### Usage
 
-- Fail fast with clear guidance instead of cryptic errors mid-workflow
-- Improve first-run experience for new users
-- Reduce support burden
+```bash
+# Check system readiness
+bkt doctor
+
+# Skip preflight checks (for advanced users)
+bkt shim add foo --pr --skip-preflight
+```
 
 ---
 

@@ -52,6 +52,9 @@ pub enum Commands {
 
     /// Generate shell completions
     Completions(commands::completions::CompletionsArgs),
+
+    /// Check system readiness for bkt workflows
+    Doctor(commands::doctor::DoctorArgs),
 }
 
 fn main() -> Result<()> {
@@ -67,5 +70,6 @@ fn main() -> Result<()> {
         Commands::Repo(args) => commands::repo::run(args),
         Commands::Schema(args) => commands::schema::run(args),
         Commands::Completions(args) => commands::completions::run(args),
+        Commands::Doctor(args) => commands::doctor::run(args),
     }
 }
