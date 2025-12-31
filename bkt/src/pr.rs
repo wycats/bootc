@@ -358,7 +358,11 @@ pub fn ensure_repo() -> Result<PathBuf> {
     } else {
         // Clone
         println!("Cloning {} to {}", config.url, repo_path.display());
-        std::fs::create_dir_all(repo_path.parent().unwrap())?;
+        std::fs::create_dir_all(
+            repo_path
+                .parent()
+                .ok_or_else(|| anyhow::anyhow!("Invalid repo path: no parent directory"))?,
+        )?;
         let status = Command::new("git")
             .args(["clone", &config.url])
             .arg(&repo_path)
@@ -468,6 +472,7 @@ pub fn run_pr_workflow(
 
     // Return to default branch
     let config = RepoConfig::load()?;
+    validate_branch_pattern(&config.default_branch)?;
     match Command::new("git")
         .args(["checkout", "--", &config.default_branch])
         .current_dir(&repo_path)
