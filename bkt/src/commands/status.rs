@@ -73,10 +73,11 @@ fn list_skel_files(skel: &PathBuf) -> Vec<String> {
     if let Ok(entries) = fs::read_dir(skel) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_file() && entry.file_name() != ".gitkeep" {
-                if let Some(name) = path.file_name() {
-                    files.push(name.to_string_lossy().to_string());
-                }
+            if path.is_file()
+                && entry.file_name() != ".gitkeep"
+                && let Some(name) = path.file_name()
+            {
+                files.push(name.to_string_lossy().to_string());
             }
         }
     }
@@ -276,11 +277,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
     } else {
         format!("{} apps (all synced)", report.flatpaks.total)
     };
-    println!(
-        "  {:<12} {}",
-        "Flatpaks:".cyan(),
-        flatpak_info
-    );
+    println!("  {:<12} {}", "Flatpaks:".cyan(), flatpak_info);
 
     // Extensions
     let ext_info = format!(

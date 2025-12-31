@@ -717,6 +717,7 @@ Skel:        3 files (1 differs from $HOME)
 ```
 
 Features:
+
 - Load all manifests and show counts
 - Detect pending syncs (manifest vs. system state)
 - Highlight items needing attention
@@ -735,7 +736,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
     let flatpaks = FlatpakAppsManifest::merged(...);
     let extensions = GnomeExtensionsManifest::merged(...);
     // ... gather all manifests
-    
+
     // Compare manifest vs. system state
     // Output summary
 }
@@ -761,6 +762,7 @@ owo-colors = "4"
 ```
 
 Apply consistently across all commands:
+
 - Green: success (✓), "Added", "Synced"
 - Red: errors (✗), "Failed", "Missing"
 - Yellow: warnings, "Skipped", "Already exists"
@@ -819,7 +821,7 @@ fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .with_writer(std::io::stderr)
         .init();
-    
+
     let cli = Cli::parse();
     // ...
 }
@@ -833,12 +835,12 @@ use tracing::{info, debug, warn, error, instrument};
 #[instrument(skip(manifest_content))]
 pub fn run_pr_workflow(change: &PrChange, manifest_content: &str) -> Result<()> {
     debug!("Starting PR workflow for {:?}", change);
-    
+
     let repo_path = ensure_repo()?;
     info!(repo = %repo_path.display(), "Using repository");
-    
+
     // ...
-    
+
     debug!("Creating branch: {}", branch);
     // ...
 }
@@ -878,7 +880,7 @@ pub struct Cli {
     /// Show what would be done without making changes
     #[arg(long, short = 'n', global = true)]
     pub dry_run: bool,
-    
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -926,7 +928,7 @@ impl Executor {
     pub fn new(dry_run: bool) -> Self {
         Self { dry_run, effects: Vec::new() }
     }
-    
+
     pub fn write_file(&mut self, path: &Path, content: &str, desc: &str) -> Result<()> {
         let effect = Effect::WriteFile {
             path: path.to_path_buf(),
@@ -941,7 +943,7 @@ impl Executor {
             Ok(())
         }
     }
-    
+
     pub fn run_command(&mut self, program: &str, args: &[&str], desc: &str) -> Result<bool> {
         let effect = Effect::RunCommand {
             program: program.to_string(),
@@ -957,7 +959,7 @@ impl Executor {
             Ok(status.success())
         }
     }
-    
+
     pub fn summarize(&self) {
         if self.dry_run && !self.effects.is_empty() {
             println!("\n[DRY-RUN] {} operations would be performed", self.effects.len());
