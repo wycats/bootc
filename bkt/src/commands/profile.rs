@@ -189,7 +189,9 @@ fn show_diff(section: Option<&str>) -> Result<()> {
     if show_all || section == "flatpak" || section == "fp" {
         println!("=== FLATPAK DIFF ===\n");
 
-        let manifest = FlatpakAppsManifest::load_system()?;
+        let system = FlatpakAppsManifest::load_system()?;
+        let user = FlatpakAppsManifest::load_user().unwrap_or_default();
+        let manifest = FlatpakAppsManifest::merged(&system, &user);
         let installed = get_installed_flatpaks()?;
 
         let manifest_ids: HashSet<String> = manifest.apps.iter().map(|a| a.id.clone()).collect();
@@ -222,7 +224,9 @@ fn show_diff(section: Option<&str>) -> Result<()> {
     if show_all || section == "extension" || section == "ext" {
         println!("=== EXTENSION DIFF ===\n");
 
-        let manifest = GnomeExtensionsManifest::load_system()?;
+        let system = GnomeExtensionsManifest::load_system()?;
+        let user = GnomeExtensionsManifest::load_user().unwrap_or_default();
+        let manifest = GnomeExtensionsManifest::merged(&system, &user);
         let installed = get_installed_extensions()?;
 
         let manifest_set: HashSet<String> = manifest.extensions.into_iter().collect();
@@ -255,7 +259,9 @@ fn show_diff(section: Option<&str>) -> Result<()> {
     if show_all || section == "gsetting" || section == "gs" {
         println!("=== GSETTINGS DIFF ===\n");
 
-        let manifest = GSettingsManifest::load_system()?;
+        let system = GSettingsManifest::load_system()?;
+        let user = GSettingsManifest::load_user().unwrap_or_default();
+        let manifest = GSettingsManifest::merged(&system, &user);
 
         if manifest.settings.is_empty() {
             println!("(no gsettings in manifest)\n");
@@ -270,7 +276,12 @@ fn show_diff(section: Option<&str>) -> Result<()> {
                     .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
 
                 if let Some(current_val) = current {
-                    if current_val != setting.value {
+                    // Normalize for comparison: gsettings outputs strings with quotes
+                    let normalized_current = current_val
+                        .strip_prefix('\'')
+                        .and_then(|s| s.strip_suffix('\''))
+                        .unwrap_or(&current_val);
+                    if normalized_current != setting.value {
                         println!(
                             "≠ {}.{}\n  manifest: {}\n  current:  {}\n",
                             setting.schema, setting.key, setting.value, current_val

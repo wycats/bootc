@@ -115,14 +115,16 @@ jobs:
         run: cargo build --release
 
       - name: Generate schemas
+        working-directory: .
         run: |
           mkdir -p /tmp/schemas-generated
-          ../target/release/bkt schema generate -o /tmp/schemas-generated
+          ./bkt/target/release/bkt schema generate -o /tmp/schemas-generated
 
       - name: Compare with committed schemas
+        working-directory: .
         run: |
           echo "Checking if committed schemas match generated schemas..."
-          if ! diff -r ../schemas /tmp/schemas-generated; then
+          if ! diff -r schemas /tmp/schemas-generated; then
             echo ""
             echo "::error::Committed schemas are out of sync with Rust types!"
             echo "Run: cd bkt && cargo run -- schema generate -o ../schemas"
