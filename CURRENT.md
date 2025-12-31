@@ -880,6 +880,7 @@ Dry-run is available on subcommands that modify system state:
 - `bkt flatpak sync --dry-run` — Preview flatpak installation
 
 The `--dry-run` flag is placed on the specific subcommands rather than globally because:
+
 1. Not all operations make sense with dry-run (e.g., `list`, `status`, `schema`)
 2. It's clearer which operations actually support preview
 3. Each command can implement dry-run appropriate to its domain
