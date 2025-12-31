@@ -86,7 +86,6 @@
     { "id": "it.mijorus.gearlever", "remote": "flathub", "scope": "system" },
     { "id": "net.kuribo64.melonDS", "remote": "flathub", "scope": "user" },
     { "id": "net.meshlab.MeshLab", "remote": "flathub", "scope": "system" },
-    { "id": "net.retrodeck.retrodeck", "remote": "flathub", "scope": "system" },
     { "id": "org.altlinux.Tuner", "remote": "flathub", "scope": "system" },
     { "id": "org.blender.Blender", "remote": "flathub", "scope": "system" },
     { "id": "org.deskflow.deskflow", "remote": "flathub", "scope": "system" },
