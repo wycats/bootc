@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use directories::BaseDirs;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -11,7 +12,7 @@ use std::path::PathBuf;
 ///
 /// Shims are wrapper scripts that call commands on the host system
 /// via flatpak-spawn.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Shim {
     /// Name of the shim (command name in toolbox)
     pub name: String,
@@ -28,7 +29,7 @@ impl Shim {
 }
 
 /// The host-shims.json manifest.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
 pub struct ShimsManifest {
     #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,

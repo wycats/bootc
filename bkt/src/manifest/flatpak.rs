@@ -2,13 +2,14 @@
 
 use anyhow::{Context, Result};
 use directories::BaseDirs;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
 /// Scope for Flatpak apps and remotes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum FlatpakScope {
     #[default]
@@ -38,7 +39,7 @@ impl std::str::FromStr for FlatpakScope {
 }
 
 /// A Flatpak application entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct FlatpakApp {
     /// Application ID (e.g., "org.gnome.Calculator")
     pub id: String,
@@ -49,7 +50,7 @@ pub struct FlatpakApp {
 }
 
 /// The flatpak-apps.json manifest.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
 pub struct FlatpakAppsManifest {
     #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,
@@ -155,7 +156,7 @@ impl FlatpakAppsManifest {
 
 /// A Flatpak remote entry.
 #[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct FlatpakRemote {
     /// Remote name
     pub name: String,
@@ -170,7 +171,7 @@ pub struct FlatpakRemote {
 
 /// The flatpak-remotes.json manifest.
 #[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
 pub struct FlatpakRemotesManifest {
     #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,

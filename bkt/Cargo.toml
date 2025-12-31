@@ -9,8 +9,8 @@ authors = ["Yehuda Katz"]
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+schemars = { version = "1", features = ["chrono04"] }
 anyhow = "1"
-thiserror = "2"
 directories = "6"
 chrono = { version = "0.4", features = ["serde"] }
 whoami = "1"

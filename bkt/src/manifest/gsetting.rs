@@ -2,13 +2,14 @@
 
 use anyhow::{Context, Result};
 use directories::BaseDirs;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
 /// A GSettings entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GSetting {
     /// Schema name (e.g., "org.gnome.settings-daemon.plugins.power")
     pub schema: String,
@@ -29,7 +30,7 @@ impl GSetting {
 }
 
 /// The gsettings.json manifest.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
 pub struct GSettingsManifest {
     #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,

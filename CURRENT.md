@@ -6,19 +6,22 @@ This document tracks the improvements identified during the codebase review. Wor
 
 ## Overview
 
-| ID  | Item                                                                | Priority  | Status |
-| --- | ------------------------------------------------------------------- | --------- | ------ |
-| 1   | [Unified manifest CLI (`bkt`)](#1-unified-manifest-cli-bkt)         | 🔴 High   | ✅     |
-| 2   | [PR automation (`--pr` flag)](#2-pr-automation---pr-flag)           | 🔴 High   | ✅     |
-| 3   | [Repository identity metadata](#3-repository-identity-metadata)     | 🔴 High   | ✅     |
-| 4   | [System profile rationalization](#4-system-profile-rationalization) | 🔴 High   | ✅     |
-| 5   | [Skel management philosophy](#5-skel-management-philosophy)         | 🟡 Medium | ✅     |
-| 6   | [JSON schema validation](#6-json-schema-validation)                 | 🟡 Medium | ⬜     |
-| 7   | [Toolbox update recipe](#7-toolbox-update-recipe)                   | 🟡 Medium | ✅     |
-| 8   | [Machine detection](#8-machine-detection)                           | 🟢 Low    | ⬜     |
-| 9   | [Secrets documentation](#9-secrets-documentation)                   | 🟢 Low    | ⬜     |
-| 10  | [Structural cleanup](#10-structural-cleanup)                        | 🟢 Low    | ✅     |
-| 11  | [Stale documentation fixes](#11-stale-documentation-fixes)          | 🟢 Low    | ✅     |
+| ID  | Item                                                                         | Priority  | Status      |
+| --- | ---------------------------------------------------------------------------- | --------- | ----------- |
+| 1   | [Unified manifest CLI (`bkt`)](#1-unified-manifest-cli-bkt)                  | 🔴 High   | ✅          |
+| 2   | [PR automation (`--pr` flag)](#2-pr-automation---pr-flag)                    | 🔴 High   | ✅          |
+| 3   | [Repository identity metadata](#3-repository-identity-metadata)              | 🔴 High   | ✅          |
+| 4   | [System profile rationalization](#4-system-profile-rationalization)          | 🔴 High   | ✅          |
+| 5   | [Skel management philosophy](#5-skel-management-philosophy)                  | 🟡 Medium | ✅          |
+| 6   | [JSON schema validation](#6-json-schema-validation)                          | 🟡 Medium | ✅          |
+| 7   | [Toolbox update recipe](#7-toolbox-update-recipe)                            | 🟡 Medium | ✅          |
+| 8   | [Machine detection](#8-machine-detection)                                    | 🟢 Low    | 🔵 Deferred |
+| 9   | [Secrets documentation](#9-secrets-documentation)                            | 🟢 Low    | ✅          |
+| 10  | [Structural cleanup](#10-structural-cleanup)                                 | 🟢 Low    | ✅          |
+| 11  | [Stale documentation fixes](#11-stale-documentation-fixes)                   | 🟢 Low    | ✅          |
+| 12  | [Code cleanup: unused BktError](#12-code-cleanup-unused-bkterror)            | 🟢 Low    | ✅          |
+| 13  | [Clean up skel placeholder](#13-clean-up-skel-placeholder)                   | 🟢 Low    | ✅          |
+| 14  | [Clean up redundant manifest fields](#14-clean-up-redundant-manifest-fields) | 🟢 Low    | ✅          |
 
 ---
 
@@ -313,34 +316,42 @@ Features:
 
 ## 6. JSON Schema Validation
 
-**Status:** ⬜ Not started
+**Status:** ✅ Complete
 
 ### Problem
 
-Manifests reference `$schema` URLs that don't exist:
+Manifests reference `$schema` URLs that don't exist.
 
-```json
-"$schema": "https://wycats.github.io/bootc/schemas/flatpak-apps.schema.json"
-```
+### Implementation
 
-### Implementation Plan
+Implemented using the `schemars` crate to auto-generate schemas from Rust types:
 
-1. Create `schemas/` directory in repo
-2. Write JSON schemas for each manifest type:
+1. ✅ Added `schemars = "1"` to dependencies with chrono feature
+2. ✅ Derived `JsonSchema` on all manifest types:
+   - `FlatpakApp`, `FlatpakAppsManifest`, `FlatpakRemote`, `FlatpakRemotesManifest`
+   - `GnomeExtensionsManifest`
+   - `GSetting`, `GSettingsManifest`
+   - `Shim`, `ShimsManifest`
+3. ✅ Created `bkt schema` command with subcommands:
+   - `bkt schema list` — List available schema types
+   - `bkt schema generate` — Output all schemas to stdout
+   - `bkt schema generate -o DIR` — Write schemas to directory
+4. ✅ Generated schemas to `schemas/` directory:
+   - `flatpak-app.schema.json`
    - `flatpak-apps.schema.json`
+   - `flatpak-remote.schema.json`
    - `flatpak-remotes.schema.json`
    - `gnome-extensions.schema.json`
+   - `gsetting.schema.json`
    - `gsettings.schema.json`
+   - `shim.schema.json`
    - `host-shims.schema.json`
-3. Add CI step in `.github/workflows/build.yml`:
-   ```yaml
-   - name: Validate manifests
-     run: |
-       npm install -g ajv-cli
-       ajv validate -s schemas/flatpak-apps.schema.json -d manifests/flatpak-apps.json
-       # ... etc
-   ```
-4. (Optional) Host schemas via GitHub Pages so the `$schema` URLs resolve
+
+### Future Enhancements
+
+- Add CI step to validate manifests against schemas
+- Host schemas via GitHub Pages so `$schema` URLs resolve
+- Update manifest `$schema` fields to use relative paths
 
 ---
 
@@ -381,11 +392,15 @@ toolbox-update:
 
 ## 8. Machine Detection
 
-**Status:** ⬜ Not started
+**Status:** 🔵 Deferred — implement when a specific use case arises
 
 ### Problem
 
 Optional features are currently enabled via build ARGs, but there's no runtime detection for machine-specific features.
+
+### Decision
+
+**Defer implementation.** The current build ARG approach works for known hardware configurations (Asahi, NVIDIA). Implement this when a specific use case arises that requires runtime detection.
 
 ### Proposed Solution
 
@@ -433,53 +448,20 @@ enable-some-feature:
 
 ## 9. Secrets Documentation
 
-**Status:** ⬜ Not started
+**Status:** ✅ Complete
 
 ### Problem
 
 1Password CLI is installed but there's no documented pattern for using it.
 
-### Question: Is `op read` Sufficient?
+### Implementation
 
-Yes, for most cases. The 1Password CLI handles:
+Created `docs/SECRETS.md` documenting:
 
-- Authentication (biometric, browser, CLI login)
-- Secure storage
-- Environment variable injection
-
-### Proposed Documentation
-
-Create `docs/SECRETS.md`:
-
-```markdown
-# Secrets Management
-
-This image uses 1Password CLI for secrets. Never commit secrets to this repo.
-
-## Setup
-
-1. Install 1Password desktop app (Flatpak)
-2. Enable CLI integration in 1Password settings
-
-## Usage
-
-# Read a secret
-
-op read "op://Personal/GitHub Token/credential"
-
-# Inject into environment
-
-export GITHUB_TOKEN=$(op read "op://Personal/GitHub Token/credential")
-
-# Use in scripts
-
-gh auth login --with-token <<< $(op read "op://Personal/GitHub Token/credential")
-```
-
-### Implementation Plan
-
-1. Create `docs/SECRETS.md`
-2. Add reference in README.md
+- Prerequisites (1Password desktop app + CLI integration)
+- Usage patterns (`op read`, environment injection, scripts)
+- Secret reference format (`op://<vault>/<item>/<field>`)
+- Troubleshooting common errors
 
 ---
 
@@ -515,6 +497,55 @@ These are migration artifacts. The insight about per-category outputs has been c
 - [x] Update README to reference `bkt` instead of `shim`
 - [x] Update PLAN.md link in README (moved to docs/)
 - [x] Update repository layout in README to show bkt/ directory
+
+---
+
+## 12. Code Cleanup: Unused BktError
+
+**Status:** ✅ Complete
+
+### Problem
+
+The `bkt/src/error.rs` file defined a `BktError` enum with `thiserror`, but all commands used `anyhow::Result` directly. The custom error type was never used.
+
+### Implementation
+
+Removed the unused code:
+
+1. ✅ Deleted `bkt/src/error.rs`
+2. ✅ Removed `mod error;` from `main.rs`
+3. ✅ Removed `thiserror` from `Cargo.toml` dependencies
+
+---
+
+## 13. Clean Up Skel Placeholder
+
+**Status:** ✅ Complete
+
+### Problem
+
+The `skel/.bashrc` file was a placeholder with confusing content.
+
+### Implementation
+
+1. ✅ Deleted `skel/.bashrc`
+2. ✅ Created `skel/.gitkeep` to preserve directory structure
+
+Users should now use `bkt skel add` to populate real dotfiles.
+
+---
+
+## 14. Clean Up Redundant Manifest Fields
+
+**Status:** ✅ Complete
+
+### Problem
+
+The `manifests/host-shims.json` had entries where `host` field duplicated `name`.
+
+### Implementation
+
+Edited `manifests/host-shims.json` to remove redundant `host` fields. The Rust code's `host_command()` method falls back to `name` when `host` is not specified.
 
 ---
 

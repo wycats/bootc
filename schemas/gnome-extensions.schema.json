@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GnomeExtensionsManifest",
+  "description": "The gnome-extensions.json manifest.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "extensions": {
+      "description": "List of extension UUIDs (e.g., \"dash-to-dock@micxgx.gmail.com\")",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "extensions"
+  ]
+}

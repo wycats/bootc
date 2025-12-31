@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ShimsManifest",
+  "description": "The host-shims.json manifest.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "shims": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Shim"
+      }
+    }
+  },
+  "required": [
+    "shims"
+  ],
+  "$defs": {
+    "Shim": {
+      "description": "A host shim entry.\n\nShims are wrapper scripts that call commands on the host system\nvia flatpak-spawn.",
+      "type": "object",
+      "properties": {
+        "host": {
+          "description": "Name of the command on the host (defaults to name if not specified)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Name of the shim (command name in toolbox)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  }
+}

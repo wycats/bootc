@@ -7,7 +7,6 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod commands;
-mod error;
 mod manifest;
 mod pr;
 mod repo;
@@ -47,6 +46,9 @@ pub enum Commands {
 
     /// Repository information
     Repo(commands::repo::RepoArgs),
+
+    /// Generate JSON schemas for manifest types
+    Schema(commands::schema::SchemaArgs),
 }
 
 fn main() -> Result<()> {
@@ -60,5 +62,6 @@ fn main() -> Result<()> {
         Commands::Skel(args) => commands::skel::run(args),
         Commands::Profile(args) => commands::profile::run(args),
         Commands::Repo(args) => commands::repo::run(args),
+        Commands::Schema(args) => commands::schema::run(args),
     }
 }
