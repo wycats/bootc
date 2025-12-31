@@ -101,7 +101,7 @@ fn diff_files(skel_file: &Path, home_file: &Path) -> Result<Option<String>> {
     }
 
     let output = Command::new("diff")
-        .args(["-u", "--color=auto"])
+        .args(["-u", "--color=auto", "--"])
         .arg(skel_file)
         .arg(home_file)
         .output()

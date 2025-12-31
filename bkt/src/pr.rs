@@ -95,7 +95,8 @@ pub fn ensure_repo() -> Result<PathBuf> {
         println!("Cloning {} to {}", config.url, repo_path.display());
         std::fs::create_dir_all(repo_path.parent().unwrap())?;
         let status = Command::new("git")
-            .args(["clone", &config.url, repo_path.to_str().unwrap()])
+            .args(["clone", &config.url])
+            .arg(&repo_path)
             .status()
             .context("Failed to run git clone")?;
         if !status.success() {
@@ -134,7 +135,7 @@ pub fn run_pr_workflow(change: &PrChange, manifest_content: &str) -> Result<()> 
     println!("Creating branch: {}", branch);
 
     let status = Command::new("git")
-        .args(["checkout", "-b", &branch])
+        .args(["checkout", "-b", "--", &branch])
         .current_dir(&repo_path)
         .status()
         .context("Failed to create branch")?;
@@ -148,7 +149,8 @@ pub fn run_pr_workflow(change: &PrChange, manifest_content: &str) -> Result<()> 
 
     // Commit
     let status = Command::new("git")
-        .args(["add", manifest_path.to_str().unwrap()])
+        .args(["add", "--"])
+        .arg(&manifest_path)
         .current_dir(&repo_path)
         .status()?;
     if !status.success() {
@@ -192,10 +194,22 @@ pub fn run_pr_workflow(change: &PrChange, manifest_content: &str) -> Result<()> 
 
     // Return to default branch
     let config = RepoConfig::load()?;
-    let _ = Command::new("git")
-        .args(["checkout", &config.default_branch])
+    match Command::new("git")
+        .args(["checkout", "--", &config.default_branch])
         .current_dir(&repo_path)
-        .status();
+        .status()
+    {
+        Ok(status) if !status.success() => {
+            eprintln!(
+                "Warning: failed to switch back to '{}' branch",
+                config.default_branch
+            );
+        }
+        Err(e) => {
+            eprintln!("Warning: failed to run git checkout: {}", e);
+        }
+        _ => {}
+    }
 
     println!("✓ PR created successfully!");
     Ok(())

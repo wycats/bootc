@@ -22,6 +22,10 @@ This document tracks the improvements identified during the codebase review. Wor
 | 12  | [Code cleanup: unused BktError](#12-code-cleanup-unused-bkterror)            | 🟢 Low    | ✅          |
 | 13  | [Clean up skel placeholder](#13-clean-up-skel-placeholder)                   | 🟢 Low    | ✅          |
 | 14  | [Clean up redundant manifest fields](#14-clean-up-redundant-manifest-fields) | 🟢 Low    | ✅          |
+| 15  | [Schema hosting](#15-schema-hosting)                                         | 🟡 Medium | ⬜          |
+| 16  | [CI manifest validation](#16-ci-manifest-validation)                         | 🟡 Medium | ⬜          |
+| 17  | [Shell completions](#17-shell-completions)                                   | 🟡 Medium | ✅          |
+| 18  | [Pre-flight checks](#18-pre-flight-checks)                                   | 🟢 Low    | ⬜          |
 
 ---
 
@@ -546,6 +550,170 @@ The `manifests/host-shims.json` had entries where `host` field duplicated `name`
 ### Implementation
 
 Edited `manifests/host-shims.json` to remove redundant `host` fields. The Rust code's `host_command()` method falls back to `name` when `host` is not specified.
+
+---
+
+## 15. Schema Hosting
+
+**Status:** ⬜ Not Started
+
+### Problem
+
+Manifests reference `$schema` URLs (e.g., `https://wycats.github.io/bootc/schemas/flatpak-apps.schema.json`) that don't actually resolve. The schemas exist locally in `schemas/` but aren't hosted anywhere.
+
+### Implementation Plan
+
+1. Set up GitHub Pages on the repository
+2. Configure Pages to serve the `schemas/` directory
+3. Update manifest `$schema` fields to use the hosted URLs
+4. Add a CI step to ensure schemas are up-to-date before deployment
+
+### Benefits
+
+- Editors (VS Code, etc.) can fetch schemas for autocomplete and validation
+- External tools can validate manifests without cloning the repo
+- Schema URLs become self-documenting
+
+---
+
+## 16. CI Manifest Validation
+
+**Status:** ⬜ Not Started
+
+### Problem
+
+Manifests can contain typos or invalid structures that aren't caught until runtime. The schemas exist but aren't enforced.
+
+### Implementation Plan
+
+1. Add a CI job that validates all `manifests/*.json` files against their corresponding schemas
+2. Use a JSON Schema validator (e.g., `ajv-cli` or a Rust-based validator)
+3. Fail the build if any manifest is invalid
+4. Optionally: validate that `bkt schema generate` output matches committed schemas
+
+### Example CI Step
+
+```yaml
+- name: Validate manifests
+  run: |
+    npx ajv-cli validate -s schemas/flatpak-apps.schema.json -d manifests/flatpak-apps.json
+    npx ajv-cli validate -s schemas/gnome-extensions.schema.json -d manifests/gnome-extensions.json
+    # ... etc
+```
+
+---
+
+## 17. Shell Completions
+
+**Status:** ✅ Complete
+
+### Problem
+
+The `bkt` CLI has many subcommands and options. Shell completions would improve discoverability and reduce typos.
+
+### Implementation
+
+Added shell completion support using `clap_complete` and `clap_complete_nushell`:
+
+1. ✅ Added `clap_complete` and `clap_complete_nushell` to dependencies
+2. ✅ Created `bkt completions <shell>` command supporting:
+   - `bash` — Bash completion script
+   - `zsh` — Zsh completion script
+   - `fish` — Fish completion script
+   - `nushell` — Nushell extern module
+
+### Usage
+
+```bash
+# Generate and install completions
+bkt completions bash > ~/.local/share/bash-completion/completions/bkt
+bkt completions zsh > ~/.local/share/zsh/site-functions/_bkt
+bkt completions fish > ~/.config/fish/completions/bkt.fish
+bkt completions nushell > ~/.config/nushell/completions/bkt.nu
+```
+
+### Nushell Integration
+
+For nushell, source the completions in `config.nu`:
+
+```nushell
+source ~/.config/nushell/completions/bkt.nu
+```
+
+---
+
+## 18. Pre-flight Checks
+
+**Status:** ⬜ Not Started
+
+### Problem
+
+The `--pr` workflow depends on external tools (`gh`, `git`) being properly configured. If `gh auth status` fails or git isn't configured, the workflow fails partway through with a confusing error.
+
+### Implementation Plan
+
+1. Add a pre-flight check function in `pr.rs`
+2. Before starting any PR workflow, verify:
+   - `gh auth status` succeeds
+   - `git config user.name` is set
+   - `git config user.email` is set
+   - Network connectivity to GitHub (optional)
+3. Provide clear, actionable error messages:
+   - "GitHub CLI not authenticated. Run: gh auth login"
+   - "Git user not configured. Run: git config --global user.name 'Your Name'"
+4. Add `--skip-preflight` flag for advanced users who want to bypass checks
+
+### Benefits
+
+- Fail fast with clear guidance instead of cryptic errors mid-workflow
+- Improve first-run experience for new users
+- Reduce support burden
+
+---
+
+## Future Considerations
+
+These items are not currently planned but represent potential future directions for the project.
+
+### Machine Detection (Deferred from Item 8)
+
+The vision for machine detection is to enable runtime-conditional behavior based on hardware capabilities. While the current build ARG approach works for known configurations (Asahi, NVIDIA), a runtime detection system would allow:
+
+- Single image that adapts to different hardware
+- Automatic feature enablement based on detected capabilities
+- Graceful degradation when expected hardware isn't present
+
+This remains deferred until a concrete use case emerges that can't be solved with build-time configuration.
+
+### Interactive TUI Mode
+
+A terminal UI mode for `bkt` could provide:
+
+- Browse and toggle flatpaks/extensions interactively
+- Preview diffs before applying changes
+- Guided PR creation workflow with prompts
+- Real-time sync status visualization
+
+Potential implementation: `ratatui` crate for Rust TUI.
+
+### Plugin System for Custom Manifest Types
+
+Allow users to define custom manifest types without modifying `bkt` source code:
+
+- Plugin discovery from `~/.config/bkt/plugins/` or `/usr/share/bkt/plugins/`
+- Simple interface: read manifest → apply changes → write manifest
+- Example use cases: custom dconf paths, application-specific configs, system service management
+
+### Multi-Machine Sync
+
+Support managing multiple machines from a single manifest set:
+
+- Machine-specific manifest overrides (e.g., `flatpak-apps.laptop.json`)
+- Inheritance/layering of configurations
+- Central dashboard showing drift across machines
+- Selective sync: "apply this change to all machines" vs "just this one"
+
+This would transform the project from single-machine config management to fleet management.
 
 ---
 

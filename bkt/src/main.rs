@@ -49,6 +49,9 @@ pub enum Commands {
 
     /// Generate JSON schemas for manifest types
     Schema(commands::schema::SchemaArgs),
+
+    /// Generate shell completions
+    Completions(commands::completions::CompletionsArgs),
 }
 
 fn main() -> Result<()> {
@@ -63,5 +66,6 @@ fn main() -> Result<()> {
         Commands::Profile(args) => commands::profile::run(args),
         Commands::Repo(args) => commands::repo::run(args),
         Commands::Schema(args) => commands::schema::run(args),
+        Commands::Completions(args) => commands::completions::run(args),
     }
 }

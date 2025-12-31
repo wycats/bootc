@@ -308,9 +308,7 @@ fn show_unowned(dir: &PathBuf) -> Result<()> {
         }
 
         // Check if file is owned by any RPM
-        let output = Command::new("rpm")
-            .args(["-qf", &path.to_string_lossy()])
-            .output();
+        let output = Command::new("rpm").args(["-qf", "--"]).arg(&path).output();
 
         match output {
             Ok(o) if !o.status.success() => {

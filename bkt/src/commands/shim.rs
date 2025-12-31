@@ -51,14 +51,17 @@ pub enum ShimAction {
 
 /// Generate the content of a shim script.
 fn generate_shim_script(host_cmd: &str) -> String {
+    // Escape single quotes for safe shell inclusion
+    let escaped = host_cmd.replace('\'', "'\\''");
     format!(
         r#"#!/bin/bash
 # Auto-generated shim - delegates to host command
 # Managed by: bkt shim
 # Host command: {host_cmd}
-exec flatpak-spawn --host "{host_cmd}" "$@"
+exec flatpak-spawn --host '{escaped}' "$@"
 "#,
-        host_cmd = host_cmd
+        host_cmd = host_cmd,
+        escaped = escaped
     )
 }
 
