@@ -150,6 +150,27 @@ RUN dnf remove -y google-noto-emoji-fonts google-noto-color-emoji-fonts || true;
 
 COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
 
+# Bibata cursor theme (pinned to upstream version)
+COPY upstream/bibata.version /tmp/bibata.version
+RUN set -eu; \
+    version="$(cat /tmp/bibata.version)"; \
+    asset="Bibata-Modern-Classic.tar.xz"; \
+    curl -fsSL "https://github.com/ful1e5/Bibata_Cursor/releases/download/${version}/${asset}" -o /tmp/${asset}; \
+    mkdir -p /usr/share/icons; \
+    tar -xJf /tmp/${asset} -C /usr/share/icons; \
+    rm -f /tmp/${asset} /tmp/bibata.version
+
+# WhiteSur icon theme (cloned from pinned ref, installed system-wide)
+COPY upstream/whitesur-icons.ref /tmp/whitesur-icons.ref
+RUN set -eu; \
+    ref="$(cat /tmp/whitesur-icons.ref)"; \
+    dnf install -y git; \
+    git clone --depth 1 --branch "${ref}" https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/whitesur-icons; \
+    cd /tmp/whitesur-icons && ./install.sh -d /usr/share/icons; \
+    rm -rf /tmp/whitesur-icons /tmp/whitesur-icons.ref; \
+    dnf remove -y git || true; \
+    dnf clean all
+
 # Host-level config extracted from wycats/asahi-env (now sourced here)
 COPY system/keyd/default.conf /etc/keyd/default.conf
 # Enable keyd service (create symlink manually since systemctl doesn't work in containers)

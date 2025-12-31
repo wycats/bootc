@@ -861,34 +861,32 @@ RUST_LOG=bkt=trace bkt flatpak add org.gnome.Calculator
 
 ---
 
-## 22. Global Dry-Run Support
+## 22. Dry-Run Support
 
-**Status:** ✅ Complete — global `-n`/`--dry-run` flag, `Effect` enum, `Executor` struct with dry-run logging
+**Status:** ✅ Complete — per-subcommand `--dry-run` flags on `sync` and `apply` operations, `Effect` enum infrastructure for future expansion
 
 ### Problem
 
-Some commands have `--dry-run` but it's inconsistent. Users can't preview changes before applying them.
+Users can't preview changes before applying them.
 
-### Implementation Plan
+### Implementation
 
-Add global `--dry-run` flag that works with all commands:
+Dry-run is available on subcommands that modify system state:
 
-```rust
-// main.rs
-#[derive(Debug, Parser)]
-pub struct Cli {
-    /// Show what would be done without making changes
-    #[arg(long, short = 'n', global = true)]
-    pub dry_run: bool,
+- `bkt shim sync --dry-run` — Preview shim generation
+- `bkt skel sync --dry-run` — Preview file copies to $HOME
+- `bkt extension sync --dry-run` — Preview extension installation
+- `bkt gsetting apply --dry-run` — Preview gsettings changes
+- `bkt flatpak sync --dry-run` — Preview flatpak installation
 
-    #[command(subcommand)]
-    pub command: Commands,
-}
-```
+The `--dry-run` flag is placed on the specific subcommands rather than globally because:
+1. Not all operations make sense with dry-run (e.g., `list`, `status`, `schema`)
+2. It's clearer which operations actually support preview
+3. Each command can implement dry-run appropriate to its domain
 
-### Effect System Pattern
+### Effect System Infrastructure
 
-Create an `Executor` abstraction that encapsulates all side effects:
+An `Effect` abstraction exists in `bkt/src/effects.rs` for future use:
 
 ```rust
 // bkt/src/effects.rs
@@ -903,89 +901,21 @@ pub enum Effect {
     GitPush,
     CreatePullRequest { title: String, body: String },
 }
-
-impl Effect {
-    pub fn describe(&self) -> String {
-        match self {
-            Effect::WriteFile { path, description } => {
-                format!("Write {}: {}", path.display(), description)
-            }
-            Effect::RunCommand { program, args, description } => {
-                format!("Run `{} {}`: {}", program, args.join(" "), description)
-            }
-            // ... etc
-        }
-    }
-}
-
-/// Execution context that tracks and optionally performs effects
-pub struct Executor {
-    dry_run: bool,
-    effects: Vec<Effect>,
-}
-
-impl Executor {
-    pub fn new(dry_run: bool) -> Self {
-        Self { dry_run, effects: Vec::new() }
-    }
-
-    pub fn write_file(&mut self, path: &Path, content: &str, desc: &str) -> Result<()> {
-        let effect = Effect::WriteFile {
-            path: path.to_path_buf(),
-            description: desc.to_string(),
-        };
-        if self.dry_run {
-            println!("  Would: {}", effect.describe());
-            self.effects.push(effect);
-            Ok(())
-        } else {
-            std::fs::write(path, content)?;
-            Ok(())
-        }
-    }
-
-    pub fn run_command(&mut self, program: &str, args: &[&str], desc: &str) -> Result<bool> {
-        let effect = Effect::RunCommand {
-            program: program.to_string(),
-            args: args.iter().map(|s| s.to_string()).collect(),
-            description: desc.to_string(),
-        };
-        if self.dry_run {
-            println!("  Would: {}", effect.describe());
-            self.effects.push(effect);
-            Ok(true)
-        } else {
-            let status = std::process::Command::new(program).args(args).status()?;
-            Ok(status.success())
-        }
-    }
-
-    pub fn summarize(&self) {
-        if self.dry_run && !self.effects.is_empty() {
-            println!("\n[DRY-RUN] {} operations would be performed", self.effects.len());
-        }
-    }
-}
 ```
 
-### Migration Path
-
-1. Add global `--dry-run` flag
-2. Create `Executor` in `src/effects.rs`
-3. Refactor commands one at a time, starting with sync operations
-4. Add tests that verify dry-run collects effects without executing
+This infrastructure is available for future commands that need effect tracking.
 
 ### Example Usage
 
 ```bash
-# Preview what would be installed
-bkt --dry-run flatpak sync
+# Preview what shims would be generated
+bkt shim sync --dry-run
 
-# Preview PR creation
-bkt --dry-run shim add nmcli --pr
+# Preview what skel files would be copied
+bkt skel sync --dry-run
 
-# Preview all changes
-bkt -n profile apply
+# Preview gsettings changes
+bkt gsetting apply --dry-run
 ```
 
 ---
