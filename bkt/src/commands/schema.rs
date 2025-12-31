@@ -1,8 +1,8 @@
 //! Schema generation command implementation.
 
 use crate::manifest::{
-    FlatpakApp, FlatpakAppsManifest, FlatpakRemote, FlatpakRemotesManifest,
-    GSettingsManifest, GSetting, GnomeExtensionsManifest, Shim, ShimsManifest,
+    FlatpakApp, FlatpakAppsManifest, FlatpakRemote, FlatpakRemotesManifest, GSetting,
+    GSettingsManifest, GnomeExtensionsManifest, Shim, ShimsManifest,
 };
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
