@@ -56,19 +56,21 @@ pub enum ShimAction {
 }
 
 /// Generate the content of a shim script.
-fn generate_shim_script(host_cmd: &str) -> String {
-    // Escape single quotes for safe shell inclusion
-    let escaped = host_cmd.replace('\'', "'\\''");
-    format!(
+/// Uses shlex for proper POSIX-compliant shell quoting.
+fn generate_shim_script(host_cmd: &str) -> Result<String> {
+    // Use shlex for proper shell quoting (handles all special characters)
+    let quoted = shlex::try_quote(host_cmd)
+        .map_err(|e| anyhow::anyhow!("Failed to quote command '{}': {}", host_cmd, e))?;
+    Ok(format!(
         r#"#!/bin/bash
 # Auto-generated shim - delegates to host command
 # Managed by: bkt shim
 # Host command: {host_cmd}
-exec flatpak-spawn --host '{escaped}' "$@"
+exec flatpak-spawn --host {quoted} "$@"
 "#,
         host_cmd = host_cmd,
-        escaped = escaped
-    )
+        quoted = quoted
+    ))
 }
 
 /// Sync all shims from merged manifest to disk.
@@ -101,7 +103,7 @@ fn sync_shims(dry_run: bool) -> Result<()> {
     let mut count = 0;
     for shim in &merged.shims {
         let shim_path = shims_dir.join(&shim.name);
-        let content = generate_shim_script(shim.host_cmd());
+        let content = generate_shim_script(shim.host_cmd())?;
 
         if dry_run {
             println!("Would create: {} -> {}", shim.name, shim.host_cmd());
