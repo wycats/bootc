@@ -26,6 +26,10 @@ This document tracks the improvements identified during the codebase review. Wor
 | 16  | [CI manifest validation](#16-ci-manifest-validation)                         | 🟡 Medium | ✅          |
 | 17  | [Shell completions](#17-shell-completions)                                   | 🟡 Medium | ✅          |
 | 18  | [Pre-flight checks](#18-pre-flight-checks)                                   | 🟢 Low    | ✅          |
+| 19  | [Status command](#19-status-command)                                         | 🟡 Medium | ✅          |
+| 20  | [Colored output](#20-colored-output)                                         | 🟡 Medium | ✅          |
+| 21  | [Structured logging (tracing)](#21-structured-logging-tracing)               | 🟡 Medium | ✅          |
+| 22  | [Global dry-run support](#22-global-dry-run-support)                         | 🟡 Medium | ✅          |
 
 ---
 
@@ -593,6 +597,7 @@ Manifests can contain typos or invalid structures that aren't caught until runti
 Added two new CI jobs in `.github/workflows/ci.yml`:
 
 1. **`validate-manifests`** — Validates JSON syntax and schema compliance:
+
    - Uses `jq` to check JSON syntax
    - Uses `ajv-cli` to validate against schemas
    - Runs on every PR and push
@@ -690,6 +695,299 @@ bkt shim add foo --pr --skip-preflight
 
 ---
 
+## 19. Status Command
+
+**Status:** ✅ Complete — `bkt status` command implemented with table/JSON output, colored display
+
+### Problem
+
+There's no single command to see an overview of all manifest types and their current state.
+
+### Implementation Plan
+
+Create `bkt status` command that shows:
+
+```bash
+$ bkt status
+Flatpaks:    28 apps (2 pending sync)
+Extensions:  12 installed, 8 enabled
+GSettings:   2 configured
+Shims:       15 synced
+Skel:        3 files (1 differs from $HOME)
+```
+
+Features:
+- Load all manifests and show counts
+- Detect pending syncs (manifest vs. system state)
+- Highlight items needing attention
+- Support `--json` for scripting
+
+### Code Structure
+
+```rust
+// bkt/src/commands/status.rs
+pub struct StatusArgs {
+    #[arg(long)]
+    json: bool,
+}
+
+pub fn run(args: StatusArgs) -> Result<()> {
+    let flatpaks = FlatpakAppsManifest::merged(...);
+    let extensions = GnomeExtensionsManifest::merged(...);
+    // ... gather all manifests
+    
+    // Compare manifest vs. system state
+    // Output summary
+}
+```
+
+---
+
+## 20. Colored Output
+
+**Status:** ✅ Complete — `owo-colors` integrated in status and effects modules
+
+### Problem
+
+CLI output uses plain text with ✓/✗ symbols but no color. Color improves readability and status recognition.
+
+### Implementation Plan
+
+Add `owo-colors` crate (zero-dependency, modern):
+
+```toml
+# Cargo.toml
+owo-colors = "4"
+```
+
+Apply consistently across all commands:
+- Green: success (✓), "Added", "Synced"
+- Red: errors (✗), "Failed", "Missing"
+- Yellow: warnings, "Skipped", "Already exists"
+- Cyan: info, file paths, item names
+
+### Code Pattern
+
+```rust
+use owo_colors::OwoColorize;
+
+println!("{} Generated {} shims", "✓".green(), count);
+println!("{} Failed to install {}: {}", "✗".red(), app_id, err);
+println!("{} Skipping {} (already installed)", "⚠".yellow(), app_id);
+```
+
+### Terminal Detection
+
+`owo-colors` auto-detects terminal capabilities. For explicit control:
+
+```rust
+// Respect NO_COLOR environment variable
+if std::env::var("NO_COLOR").is_ok() {
+    owo_colors::set_override(false);
+}
+```
+
+---
+
+## 21. Structured Logging (tracing)
+
+**Status:** ✅ Complete — `tracing` initialized with `RUST_LOG` env filter support
+
+### Problem
+
+No way to debug issues or see what `bkt` is doing internally. Users report "it didn't work" with no details.
+
+### Implementation Plan
+
+Add `tracing` ecosystem:
+
+```toml
+# Cargo.toml
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+```
+
+### Integration
+
+```rust
+// main.rs
+use tracing_subscriber::{fmt, EnvFilter};
+
+fn main() -> Result<()> {
+    // Initialize logging from RUST_LOG env var
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_writer(std::io::stderr)
+        .init();
+    
+    let cli = Cli::parse();
+    // ...
+}
+```
+
+### Usage in Commands
+
+```rust
+use tracing::{info, debug, warn, error, instrument};
+
+#[instrument(skip(manifest_content))]
+pub fn run_pr_workflow(change: &PrChange, manifest_content: &str) -> Result<()> {
+    debug!("Starting PR workflow for {:?}", change);
+    
+    let repo_path = ensure_repo()?;
+    info!(repo = %repo_path.display(), "Using repository");
+    
+    // ...
+    
+    debug!("Creating branch: {}", branch);
+    // ...
+}
+```
+
+### User Experience
+
+```bash
+# Normal usage - no logs
+bkt flatpak add org.gnome.Calculator
+
+# Debugging - see what's happening
+RUST_LOG=bkt=debug bkt flatpak add org.gnome.Calculator
+
+# Verbose debugging
+RUST_LOG=bkt=trace bkt flatpak add org.gnome.Calculator
+```
+
+---
+
+## 22. Global Dry-Run Support
+
+**Status:** ✅ Complete — global `-n`/`--dry-run` flag, `Effect` enum, `Executor` struct with dry-run logging
+
+### Problem
+
+Some commands have `--dry-run` but it's inconsistent. Users can't preview changes before applying them.
+
+### Implementation Plan
+
+Add global `--dry-run` flag that works with all commands:
+
+```rust
+// main.rs
+#[derive(Debug, Parser)]
+pub struct Cli {
+    /// Show what would be done without making changes
+    #[arg(long, short = 'n', global = true)]
+    pub dry_run: bool,
+    
+    #[command(subcommand)]
+    pub command: Commands,
+}
+```
+
+### Effect System Pattern
+
+Create an `Executor` abstraction that encapsulates all side effects:
+
+```rust
+// bkt/src/effects.rs
+
+/// Represents a side effect the CLI can perform
+#[derive(Debug, Clone)]
+pub enum Effect {
+    WriteFile { path: PathBuf, description: String },
+    RunCommand { program: String, args: Vec<String>, description: String },
+    GitCreateBranch { branch_name: String },
+    GitCommit { message: String },
+    GitPush,
+    CreatePullRequest { title: String, body: String },
+}
+
+impl Effect {
+    pub fn describe(&self) -> String {
+        match self {
+            Effect::WriteFile { path, description } => {
+                format!("Write {}: {}", path.display(), description)
+            }
+            Effect::RunCommand { program, args, description } => {
+                format!("Run `{} {}`: {}", program, args.join(" "), description)
+            }
+            // ... etc
+        }
+    }
+}
+
+/// Execution context that tracks and optionally performs effects
+pub struct Executor {
+    dry_run: bool,
+    effects: Vec<Effect>,
+}
+
+impl Executor {
+    pub fn new(dry_run: bool) -> Self {
+        Self { dry_run, effects: Vec::new() }
+    }
+    
+    pub fn write_file(&mut self, path: &Path, content: &str, desc: &str) -> Result<()> {
+        let effect = Effect::WriteFile {
+            path: path.to_path_buf(),
+            description: desc.to_string(),
+        };
+        if self.dry_run {
+            println!("  Would: {}", effect.describe());
+            self.effects.push(effect);
+            Ok(())
+        } else {
+            std::fs::write(path, content)?;
+            Ok(())
+        }
+    }
+    
+    pub fn run_command(&mut self, program: &str, args: &[&str], desc: &str) -> Result<bool> {
+        let effect = Effect::RunCommand {
+            program: program.to_string(),
+            args: args.iter().map(|s| s.to_string()).collect(),
+            description: desc.to_string(),
+        };
+        if self.dry_run {
+            println!("  Would: {}", effect.describe());
+            self.effects.push(effect);
+            Ok(true)
+        } else {
+            let status = std::process::Command::new(program).args(args).status()?;
+            Ok(status.success())
+        }
+    }
+    
+    pub fn summarize(&self) {
+        if self.dry_run && !self.effects.is_empty() {
+            println!("\n[DRY-RUN] {} operations would be performed", self.effects.len());
+        }
+    }
+}
+```
+
+### Migration Path
+
+1. Add global `--dry-run` flag
+2. Create `Executor` in `src/effects.rs`
+3. Refactor commands one at a time, starting with sync operations
+4. Add tests that verify dry-run collects effects without executing
+
+### Example Usage
+
+```bash
+# Preview what would be installed
+bkt --dry-run flatpak sync
+
+# Preview PR creation
+bkt --dry-run shim add nmcli --pr
+
+# Preview all changes
+bkt -n profile apply
+```
+
+---
+
 ## Future Considerations
 
 These items are not currently planned but represent potential future directions for the project.
@@ -733,6 +1031,66 @@ Support managing multiple machines from a single manifest set:
 - Selective sync: "apply this change to all machines" vs "just this one"
 
 This would transform the project from single-machine config management to fleet management.
+
+### Man Page Generation
+
+Generate and install man pages for better discoverability:
+
+- Add `clap_mangen` crate to generate man pages from clap definitions
+- Install to `/usr/share/man/man1/bkt.1` and subcommand pages
+- Include in Containerfile build
+
+```toml
+clap_mangen = "0.2"
+```
+
+### `bkt init` Command
+
+Bootstrap new user configuration:
+
+```bash
+$ bkt init
+Creating ~/.config/bootc/...
+  → Created host-shims.json
+  → Created gsettings.json
+  → Running initial sync...
+✓ bkt initialized! Run 'bkt status' to see your configuration.
+```
+
+### Validation on Add
+
+Validate items before adding to manifests to prevent typos:
+
+- **Flatpak:** Query remote to verify app exists (`flatpak search`)
+- **Extension:** Check extensions.gnome.org API for UUID validity
+- **GSettings:** Verify schema exists (`gsettings list-schemas`)
+
+This prevents invalid entries from polluting manifests.
+
+### Backup/Undo System
+
+Before sync operations, create backups for recovery:
+
+```rust
+pub fn backup_file(path: &Path) -> Result<PathBuf> {
+    let backup_dir = dirs::data_dir()?.join("bkt/backups");
+    let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+    let backup_path = backup_dir.join(format!("{}-{}", timestamp, path.file_name()));
+    fs::copy(path, &backup_path)?;
+    Ok(backup_path)
+}
+```
+
+Add `bkt undo` command to restore from backups.
+
+### Security Hardening
+
+Additional security improvements:
+
+- Specify full paths for external commands (`/usr/bin/flatpak` not `flatpak`)
+- Add manifest integrity checks (SHA256 verification)
+- Handle concurrent access (lock file when modifying manifests)
+- Rate-limit PR creation (prevent accidental spam)
 
 ---
 

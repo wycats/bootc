@@ -16,6 +16,9 @@ anyhow = "1"
 directories = "6"
 chrono = { version = "0.4", features = ["serde"] }
 whoami = "1"
+owo-colors = "4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 assert_cmd = "2"

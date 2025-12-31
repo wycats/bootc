@@ -5,8 +5,10 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use tracing_subscriber::EnvFilter;
 
 mod commands;
+pub mod effects;
 mod manifest;
 mod pr;
 mod repo;
@@ -17,6 +19,10 @@ mod repo;
 #[command(version)]
 #[command(propagate_version = true)]
 pub struct Cli {
+    /// Perform a dry run (show what would be done without making changes)
+    #[arg(long, short = 'n', global = true)]
+    pub dry_run: bool,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -55,9 +61,18 @@ pub enum Commands {
 
     /// Check system readiness for bkt workflows
     Doctor(commands::doctor::DoctorArgs),
+
+    /// Show status of all manifest types
+    Status(commands::status::StatusArgs),
 }
 
 fn main() -> Result<()> {
+    // Initialize tracing with RUST_LOG env filter
+    // e.g., RUST_LOG=bkt=debug
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
     let cli = Cli::parse();
 
     match cli.command {
@@ -71,5 +86,6 @@ fn main() -> Result<()> {
         Commands::Schema(args) => commands::schema::run(args),
         Commands::Completions(args) => commands::completions::run(args),
         Commands::Doctor(args) => commands::doctor::run(args),
+        Commands::Status(args) => commands::status::run(args),
     }
 }

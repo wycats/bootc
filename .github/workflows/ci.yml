@@ -71,9 +71,9 @@ jobs:
       - name: Validate against schemas
         run: |
           npm install -g ajv-cli ajv-formats
-          
+
           echo "Validating manifests against schemas..."
-          
+
           # Map manifests to their schemas
           declare -A SCHEMA_MAP=(
             ["manifests/flatpak-apps.json"]="schemas/flatpak-apps.schema.json"
@@ -82,13 +82,13 @@ jobs:
             ["manifests/gsettings.json"]="schemas/gsettings.schema.json"
             ["manifests/host-shims.json"]="schemas/host-shims.schema.json"
           )
-          
+
           for manifest in "${!SCHEMA_MAP[@]}"; do
             schema="${SCHEMA_MAP[$manifest]}"
             echo "  → $manifest against $schema"
             ajv validate -s "$schema" -d "$manifest" --spec=draft2020 -c ajv-formats || exit 1
           done
-          
+
           echo "✓ All manifests are valid"
 
   check-schemas-current:
