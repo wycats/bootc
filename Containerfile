@@ -233,9 +233,6 @@ RUN if [ "${ENABLE_LOGIND_LID_POLICY}" = "1" ]; then \
             install -Dpm0644 /usr/share/bootc-optional/systemd/logind.conf.d/10-lid-policy.conf /etc/systemd/logind.conf.d/10-lid-policy.conf; \
         fi
 
-# Dotfiles detected in system_profile.txt
-COPY skel/.bashrc /etc/skel/.bashrc
-
 # Nushell + toolbox-related defaults (profile addendum)
 COPY skel/.config/nushell/config.nu /etc/skel/.config/nushell/config.nu
 COPY skel/.config/nushell/env.nu /etc/skel/.config/nushell/env.nu

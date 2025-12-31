@@ -157,7 +157,7 @@ README promises the "apply locally AND open PR" workflow, but it's not implement
 
 ```bash
 # Vision: apply locally AND open PR
-shim add --pr nmcli
+bkt shim add --pr nmcli
 ```
 
 ### Implementation
