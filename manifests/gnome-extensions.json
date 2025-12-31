@@ -1,5 +1,5 @@
 {
-  "$schema": "./schemas/gnome-extensions.schema.json",
+  "$schema": "https://wycats.github.io/bootc/gnome-extensions.schema.json",
   "extensions": [
     "add-to-steam@pupper.space",
     "appindicatorsupport@rgcjonas.gmail.com",

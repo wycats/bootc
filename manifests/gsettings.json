@@ -1,5 +1,5 @@
 {
-  "$schema": "./schemas/gsettings.schema.json",
+  "$schema": "https://wycats.github.io/bootc/gsettings.schema.json",
   "settings": [
     {
       "schema": "org.gnome.settings-daemon.plugins.power",

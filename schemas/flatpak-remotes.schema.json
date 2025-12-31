@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FlatpakRemotesManifest",
+  "description": "The flatpak-remotes.json manifest.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "remotes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/FlatpakRemote"
+      }
+    }
+  },
+  "required": [
+    "remotes"
+  ],
+  "$defs": {
+    "FlatpakRemote": {
+      "description": "A Flatpak remote entry.",
+      "type": "object",
+      "properties": {
+        "filtered": {
+          "description": "Whether the remote is filtered (Flathub verified only)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Remote name",
+          "type": "string"
+        },
+        "scope": {
+          "description": "Installation scope",
+          "$ref": "#/$defs/FlatpakScope"
+        },
+        "url": {
+          "description": "Remote URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "url",
+        "scope"
+      ]
+    },
+    "FlatpakScope": {
+      "description": "Scope for Flatpak apps and remotes.",
+      "type": "string",
+      "enum": [
+        "system",
+        "user"
+      ]
+    }
+  }
+}

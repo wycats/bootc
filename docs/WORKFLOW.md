@@ -34,15 +34,15 @@ podman ps         # Containers (on host)
 ujust update      # System update
 ```
 
-These are **shims** — small scripts that delegate to the host. They're managed via the `shim` command.
+These are **shims** — small scripts that delegate to the host. They're managed via the `bkt shim` command.
 
 ### Managing shims
 
 ```bash
-shim list                   # See all shims
-shim add nmcli              # Add a shim
-shim add dc docker-compose  # Alias: 'dc' runs 'docker-compose' on host
-shim remove nmcli           # Remove a shim
+bkt shim list                   # See all shims
+bkt shim add nmcli              # Add a shim
+bkt shim add dc docker-compose  # Alias: 'dc' runs 'docker-compose' on host
+bkt shim remove nmcli           # Remove a shim
 ```
 
 Shims come from two places:
@@ -62,14 +62,14 @@ These apply immediately and can be synced to the repo:
 
 | What             | Local command                 | To bake permanently                          |
 | ---------------- | ----------------------------- | -------------------------------------------- |
-| Add a shim       | `shim add nmcli`              | Edit `manifests/host-shims.json`, push       |
+| Add a shim       | `bkt shim add nmcli`          | Edit `manifests/host-shims.json`, push       |
 | Install Flatpak  | `flatpak install ...`         | Edit `manifests/flatpak-apps.json`, push     |
 | Enable extension | `gnome-extensions enable ...` | Edit `manifests/gnome-extensions.json`, push |
 
-**Coming soon:** `--pr` flag to do both at once:
+The `--pr` flag does both at once:
 
 ```bash
-shim add --pr nmcli   # Apply locally AND open PR
+bkt shim add --pr nmcli   # Apply locally AND open PR
 ```
 
 ### For things that require reboot

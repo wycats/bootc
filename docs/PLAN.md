@@ -202,4 +202,3 @@ Shipped in image but disabled by default:
 - **Secrets handling** — pattern for API keys, credentials (1Password CLI integration?)
 - **Skel sync for existing users** — mechanism to update dotfiles in existing home directories
 - **Multi-machine variants** — if needed, handle via ujust runtime detection rather than separate builds
-- **Toolbox Containerfile** — currently referenced but not implemented

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GSettingsManifest",
+  "description": "The gsettings.json manifest.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "settings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/GSetting"
+      }
+    }
+  },
+  "required": [
+    "settings"
+  ],
+  "$defs": {
+    "GSetting": {
+      "description": "A GSettings entry.",
+      "type": "object",
+      "properties": {
+        "comment": {
+          "description": "Optional comment explaining the setting",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "description": "Key name (e.g., \"sleep-inactive-ac-type\")",
+          "type": "string"
+        },
+        "schema": {
+          "description": "Schema name (e.g., \"org.gnome.settings-daemon.plugins.power\")",
+          "type": "string"
+        },
+        "value": {
+          "description": "Value as a GVariant string (e.g., \"'nothing'\" or \"0\")",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema",
+        "key",
+        "value"
+      ]
+    }
+  }
+}

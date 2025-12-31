@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FlatpakAppsManifest",
+  "description": "The flatpak-apps.json manifest.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "apps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/FlatpakApp"
+      }
+    }
+  },
+  "required": [
+    "apps"
+  ],
+  "$defs": {
+    "FlatpakApp": {
+      "description": "A Flatpak application entry.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Application ID (e.g., \"org.gnome.Calculator\")",
+          "type": "string"
+        },
+        "remote": {
+          "description": "Remote name (e.g., \"flathub\")",
+          "type": "string"
+        },
+        "scope": {
+          "description": "Installation scope",
+          "$ref": "#/$defs/FlatpakScope"
+        }
+      },
+      "required": [
+        "id",
+        "remote",
+        "scope"
+      ]
+    },
+    "FlatpakScope": {
+      "description": "Scope for Flatpak apps and remotes.",
+      "type": "string",
+      "enum": [
+        "system",
+        "user"
+      ]
+    }
+  }
+}

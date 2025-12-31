@@ -1,11 +1,12 @@
 {
+  "$schema": "https://wycats.github.io/bootc/host-shims.schema.json",
   "shims": [
-    { "name": "bootc", "host": "bootc" },
-    { "name": "rpm-ostree", "host": "rpm-ostree" },
-    { "name": "systemctl", "host": "systemctl" },
-    { "name": "journalctl", "host": "journalctl" },
-    { "name": "ujust", "host": "ujust" },
-    { "name": "flatpak", "host": "flatpak" },
-    { "name": "podman", "host": "podman" }
+    { "name": "bootc" },
+    { "name": "rpm-ostree" },
+    { "name": "systemctl" },
+    { "name": "journalctl" },
+    { "name": "ujust" },
+    { "name": "flatpak" },
+    { "name": "podman" }
   ]
 }

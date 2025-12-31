@@ -52,10 +52,10 @@ The key workflow insight: for things that don't require a reboot, you want **imm
 
 ```bash
 # Today: local-only
-shim add nmcli
+bkt shim add nmcli
 
 # Vision: apply locally AND open PR
-shim add --pr nmcli
+bkt shim add --pr nmcli
 ```
 
 This applies to:
@@ -88,7 +88,7 @@ check-drift
 toolbox enter
 
 # Add a host command shim (from toolbox)
-shim add nmcli
+bkt shim add nmcli
 ```
 
 ## Repository Layout
@@ -103,8 +103,8 @@ shim add nmcli
 │   └── gsettings.json           # GNOME settings to apply
 ├── scripts/
 │   ├── bootc-bootstrap          # First-login automation
-│   ├── check-drift              # Drift detection
-│   └── shim                     # Shim management CLI
+│   └── check-drift              # Drift detection
+├── bkt/                          # Unified manifest CLI (Rust)
 ├── system/                       # Configs baked into /etc
 ├── skel/                         # Default dotfiles for new users
 └── upstream/                     # Pinned upstream versions
@@ -116,7 +116,7 @@ shim add nmcli
 | --------------------------------- | ---------------------------- |
 | [WORKFLOW.md](docs/WORKFLOW.md)   | Day-to-day usage patterns    |
 | [MIGRATION.md](docs/MIGRATION.md) | Switching from stock Bazzite |
-| [PLAN.md](PLAN.md)                | Architecture decisions       |
+| [PLAN.md](docs/PLAN.md)           | Architecture decisions       |
 
 ## Philosophy
 

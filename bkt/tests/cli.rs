@@ -1,0 +1,413 @@
+//! Integration tests for the bkt CLI.
+//!
+//! These tests run the compiled binary and verify its output.
+
+use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
+use predicates::prelude::*;
+
+/// Get the bkt command for testing.
+fn bkt() -> Command {
+    cargo_bin_cmd!("bkt")
+}
+
+// ============================================================================
+// Basic CLI tests
+// ============================================================================
+
+#[test]
+fn cli_no_args_shows_help() {
+    bkt()
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Usage:"));
+}
+
+#[test]
+fn cli_help_flag_shows_help() {
+    bkt()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Bucket - manage your bootc manifests",
+        ));
+}
+
+#[test]
+fn cli_version_flag_shows_version() {
+    bkt()
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bkt"));
+}
+
+// ============================================================================
+// Shim command tests
+// ============================================================================
+
+#[test]
+fn shim_help_shows_subcommands() {
+    bkt()
+        .args(["shim", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("add"))
+        .stdout(predicate::str::contains("remove"))
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("sync"));
+}
+
+#[test]
+fn shim_list_succeeds() {
+    bkt().args(["shim", "list"]).assert().success();
+}
+
+#[test]
+fn shim_add_requires_name() {
+    bkt()
+        .args(["shim", "add"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("NAME"));
+}
+
+#[test]
+fn shim_remove_requires_name() {
+    bkt()
+        .args(["shim", "remove"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("NAME"));
+}
+
+// ============================================================================
+// Flatpak command tests
+// ============================================================================
+
+#[test]
+fn flatpak_help_shows_subcommands() {
+    bkt()
+        .args(["flatpak", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("add"))
+        .stdout(predicate::str::contains("remove"))
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("sync"));
+}
+
+#[test]
+fn flatpak_list_succeeds() {
+    bkt().args(["flatpak", "list"]).assert().success();
+}
+
+#[test]
+fn flatpak_add_requires_app_id() {
+    bkt()
+        .args(["flatpak", "add"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("APP_ID"));
+}
+
+#[test]
+fn flatpak_remove_requires_app_id() {
+    bkt()
+        .args(["flatpak", "remove"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("APP_ID"));
+}
+
+// ============================================================================
+// Extension command tests
+// ============================================================================
+
+#[test]
+fn extension_help_shows_subcommands() {
+    bkt()
+        .args(["extension", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("add"))
+        .stdout(predicate::str::contains("remove"))
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("sync"));
+}
+
+#[test]
+fn extension_list_succeeds() {
+    bkt().args(["extension", "list"]).assert().success();
+}
+
+#[test]
+fn extension_add_requires_uuid() {
+    bkt()
+        .args(["extension", "add"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("UUID"));
+}
+
+#[test]
+fn extension_remove_requires_uuid() {
+    bkt()
+        .args(["extension", "remove"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("UUID"));
+}
+
+// ============================================================================
+// GSettings command tests
+// ============================================================================
+
+#[test]
+fn gsetting_help_shows_subcommands() {
+    bkt()
+        .args(["gsetting", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("set"))
+        .stdout(predicate::str::contains("unset"))
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("apply"));
+}
+
+#[test]
+fn gsetting_list_succeeds() {
+    bkt().args(["gsetting", "list"]).assert().success();
+}
+
+#[test]
+fn gsetting_set_requires_all_args() {
+    bkt()
+        .args(["gsetting", "set"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("SCHEMA"));
+}
+
+#[test]
+fn gsetting_unset_requires_args() {
+    bkt()
+        .args(["gsetting", "unset"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("SCHEMA"));
+}
+
+// ============================================================================
+// Profile command tests
+// ============================================================================
+
+#[test]
+fn profile_help_shows_subcommands() {
+    bkt()
+        .args(["profile", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("capture"))
+        .stdout(predicate::str::contains("diff"))
+        .stdout(predicate::str::contains("unowned"));
+}
+
+#[test]
+fn profile_capture_help() {
+    bkt()
+        .args(["profile", "capture", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Capture"));
+}
+
+// ============================================================================
+// Skel command tests
+// ============================================================================
+
+#[test]
+fn skel_help_shows_subcommands() {
+    bkt()
+        .args(["skel", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("add"))
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("diff"))
+        .stdout(predicate::str::contains("sync"));
+}
+
+#[test]
+fn skel_list_succeeds() {
+    bkt().args(["skel", "list"]).assert().success();
+}
+
+#[test]
+fn skel_add_requires_file() {
+    bkt()
+        .args(["skel", "add"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("FILE"));
+}
+
+// ============================================================================
+// Repo command tests
+// ============================================================================
+
+#[test]
+fn repo_help_shows_subcommands() {
+    bkt()
+        .args(["repo", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("info"))
+        .stdout(predicate::str::contains("path"));
+}
+
+#[test]
+fn repo_path_succeeds() {
+    // Should succeed even without a repo
+    bkt().args(["repo", "path"]).assert().success();
+}
+
+#[test]
+fn repo_info_succeeds() {
+    // Should succeed even without a repo (outputs message about config not found)
+    bkt().args(["repo", "info"]).assert().success();
+}
+
+// ============================================================================
+// File-based integration tests using tempdir
+// ============================================================================
+
+#[test]
+fn shim_add_and_list_integration() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    // Set HOME to temp dir so user config goes there
+    let home = temp.path().to_str().unwrap();
+
+    bkt()
+        .env("HOME", home)
+        .args(["shim", "add", "test-shim"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added shim: test-shim"));
+
+    bkt()
+        .env("HOME", home)
+        .args(["shim", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("test-shim"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn shim_add_and_remove_integration() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    bkt()
+        .env("HOME", home)
+        .args(["shim", "add", "to-remove"])
+        .assert()
+        .success();
+
+    bkt()
+        .env("HOME", home)
+        .args(["shim", "remove", "to-remove"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Removed shim: to-remove"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn shim_add_with_host_option() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    bkt()
+        .env("HOME", home)
+        .args(["shim", "add", "docker", "--host", "podman"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added shim: docker"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn extension_add_and_list_integration() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    bkt()
+        .env("HOME", home)
+        .args(["extension", "add", "test@example.com"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Added to user manifest: test@example.com",
+        ));
+
+    bkt()
+        .env("HOME", home)
+        .args(["extension", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("test@example.com"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn extension_remove_nonexistent_shows_message() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    bkt()
+        .env("HOME", home)
+        .args(["extension", "remove", "nonexistent@example.com"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("not found"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn gsetting_set_adds_to_manifest() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    // Setting will be added to manifest even if apply fails
+    bkt()
+        .env("HOME", home)
+        .args(["gsetting", "set", "org.test.schema", "key", "value"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added to user manifest"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn gsetting_list_shows_empty_when_no_settings() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    bkt()
+        .env("HOME", home)
+        .args(["gsetting", "list"])
+        .assert()
+        .success();
+
+    temp.close().unwrap();
+}

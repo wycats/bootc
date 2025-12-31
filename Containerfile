@@ -44,6 +44,11 @@ RUN dnf install -y \
     curl \
     unzip \
     fontconfig \
+    google-noto-sans-batak-fonts \
+    google-noto-sans-inscriptional-pahlavi-fonts \
+    google-noto-sans-inscriptional-parthian-fonts \
+    google-noto-sans-meroitic-fonts \
+    google-noto-sans-mongolian-fonts \
     && dnf clean all
 
 # Relocate /opt to /usr/lib/opt for ostree compatibility
@@ -152,18 +157,21 @@ RUN mkdir -p /usr/lib/systemd/system/multi-user.target.wants && \
     ln -sf ../keyd.service /usr/lib/systemd/system/multi-user.target.wants/keyd.service
 
 # First-login bootstrap (Flatpak + GNOME extensions + host shims)
-RUN mkdir -p /usr/share/bootc-bootstrap
+RUN mkdir -p /usr/share/bootc-bootstrap /usr/share/bootc
 COPY manifests/flatpak-remotes.json /usr/share/bootc-bootstrap/flatpak-remotes.json
 COPY manifests/flatpak-apps.json /usr/share/bootc-bootstrap/flatpak-apps.json
 COPY manifests/gnome-extensions.json /usr/share/bootc-bootstrap/gnome-extensions.json
 COPY manifests/gsettings.json /usr/share/bootc-bootstrap/gsettings.json
 COPY manifests/host-shims.json /usr/share/bootc-bootstrap/host-shims.json
+# Repository identity (for bkt --pr workflow)
+COPY repo.json /usr/share/bootc/repo.json
 COPY scripts/bootc-bootstrap /usr/bin/bootc-bootstrap
 COPY scripts/check-drift /usr/bin/check-drift
-COPY scripts/shim /usr/bin/shim
 COPY scripts/bootc-repo /usr/bin/bootc-repo
+# bkt CLI (pre-built by CI, placed in scripts/ during workflow)
+COPY scripts/bkt /usr/bin/bkt
 COPY systemd/user/bootc-bootstrap.service /usr/lib/systemd/user/bootc-bootstrap.service
-RUN chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/check-drift /usr/bin/shim /usr/bin/bootc-repo && \
+RUN chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/check-drift /usr/bin/bootc-repo /usr/bin/bkt && \
     mkdir -p /usr/lib/systemd/user/default.target.wants && \
     ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service
 
@@ -224,9 +232,6 @@ COPY system/systemd/logind.conf.d/10-lid-policy.conf /usr/share/bootc-optional/s
 RUN if [ "${ENABLE_LOGIND_LID_POLICY}" = "1" ]; then \
             install -Dpm0644 /usr/share/bootc-optional/systemd/logind.conf.d/10-lid-policy.conf /etc/systemd/logind.conf.d/10-lid-policy.conf; \
         fi
-
-# Dotfiles detected in system_profile.txt
-COPY skel/.bashrc /etc/skel/.bashrc
 
 # Nushell + toolbox-related defaults (profile addendum)
 COPY skel/.config/nushell/config.nu /etc/skel/.config/nushell/config.nu

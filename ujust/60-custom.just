@@ -76,3 +76,15 @@ check-drift:
 # Check drift with JSON output
 check-drift-json:
     @/usr/bin/check-drift --json
+
+# Recreate toolbox with latest image
+toolbox-update:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Pulling latest toolbox image..."
+    podman pull ghcr.io/wycats/bootc-toolbox:latest
+    echo "Removing existing toolbox 'dev'..."
+    toolbox rm -f dev || true
+    echo "Creating new toolbox 'dev'..."
+    toolbox create -i ghcr.io/wycats/bootc-toolbox:latest dev
+    echo "✓ Toolbox 'dev' recreated. Run: toolbox enter dev"
