@@ -6,6 +6,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 use crate::manifest::{Shim, ShimsManifest};
+use crate::pipeline::ExecutionPlan;
 use crate::pr::{PrChange, run_pr_workflow};
 
 #[derive(Debug, Args)]
@@ -140,7 +141,9 @@ fn shim_source(name: &str, system: &ShimsManifest, user: &ShimsManifest) -> &'st
     }
 }
 
-pub fn run(args: ShimArgs) -> Result<()> {
+pub fn run(args: ShimArgs, _plan: &ExecutionPlan) -> Result<()> {
+    // TODO: Migrate to use plan instead of per-command flags
+    // For now, per-command --pr and --dry-run flags still work
     match args.action {
         ShimAction::Add {
             name,

@@ -1,6 +1,7 @@
 //! GSettings command implementation.
 
 use crate::manifest::{GSetting, GSettingsManifest};
+use crate::pipeline::ExecutionPlan;
 use crate::pr::{PrChange, run_pr_workflow};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -135,7 +136,8 @@ fn apply_settings(dry_run: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn run(args: GSettingArgs) -> Result<()> {
+pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
+    // TODO: Migrate to use plan instead of per-command flags
     match args.action {
         GSettingAction::Set {
             schema,
