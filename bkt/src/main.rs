@@ -2,16 +2,38 @@
 //!
 //! A CLI tool for managing system manifests including Flatpaks, GNOME extensions,
 //! GSettings, host shims, skel files, and system profiles.
+//!
+//! # Command Punning
+//!
+//! `bkt` implements "command punning": commands that execute immediately AND
+//! propagate changes to the distribution via Git PRs. This is the core philosophy
+//! of Phase 2.
+//!
+//! ## Execution Contexts
+//!
+//! - **Host** (default): Execute on the immutable host system
+//! - **Dev** (`bkt dev ...`): Execute in the development toolbox  
+//! - **Image** (`--pr-only`): Only update manifests, no local execution
+//!
+//! ## PR Modes
+//!
+//! - Default: Execute locally AND create PR
+//! - `--local`: Execute locally only, skip PR
+//! - `--pr-only`: Create PR only, skip local execution
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
 mod commands;
+pub mod context;
 pub mod effects;
 mod manifest;
+pub mod pipeline;
 mod pr;
 mod repo;
+
+pub use context::{CommandDomain, ExecutionContext, PrMode};
 
 #[derive(Debug, Parser)]
 #[command(name = "bkt")]
@@ -19,6 +41,36 @@ mod repo;
 #[command(version)]
 #[command(propagate_version = true)]
 pub struct Cli {
+    /// Execution context (auto-detected if not specified)
+    ///
+    /// - host: Execute on the immutable host system
+    /// - dev: Execute in the development toolbox
+    /// - image: Only update manifests (no local execution)
+    #[arg(long, value_enum, global = true)]
+    pub context: Option<ExecutionContext>,
+
+    /// Skip local execution, only create PR
+    ///
+    /// Useful for preparing changes on one machine for another,
+    /// or for testing manifest changes in CI before applying.
+    #[arg(long, global = true, conflicts_with = "local")]
+    pub pr_only: bool,
+
+    /// Skip PR creation, only execute locally
+    ///
+    /// Useful for temporary installations or testing before committing.
+    /// Changes are recorded in the ephemeral manifest for later promotion.
+    #[arg(long, global = true, conflicts_with = "pr_only")]
+    pub local: bool,
+
+    /// Show what would be done without making changes
+    #[arg(long, short = 'n', global = true)]
+    pub dry_run: bool,
+
+    /// Skip preflight checks for PR workflow
+    #[arg(long, global = true)]
+    pub skip_preflight: bool,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -71,12 +123,23 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    // Create execution plan from global options
+    let plan = pipeline::ExecutionPlan::from_cli(&cli);
+
+    // Log detected context
+    tracing::debug!(
+        context = %plan.context,
+        pr_mode = ?plan.pr_mode,
+        dry_run = plan.dry_run,
+        "Execution plan created"
+    );
+
     match cli.command {
-        Commands::Flatpak(args) => commands::flatpak::run(args),
-        Commands::Shim(args) => commands::shim::run(args),
-        Commands::Extension(args) => commands::extension::run(args),
-        Commands::Gsetting(args) => commands::gsetting::run(args),
-        Commands::Skel(args) => commands::skel::run(args),
+        Commands::Flatpak(args) => commands::flatpak::run(args, &plan),
+        Commands::Shim(args) => commands::shim::run(args, &plan),
+        Commands::Extension(args) => commands::extension::run(args, &plan),
+        Commands::Gsetting(args) => commands::gsetting::run(args, &plan),
+        Commands::Skel(args) => commands::skel::run(args, &plan),
         Commands::Profile(args) => commands::profile::run(args),
         Commands::Repo(args) => commands::repo::run(args),
         Commands::Schema(args) => commands::schema::run(args),

@@ -1,6 +1,7 @@
 //! GNOME extension command implementation.
 
 use crate::manifest::GnomeExtensionsManifest;
+use crate::pipeline::ExecutionPlan;
 use crate::pr::{PrChange, run_pr_workflow};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -144,7 +145,10 @@ fn sync_extensions(dry_run: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn run(args: ExtensionArgs) -> Result<()> {
+pub fn run(args: ExtensionArgs, _plan: &ExecutionPlan) -> Result<()> {
+    // TODO: Migrate to use `ExecutionPlan` instead of per-command flags.
+    // The `_plan` parameter is intentionally unused and reserved for future use
+    // after this migration.
     match args.action {
         ExtensionAction::Add {
             uuid,

@@ -8,6 +8,7 @@
 //! Files can only be copied from within $HOME, and paths containing ".."
 //! are rejected.
 
+use crate::pipeline::ExecutionPlan;
 use crate::pr::{PrChange, run_pr_workflow};
 use crate::repo::find_repo_path;
 use anyhow::{Context, Result, bail};
@@ -137,7 +138,10 @@ fn diff_files(skel_file: &Path, home_file: &Path) -> Result<Option<String>> {
     }
 }
 
-pub fn run(args: SkelArgs) -> Result<()> {
+pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
+    // TODO: Migrate to use `ExecutionPlan` instead of per-command flags.
+    // The `_plan` parameter is intentionally unused and reserved for future use
+    // after this migration.
     match args.action {
         SkelAction::Add {
             file,

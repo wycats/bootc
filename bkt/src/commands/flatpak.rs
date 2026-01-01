@@ -1,7 +1,8 @@
 //! Flatpak command implementation.
 
+use crate::context::CommandDomain;
 use crate::manifest::{FlatpakApp, FlatpakAppsManifest, FlatpakScope};
-use crate::pr::{PrChange, run_pr_workflow};
+use crate::pipeline::ExecutionPlan;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use std::process::Command;
@@ -24,23 +25,11 @@ pub enum FlatpakAction {
         /// Installation scope (system or user)
         #[arg(short, long, default_value = "system")]
         scope: String,
-        /// Create a PR with the change
-        #[arg(long)]
-        pr: bool,
-        /// Skip pre-flight checks for PR workflow
-        #[arg(long)]
-        skip_preflight: bool,
     },
     /// Remove a Flatpak app from the manifest
     Remove {
         /// Application ID to remove
         app_id: String,
-        /// Create a PR with the change
-        #[arg(long)]
-        pr: bool,
-        /// Skip pre-flight checks for PR workflow
-        #[arg(long)]
-        skip_preflight: bool,
     },
     /// List all Flatpak apps in the manifest
     List {
@@ -49,11 +38,7 @@ pub enum FlatpakAction {
         format: String,
     },
     /// Sync: install apps from manifest
-    Sync {
-        /// Show what would be done without making changes
-        #[arg(long)]
-        dry_run: bool,
-    },
+    Sync,
 }
 
 /// Install a flatpak app using the flatpak CLI.
@@ -104,7 +89,7 @@ fn is_installed(app_id: &str) -> bool {
 }
 
 /// Sync flatpak apps from manifest to installed state.
-fn sync_flatpaks(dry_run: bool) -> Result<()> {
+fn sync_flatpaks(plan: &ExecutionPlan) -> Result<()> {
     let system = FlatpakAppsManifest::load_system()?;
     let user = FlatpakAppsManifest::load_user()?;
     let merged = FlatpakAppsManifest::merged(&system, &user);
@@ -119,12 +104,12 @@ fn sync_flatpaks(dry_run: bool) -> Result<()> {
             continue;
         }
 
-        if dry_run {
+        if plan.dry_run {
             println!(
                 "Would install: {} from {} ({})",
                 app.id, app.remote, app.scope
             );
-        } else {
+        } else if plan.should_execute_locally() {
             print!("Installing {} ({})... ", app.id, app.scope);
             if install_flatpak(app)? {
                 println!("✓");
@@ -136,7 +121,7 @@ fn sync_flatpaks(dry_run: bool) -> Result<()> {
         }
     }
 
-    if dry_run {
+    if plan.dry_run {
         println!(
             "\nDry run: {} already installed, {} would be installed",
             skipped,
@@ -152,24 +137,27 @@ fn sync_flatpaks(dry_run: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn run(args: FlatpakArgs) -> Result<()> {
+pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
     match args.action {
         FlatpakAction::Add {
             app_id,
             remote,
             scope,
-            pr,
-            skip_preflight,
         } => {
+            // Validate that flatpak operations are allowed in this context
+            plan.validate_domain(CommandDomain::Flatpak)?;
+
             let scope: FlatpakScope = scope.parse()?;
 
             // Check if already in manifest
             let system = FlatpakAppsManifest::load_system()?;
             let mut user = FlatpakAppsManifest::load_user()?;
 
-            if system.find(&app_id).is_some() || user.find(&app_id).is_some() {
+            let already_exists = system.find(&app_id).is_some() || user.find(&app_id).is_some();
+
+            if already_exists {
                 println!("Flatpak already in manifest: {}", app_id);
-            } else {
+            } else if plan.should_update_local_manifest() {
                 let app = FlatpakApp {
                     id: app_id.clone(),
                     remote: remote.clone(),
@@ -178,10 +166,15 @@ pub fn run(args: FlatpakArgs) -> Result<()> {
                 user.upsert(app.clone());
                 user.save_user()?;
                 println!("Added to user manifest: {} ({}, {})", app_id, remote, scope);
+            } else if plan.dry_run {
+                println!(
+                    "[dry-run] Would add to manifest: {} ({}, {})",
+                    app_id, remote, scope
+                );
             }
 
             // Install the flatpak
-            if !is_installed(&app_id) {
+            if plan.should_execute_locally() && !is_installed(&app_id) {
                 print!("Installing {}... ", app_id);
                 let app = FlatpakApp {
                     id: app_id.clone(),
@@ -193,12 +186,14 @@ pub fn run(args: FlatpakArgs) -> Result<()> {
                 } else {
                     println!("✗ (failed)");
                 }
-            } else {
+            } else if plan.dry_run && !is_installed(&app_id) {
+                println!("[dry-run] Would install: {}", app_id);
+            } else if is_installed(&app_id) {
                 println!("Already installed: {}", app_id);
             }
 
-            if pr {
-                // Add to system manifest for PR
+            // Create PR if needed
+            if plan.should_create_pr() && !already_exists {
                 let mut system_manifest = FlatpakAppsManifest::load_system()?;
                 let app_for_pr = FlatpakApp {
                     id: app_id.clone(),
@@ -208,41 +203,48 @@ pub fn run(args: FlatpakArgs) -> Result<()> {
                 system_manifest.upsert(app_for_pr);
                 let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
 
-                let change = PrChange {
-                    manifest_type: "flatpak".to_string(),
-                    action: "add".to_string(),
-                    name: app_id.clone(),
-                    manifest_file: "flatpak-apps.json".to_string(),
-                };
-                run_pr_workflow(&change, &manifest_content, skip_preflight)?;
+                plan.maybe_create_pr(
+                    "flatpak",
+                    "add",
+                    &app_id,
+                    "flatpak-apps.json",
+                    &manifest_content,
+                )?;
             }
         }
-        FlatpakAction::Remove {
-            app_id,
-            pr,
-            skip_preflight,
-        } => {
+        FlatpakAction::Remove { app_id } => {
+            // Validate that flatpak operations are allowed in this context
+            plan.validate_domain(CommandDomain::Flatpak)?;
+
             let mut user = FlatpakAppsManifest::load_user()?;
             let system = FlatpakAppsManifest::load_system()?;
 
             // Check if it's in system manifest
             let in_system = system.find(&app_id).is_some();
-            if in_system && user.find(&app_id).is_none() {
+            if in_system && user.find(&app_id).is_none() && !plan.should_create_pr() {
                 println!(
-                    "Note: '{}' is in the system manifest; use --pr to remove from source",
+                    "Note: '{}' is only in the system manifest; run this command without the --local flag to also create a PR to remove it from the system manifest",
                     app_id
                 );
             }
 
-            if user.remove(&app_id) {
-                user.save_user()?;
-                println!("Removed from user manifest: {}", app_id);
-            } else if !in_system {
-                println!("Flatpak not found in manifest: {}", app_id);
+            if plan.should_update_local_manifest() {
+                if user.remove(&app_id) {
+                    user.save_user()?;
+                    println!("Removed from user manifest: {}", app_id);
+                } else if !in_system {
+                    println!("Flatpak not found in manifest: {}", app_id);
+                }
+            } else if plan.dry_run {
+                if user.find(&app_id).is_some() {
+                    println!("[dry-run] Would remove from user manifest: {}", app_id);
+                } else if !in_system {
+                    println!("[dry-run] Flatpak not found in manifest: {}", app_id);
+                }
             }
 
             // Optionally uninstall
-            if is_installed(&app_id) {
+            if plan.should_execute_locally() && is_installed(&app_id) {
                 print!("Uninstalling {}... ", app_id);
                 // Try system first, then user
                 if uninstall_flatpak(&app_id, FlatpakScope::System)?
@@ -252,20 +254,23 @@ pub fn run(args: FlatpakArgs) -> Result<()> {
                 } else {
                     println!("✗ (may need manual removal)");
                 }
+            } else if plan.dry_run && is_installed(&app_id) {
+                println!("[dry-run] Would uninstall: {}", app_id);
             }
 
-            if pr {
+            // Create PR if needed
+            if plan.should_create_pr() {
                 let mut system_manifest = FlatpakAppsManifest::load_system()?;
                 if system_manifest.remove(&app_id) {
                     let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
 
-                    let change = PrChange {
-                        manifest_type: "flatpak".to_string(),
-                        action: "remove".to_string(),
-                        name: app_id.clone(),
-                        manifest_file: "flatpak-apps.json".to_string(),
-                    };
-                    run_pr_workflow(&change, &manifest_content, skip_preflight)?;
+                    plan.maybe_create_pr(
+                        "flatpak",
+                        "remove",
+                        &app_id,
+                        "flatpak-apps.json",
+                        &manifest_content,
+                    )?;
                 } else {
                     println!("Note: '{}' not in system manifest, no PR needed", app_id);
                 }
@@ -308,8 +313,11 @@ pub fn run(args: FlatpakArgs) -> Result<()> {
                 );
             }
         }
-        FlatpakAction::Sync { dry_run } => {
-            sync_flatpaks(dry_run)?;
+        FlatpakAction::Sync => {
+            // Validate that flatpak operations are allowed in this context
+            plan.validate_domain(CommandDomain::Flatpak)?;
+
+            sync_flatpaks(plan)?;
         }
     }
     Ok(())
