@@ -207,9 +207,7 @@ mod tests {
         assert!(local_plan.should_update_local_manifest());
 
         // PrOnly mode: should NOT update local manifest
-        let pr_only_plan = ExecutionPlanBuilder::new()
-            .pr_mode(PrMode::PrOnly)
-            .build();
+        let pr_only_plan = ExecutionPlanBuilder::new().pr_mode(PrMode::PrOnly).build();
         assert!(!pr_only_plan.should_update_local_manifest());
 
         // Dry-run mode: should NOT update local manifest
