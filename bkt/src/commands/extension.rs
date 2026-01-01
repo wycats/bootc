@@ -146,7 +146,9 @@ fn sync_extensions(dry_run: bool) -> Result<()> {
 }
 
 pub fn run(args: ExtensionArgs, _plan: &ExecutionPlan) -> Result<()> {
-    // TODO: Migrate to use plan instead of per-command flags
+    // TODO: Migrate to use `ExecutionPlan` instead of per-command flags.
+    // The `_plan` parameter is intentionally unused and reserved for future use
+    // after this migration.
     match args.action {
         ExtensionAction::Add {
             uuid,

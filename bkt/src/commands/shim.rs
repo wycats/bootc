@@ -142,8 +142,9 @@ fn shim_source(name: &str, system: &ShimsManifest, user: &ShimsManifest) -> &'st
 }
 
 pub fn run(args: ShimArgs, _plan: &ExecutionPlan) -> Result<()> {
-    // TODO: Migrate to use plan instead of per-command flags
-    // For now, per-command --pr and --dry-run flags still work
+    // TODO: Migrate to use `ExecutionPlan` instead of per-command flags.
+    // The `_plan` parameter is intentionally unused and reserved for future use
+    // after this migration. For now, per-command --pr and --dry-run flags still work.
     match args.action {
         ShimAction::Add {
             name,

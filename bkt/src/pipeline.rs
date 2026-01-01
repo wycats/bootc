@@ -191,6 +191,30 @@ mod tests {
         let plan = ExecutionPlanBuilder::new().dry_run(true).build();
         assert!(!plan.should_execute_locally());
         assert!(!plan.should_create_pr());
+        assert!(!plan.should_update_local_manifest());
+    }
+
+    #[test]
+    fn test_should_update_local_manifest() {
+        // Default (Both mode): should update local manifest
+        let default_plan = ExecutionPlanBuilder::new().build();
+        assert!(default_plan.should_update_local_manifest());
+
+        // LocalOnly mode: should update local manifest
+        let local_plan = ExecutionPlanBuilder::new()
+            .pr_mode(PrMode::LocalOnly)
+            .build();
+        assert!(local_plan.should_update_local_manifest());
+
+        // PrOnly mode: should NOT update local manifest
+        let pr_only_plan = ExecutionPlanBuilder::new()
+            .pr_mode(PrMode::PrOnly)
+            .build();
+        assert!(!pr_only_plan.should_update_local_manifest());
+
+        // Dry-run mode: should NOT update local manifest
+        let dry_run_plan = ExecutionPlanBuilder::new().dry_run(true).build();
+        assert!(!dry_run_plan.should_update_local_manifest());
     }
 
     #[test]

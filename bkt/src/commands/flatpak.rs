@@ -223,7 +223,7 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
             let in_system = system.find(&app_id).is_some();
             if in_system && user.find(&app_id).is_none() && !plan.should_create_pr() {
                 println!(
-                    "Note: '{}' is in the system manifest; use without --local to remove from source",
+                    "Note: '{}' is only in the system manifest; run this command without the --local flag to also create a PR to remove it from the system manifest",
                     app_id
                 );
             }
@@ -236,7 +236,11 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
                     println!("Flatpak not found in manifest: {}", app_id);
                 }
             } else if plan.dry_run {
-                println!("[dry-run] Would remove from manifest: {}", app_id);
+                if user.find(&app_id).is_some() {
+                    println!("[dry-run] Would remove from user manifest: {}", app_id);
+                } else if !in_system {
+                    println!("[dry-run] Flatpak not found in manifest: {}", app_id);
+                }
             }
 
             // Optionally uninstall

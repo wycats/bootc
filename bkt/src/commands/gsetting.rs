@@ -137,7 +137,9 @@ fn apply_settings(dry_run: bool) -> Result<()> {
 }
 
 pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
-    // TODO: Migrate to use plan instead of per-command flags
+    // TODO: Migrate to use `ExecutionPlan` instead of per-command flags.
+    // The `_plan` parameter is intentionally unused and reserved for future use
+    // after this migration.
     match args.action {
         GSettingAction::Set {
             schema,

@@ -118,26 +118,26 @@ impl CommandDomain {
         match (self, context) {
             (CommandDomain::Flatpak, ExecutionContext::Dev) => {
                 "Flatpaks are host-level applications.\n\n\
-                 Did you mean:\n  \
-                 bkt flatpak add <app_id>\n\n\
+                 Did you mean to run this on the host instead of in the dev toolbox?\n\n\
                  Next steps:\n  \
-                 - Run: bkt flatpak add <app_id>"
+                 - Exit the dev toolbox (run `exit`)\n  \
+                 - On the host system, run: bkt flatpak add <app_id>"
                     .to_string()
             }
             (CommandDomain::Extension, ExecutionContext::Dev) => {
                 "GNOME extensions are host-level.\n\n\
-                 Did you mean:\n  \
-                 bkt extension add <uuid>\n\n\
+                 Did you mean to run this on the host instead of in the dev toolbox?\n\n\
                  Next steps:\n  \
-                 - Run: bkt extension add <uuid>"
+                 - Exit the dev toolbox (run `exit`)\n  \
+                 - On the host system, run: bkt extension add <uuid>"
                     .to_string()
             }
             (CommandDomain::Shim, ExecutionContext::Dev) => {
-                "Shims are host-level (they expose host commands to toolbox).\n\n\
-                 Did you mean:\n  \
-                 bkt shim add <name>\n\n\
+                "Shims are host-level (they expose host commands to the toolbox).\n\n\
+                 Did you mean to run this on the host instead of in the dev toolbox?\n\n\
                  Next steps:\n  \
-                 - Run: bkt shim add <name>"
+                 - Exit the dev toolbox (run `exit`)\n  \
+                 - On the host system, run: bkt shim add <name>"
                     .to_string()
             }
             _ => format!("{:?} is not valid in {} context", self, context),

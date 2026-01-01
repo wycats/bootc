@@ -67,7 +67,7 @@ pub struct Cli {
     #[arg(long, short = 'n', global = true)]
     pub dry_run: bool,
 
-    /// Skip pre-flight checks for PR workflow
+    /// Skip preflight checks for PR workflow
     #[arg(long, global = true)]
     pub skip_preflight: bool,
 

@@ -139,7 +139,9 @@ fn diff_files(skel_file: &Path, home_file: &Path) -> Result<Option<String>> {
 }
 
 pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
-    // TODO: Migrate to use plan instead of per-command flags
+    // TODO: Migrate to use `ExecutionPlan` instead of per-command flags.
+    // The `_plan` parameter is intentionally unused and reserved for future use
+    // after this migration.
     match args.action {
         SkelAction::Add {
             file,
