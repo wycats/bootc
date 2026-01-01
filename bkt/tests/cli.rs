@@ -499,3 +499,78 @@ fn dnf_diff_succeeds() {
 
     temp.close().unwrap();
 }
+
+// ============================================================================
+// Dev (toolbox) command tests
+// ============================================================================
+
+#[test]
+fn dev_help_shows_subcommands() {
+    bkt()
+        .args(["dev", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("dnf"))
+        .stdout(predicate::str::contains("enter"))
+        .stdout(predicate::str::contains("status"))
+        .stdout(predicate::str::contains("update"))
+        .stdout(predicate::str::contains("diff"))
+        .stdout(predicate::str::contains("copr"));
+}
+
+#[test]
+fn dev_dnf_help_shows_subcommands() {
+    bkt()
+        .args(["dev", "dnf", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("install"))
+        .stdout(predicate::str::contains("remove"))
+        .stdout(predicate::str::contains("list"));
+}
+
+#[test]
+fn dev_status_shows_empty_manifest() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    bkt()
+        .env("HOME", home)
+        .args(["dev", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Development Toolbox Status"))
+        .stdout(predicate::str::contains("No packages in toolbox manifest"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn dev_diff_shows_empty_manifest() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    bkt()
+        .env("HOME", home)
+        .args(["dev", "diff"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Toolbox manifest is empty"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn dev_update_shows_empty_manifest() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    bkt()
+        .env("HOME", home)
+        .args(["dev", "update"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Toolbox manifest is empty"));
+
+    temp.close().unwrap();
+}

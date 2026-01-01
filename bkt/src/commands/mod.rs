@@ -1,6 +1,7 @@
 //! CLI command implementations.
 
 pub mod completions;
+pub mod dev;
 pub mod dnf;
 pub mod doctor;
 pub mod extension;

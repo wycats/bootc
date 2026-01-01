@@ -601,7 +601,7 @@ fn handle_sync(now: bool, plan: &ExecutionPlan) -> Result<()> {
 // COPR Commands
 // =============================================================================
 
-fn handle_copr(action: CoprAction, plan: &ExecutionPlan) -> Result<()> {
+pub fn handle_copr(action: CoprAction, plan: &ExecutionPlan) -> Result<()> {
     match action {
         CoprAction::Enable { name } => handle_copr_enable(name, plan),
         CoprAction::Disable { name } => handle_copr_disable(name, plan),
