@@ -411,3 +411,91 @@ fn gsetting_list_shows_empty_when_no_settings() {
 
     temp.close().unwrap();
 }
+
+// ============================================================================
+// DNF command tests
+// ============================================================================
+
+#[test]
+fn dnf_help_shows_subcommands() {
+    bkt()
+        .args(["dnf", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("install"))
+        .stdout(predicate::str::contains("remove"))
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("search"))
+        .stdout(predicate::str::contains("info"))
+        .stdout(predicate::str::contains("provides"))
+        .stdout(predicate::str::contains("diff"))
+        .stdout(predicate::str::contains("sync"))
+        .stdout(predicate::str::contains("copr"));
+}
+
+#[test]
+fn dnf_list_succeeds() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    bkt()
+        .env("HOME", home)
+        .env("BKT_FORCE_HOST", "1")
+        .args(["dnf", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No packages in manifest"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn dnf_install_requires_package() {
+    bkt()
+        .env("BKT_FORCE_HOST", "1")
+        .args(["dnf", "install"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("No packages specified"));
+}
+
+#[test]
+fn dnf_remove_requires_package() {
+    bkt()
+        .env("BKT_FORCE_HOST", "1")
+        .args(["dnf", "remove"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("No packages specified"));
+}
+
+#[test]
+fn dnf_copr_list_succeeds() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    bkt()
+        .env("HOME", home)
+        .env("BKT_FORCE_HOST", "1")
+        .args(["dnf", "copr", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No COPR repositories"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn dnf_diff_succeeds() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    bkt()
+        .env("HOME", home)
+        .env("BKT_FORCE_HOST", "1")
+        .args(["dnf", "diff"])
+        .assert()
+        .success();
+
+    temp.close().unwrap();
+}
