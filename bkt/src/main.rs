@@ -19,10 +19,6 @@ mod repo;
 #[command(version)]
 #[command(propagate_version = true)]
 pub struct Cli {
-    /// Perform a dry run (show what would be done without making changes)
-    #[arg(long, short = 'n', global = true)]
-    pub dry_run: bool,
-
     #[command(subcommand)]
     pub command: Commands,
 }

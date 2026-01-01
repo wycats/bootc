@@ -11,6 +11,24 @@
       "schema": "org.gnome.settings-daemon.plugins.power",
       "key": "sleep-inactive-ac-timeout",
       "value": "0"
+    },
+    {
+      "schema": "org.gnome.desktop.interface",
+      "key": "cursor-theme",
+      "value": "'Bibata-Modern-Classic'",
+      "comment": "Use Bibata Modern Classic cursor theme"
+    },
+    {
+      "schema": "org.gnome.desktop.interface",
+      "key": "icon-theme",
+      "value": "'WhiteSur'",
+      "comment": "Use WhiteSur icon theme"
+    },
+    {
+      "schema": "org.gnome.desktop.interface",
+      "key": "gtk-theme",
+      "value": "'adw-gtk3'",
+      "comment": "Use adw-gtk3 for GTK3 apps (matches libadwaita style)"
     }
   ]
 }

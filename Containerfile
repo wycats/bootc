@@ -150,6 +150,33 @@ RUN dnf remove -y google-noto-emoji-fonts google-noto-color-emoji-fonts || true;
 
 COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
 
+# Bibata cursor theme (pinned to upstream version + verified by sha256)
+COPY upstream/bibata.version /tmp/bibata.version
+COPY upstream/bibata.sha256 /tmp/bibata.sha256
+RUN set -eu; \
+    version="$(cat /tmp/bibata.version)"; \
+    expected_sha="$(cat /tmp/bibata.sha256)"; \
+    asset="Bibata-Modern-Classic.tar.xz"; \
+    curl -fsSL "https://github.com/ful1e5/Bibata_Cursor/releases/download/${version}/${asset}" -o /tmp/${asset}; \
+    echo "${expected_sha}  /tmp/${asset}" | sha256sum -c -; \
+    mkdir -p /usr/share/icons; \
+    tar -xJf /tmp/${asset} -C /usr/share/icons; \
+    rm -f /tmp/${asset} /tmp/bibata.version /tmp/bibata.sha256
+
+# WhiteSur icon theme (pinned to immutable commit SHA, installed system-wide)
+# Note: Using commit SHA instead of tag for immutability. The install.sh script
+# is simple (copies files only, no network calls). Full tree verification is
+# deferred to a future upstream management system.
+COPY upstream/whitesur-icons.ref /tmp/whitesur-icons.ref
+RUN set -eu; \
+    ref="$(cat /tmp/whitesur-icons.ref)"; \
+    dnf install -y git; \
+    git clone --filter=blob:none https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/whitesur-icons; \
+    cd /tmp/whitesur-icons && git checkout "${ref}" && ./install.sh -d /usr/share/icons; \
+    rm -rf /tmp/whitesur-icons /tmp/whitesur-icons.ref; \
+    dnf remove -y git || true; \
+    dnf clean all
+
 # Host-level config extracted from wycats/asahi-env (now sourced here)
 COPY system/keyd/default.conf /etc/keyd/default.conf
 # Enable keyd service (create symlink manually since systemctl doesn't work in containers)
