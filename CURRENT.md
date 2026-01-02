@@ -400,7 +400,7 @@ Recommended order based on dependencies:
 ```
 Phase 2a: Bidirectional Sync (PRIMARY GOAL)
 ├── 9. Command Infrastructure (trait-based commands with dry-run) ✅ Complete
-├── 10a. Apply side (bkt apply) ✅ Complete  
+├── 10a. Apply side (bkt apply) ✅ Complete
 ├── 10b. Status Dashboard (bkt status enhanced) ✅ Complete
 └── 10c. Capture side (bkt capture) ← NEXT
 

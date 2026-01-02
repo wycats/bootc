@@ -60,10 +60,7 @@ fn capture_help_shows_options() {
 
 #[test]
 fn capture_dry_run_succeeds() {
-    bkt()
-        .args(["capture", "--dry-run"])
-        .assert()
-        .success();
+    bkt().args(["capture", "--dry-run"]).assert().success();
 }
 
 // ============================================================================
@@ -236,7 +233,12 @@ fn gsetting_capture_requires_schema() {
 fn gsetting_capture_dry_run_succeeds() {
     // Using a schema that should exist on any GNOME system
     bkt()
-        .args(["gsetting", "capture", "org.gnome.desktop.interface", "--dry-run"])
+        .args([
+            "gsetting",
+            "capture",
+            "org.gnome.desktop.interface",
+            "--dry-run",
+        ])
         .assert()
         .success();
 }
