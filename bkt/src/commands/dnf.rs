@@ -166,7 +166,7 @@ fn handle_list(format: String, _plan: &ExecutionPlan) -> Result<()> {
     // List packages
     if !merged.packages.is_empty() {
         Output::subheader("PACKAGES:");
-        println!("{:<40} {}", "NAME".cyan(), "SOURCE");
+        println!("{:<40} SOURCE", "NAME".cyan());
         Output::separator();
         for pkg in &merged.packages {
             let source = if user.find_package(pkg) {
@@ -196,7 +196,7 @@ fn handle_list(format: String, _plan: &ExecutionPlan) -> Result<()> {
     // List COPR repos
     if !merged.copr_repos.is_empty() {
         Output::subheader("COPR REPOSITORIES:");
-        println!("{:<40} {} {}", "NAME".cyan(), "ENABLED", "GPG");
+        println!("{:<40} ENABLED GPG", "NAME".cyan());
         Output::separator();
         for copr in &merged.copr_repos {
             let enabled = if copr.enabled {
@@ -756,11 +756,10 @@ fn handle_copr_list() -> Result<()> {
 
     Output::subheader("COPR REPOSITORIES:");
     println!(
-        "{:<40} {:<8} {:<8} {}",
+        "{:<40} {:<8} {:<8} SOURCE",
         "NAME".cyan(),
         "ENABLED",
-        "GPG",
-        "SOURCE"
+        "GPG"
     );
     Output::separator();
 
