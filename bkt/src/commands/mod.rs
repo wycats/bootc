@@ -1,5 +1,6 @@
 //! CLI command implementations.
 
+pub mod changelog;
 pub mod completions;
 pub mod dev;
 pub mod dnf;

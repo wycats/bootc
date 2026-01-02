@@ -1,8 +1,9 @@
 //! Schema generation command implementation.
 
 use crate::manifest::{
-    FlatpakApp, FlatpakAppsManifest, FlatpakRemote, FlatpakRemotesManifest, GSetting,
-    GSettingsManifest, GnomeExtensionsManifest, Shim, ShimsManifest, UpstreamManifest,
+    ChangelogEntry, FlatpakApp, FlatpakAppsManifest, FlatpakRemote, FlatpakRemotesManifest,
+    GSetting, GSettingsManifest, GnomeExtensionsManifest, Shim, ShimsManifest, UpstreamManifest,
+    VersionMetadata,
 };
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -86,6 +87,16 @@ const SCHEMAS: &[SchemaInfo] = &[
         filename: "upstream-manifest.schema.json",
         description: "The upstream/manifest.json manifest for tracking upstream dependencies",
     },
+    SchemaInfo {
+        name: "ChangelogEntry",
+        filename: "changelog-entry.schema.json",
+        description: "A single changelog entry stored in .changelog/pending/",
+    },
+    SchemaInfo {
+        name: "VersionMetadata",
+        filename: "changelog-version.schema.json",
+        description: "A released version with its changelog entries stored in .changelog/versions/",
+    },
 ];
 
 /// Generate all schemas and return them as (filename, json) pairs.
@@ -130,6 +141,14 @@ fn generate_all_schemas() -> Vec<(&'static str, String)> {
         (
             "upstream-manifest.schema.json",
             serde_json::to_string_pretty(&schema_for!(UpstreamManifest)).unwrap(),
+        ),
+        (
+            "changelog-entry.schema.json",
+            serde_json::to_string_pretty(&schema_for!(ChangelogEntry)).unwrap(),
+        ),
+        (
+            "changelog-version.schema.json",
+            serde_json::to_string_pretty(&schema_for!(VersionMetadata)).unwrap(),
         ),
     ]
 }

@@ -122,6 +122,9 @@ pub enum Commands {
 
     /// Manage upstream dependencies (themes, icons, fonts, tools)
     Upstream(commands::upstream::UpstreamArgs),
+
+    /// Manage distribution changelog and version history
+    Changelog(commands::changelog::ChangelogArgs),
 }
 
 fn main() -> Result<()> {
@@ -159,5 +162,6 @@ fn main() -> Result<()> {
         Commands::Doctor(args) => commands::doctor::run(args),
         Commands::Status(args) => commands::status::run(args),
         Commands::Upstream(args) => commands::upstream::run(args),
+        Commands::Changelog(args) => commands::changelog::run(args),
     }
 }
