@@ -10,6 +10,7 @@ use crate::context::{CommandDomain, ExecutionContext};
 use crate::manifest::{CoprRepo, SystemPackagesManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
+use crate::validation::validate_dnf_package;
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
@@ -30,6 +31,9 @@ pub enum DnfAction {
         /// Apply immediately without reboot (rpm-ostree --apply-live)
         #[arg(long)]
         now: bool,
+        /// Skip package validation
+        #[arg(long)]
+        force: bool,
     },
     /// Remove packages
     Remove {
@@ -90,7 +94,11 @@ pub enum CoprAction {
 
 pub fn run(args: DnfArgs, plan: &ExecutionPlan) -> Result<()> {
     match args.action {
-        DnfAction::Install { packages, now } => handle_install(packages, now, plan),
+        DnfAction::Install {
+            packages,
+            now,
+            force,
+        } => handle_install(packages, now, force, plan),
         DnfAction::Remove { packages } => handle_remove(packages, plan),
         DnfAction::List { format } => handle_list(format, plan),
         DnfAction::Search { query } => handle_search(query),
@@ -228,12 +236,24 @@ fn handle_list(format: String, _plan: &ExecutionPlan) -> Result<()> {
 // Install Command
 // =============================================================================
 
-fn handle_install(packages: Vec<String>, now: bool, plan: &ExecutionPlan) -> Result<()> {
+fn handle_install(
+    packages: Vec<String>,
+    now: bool,
+    force: bool,
+    plan: &ExecutionPlan,
+) -> Result<()> {
     // Validate context for mutating operations
     plan.validate_domain(CommandDomain::Dnf)?;
 
     if packages.is_empty() {
         bail!("No packages specified");
+    }
+
+    // Validate that packages exist in repositories
+    if !force {
+        for pkg in &packages {
+            validate_dnf_package(pkg)?;
+        }
     }
 
     let system = SystemPackagesManifest::load_system()?;

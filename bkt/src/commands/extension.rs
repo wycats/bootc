@@ -4,6 +4,7 @@ use crate::manifest::GnomeExtensionsManifest;
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::pr::{PrChange, run_pr_workflow};
+use crate::validation::validate_gnome_extension;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
@@ -27,6 +28,9 @@ pub enum ExtensionAction {
         /// Skip pre-flight checks for PR workflow
         #[arg(long)]
         skip_preflight: bool,
+        /// Skip validation that extension exists
+        #[arg(long)]
+        force: bool,
     },
     /// Remove a GNOME extension from the manifest
     Remove {
@@ -158,7 +162,13 @@ pub fn run(args: ExtensionArgs, _plan: &ExecutionPlan) -> Result<()> {
             uuid,
             pr,
             skip_preflight,
+            force,
         } => {
+            // Validate that the extension exists on extensions.gnome.org
+            if !force {
+                validate_gnome_extension(&uuid)?;
+            }
+
             let system = GnomeExtensionsManifest::load_system()?;
             let mut user = GnomeExtensionsManifest::load_user()?;
 

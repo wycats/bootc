@@ -4,6 +4,7 @@ use crate::manifest::{GSetting, GSettingsManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::pr::{PrChange, run_pr_workflow};
+use crate::validation::{validate_gsettings_key, validate_gsettings_schema};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
@@ -34,6 +35,9 @@ pub enum GSettingAction {
         /// Skip pre-flight checks for PR workflow
         #[arg(long)]
         skip_preflight: bool,
+        /// Skip schema/key validation
+        #[arg(long)]
+        force: bool,
     },
     /// Remove a GSettings entry from the manifest
     Unset {
@@ -152,7 +156,14 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
             comment,
             pr,
             skip_preflight,
+            force,
         } => {
+            // Validate schema and key exist before modifying manifest
+            if !force {
+                validate_gsettings_schema(&schema)?;
+                validate_gsettings_key(&schema, &key)?;
+            }
+
             let system = GSettingsManifest::load_system()?;
             let mut user = GSettingsManifest::load_user()?;
 

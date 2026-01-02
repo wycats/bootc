@@ -31,8 +31,8 @@ The guiding principle: **You are maintaining your own distribution.** Every loca
 | 4   | [Privileged Helper](#4-privileged-helper)           | [RFC-0004](docs/rfcs/0004-bkt-admin.md)           | 🟡 Medium | Not Started |
 | 5   | [Changelog Management](#5-changelog-management)     | [RFC-0005](docs/rfcs/0005-changelog.md)           | 🟡 Medium | ✅ Complete |
 | 6   | [Upstream Management](#6-upstream-management)       | [RFC-0006](docs/rfcs/0006-upstream-management.md) | 🟡 Medium | ✅ Complete |
-| 7   | [Base Image Drift Detection](#7-drift-detection)    | [RFC-0007](docs/rfcs/0007-drift-detection.md)     | 🟢 Low    | Not Started |
-| 8   | [Validation on Add](#8-validation-on-add)           | —                                                 | 🟢 Low    | Partial     |
+| 7   | [Base Image Drift Detection](#7-drift-detection)    | [RFC-0007](docs/rfcs/0007-drift-detection.md)     | 🟢 Low    | ✅ Complete |
+| 8   | [Validation on Add](#8-validation-on-add)           | —                                                 | 🟢 Low    | ✅ Complete |
 
 ---
 
@@ -211,7 +211,7 @@ Consolidate scattered version pins into unified upstream manifest with semver po
 
 **RFC:** [0007-drift-detection.md](docs/rfcs/0007-drift-detection.md)  
 **Priority:** 🟢 Low  
-**Status:** Not Started
+**Status:** ✅ Complete (PR #10)
 
 ### Description
 
@@ -219,10 +219,10 @@ Explicitly declare and verify assumptions about the base image.
 
 ### Deliverables
 
-- [ ] Create `manifests/base-image-assumptions.json` schema
+- [x] Create `manifests/base-image-assumptions.json` schema
 - [ ] Document initial assumptions (adw-gtk3-theme, gnome-shell, flatpak, etc.)
-- [ ] Implement `bkt base verify`
-- [ ] Implement `bkt base assume <package>`
+- [x] Implement `bkt base verify`
+- [x] Implement `bkt base assume <package>`
 - [ ] Add CI workflow to verify assumptions
 - [ ] Add scheduled check against `:stable` and `:latest`
 - [ ] Integrate with changelog when assumptions change
@@ -238,7 +238,7 @@ Explicitly declare and verify assumptions about the base image.
 ## 8. Validation on Add
 
 **Priority:** 🟢 Low  
-**Status:** Not Started
+**Status:** ✅ Complete (PR #11)
 
 ### Description
 
@@ -246,16 +246,17 @@ Validate items before adding to manifests to prevent typos and invalid entries.
 
 ### Deliverables
 
-- [ ] Flatpak: Query remote to verify app exists (`flatpak search`)
-- [ ] Extension: Check extensions.gnome.org API for UUID validity
-- [ ] GSettings: Verify schema exists (`gsettings list-schemas`)
-- [ ] DNF: Verify package exists before adding to manifest
+- [x] Flatpak: Query remote to verify app exists (`flatpak remote-info`)
+- [x] Extension: Check extensions.gnome.org API for UUID validity
+- [x] GSettings: Verify schema exists (`gsettings list-schemas`)
+- [x] DNF: Verify package exists before adding to manifest
+- [x] Add `--force` flag to bypass validation when needed
 
 ### Acceptance Criteria
 
-- `bkt flatpak add org.gnome.Nonexistent` fails with helpful suggestion
-- `bkt gsetting set nonexistent.schema key value` fails with schema list
-- All add commands validate before modifying manifests
+- `bkt flatpak add org.gnome.Nonexistent` fails with helpful suggestion ✅
+- `bkt gsetting set nonexistent.schema key value` fails with schema list ✅
+- All add commands validate before modifying manifests ✅
 
 ---
 
