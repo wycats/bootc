@@ -121,16 +121,21 @@ pub struct ChangelogEntry {
 
 impl ChangelogEntry {
     /// Create a new changelog entry with the current timestamp.
+    ///
+    /// # Panics
+    /// Panics if the message is empty.
     pub fn new(
         change_type: ChangeType,
         category: ChangeCategory,
         message: impl Into<String>,
     ) -> Self {
+        let message = message.into();
+        assert!(!message.is_empty(), "Changelog entry message cannot be empty");
         Self {
             timestamp: Utc::now(),
             change_type,
             category,
-            message: message.into(),
+            message,
             command: None,
             pr: None,
             draft: false,
@@ -467,21 +472,29 @@ impl ChangelogManager {
                 .with_context(|| format!("Failed to read {}", changelog_path.display()))?
         } else {
             String::from(
-                "# Changelog\n\nAll notable changes to this distribution are documented here.\n\n",
+                "# Changelog\n\nAll notable changes to this distribution are documented here.\n\n<!-- changelog entries start -->\n",
             )
         };
 
-        // Insert new version after the header
-        let new_content = if let Some(pos) = existing.find("\n## [") {
-            format!(
-                "{}{}\n{}",
-                &existing[..pos + 1],
-                version_content,
-                &existing[pos + 1..]
-            )
+        // Insert new version after the marker or header
+        let marker = "<!-- changelog entries start -->\n";
+        let insert_pos = if let Some(pos) = existing.find(marker) {
+            // Insert immediately after the marker line
+            pos + marker.len()
+        } else if let Some(pos) = existing.find("\n## [") {
+            // Legacy changelog without marker: insert before first version section
+            pos + 1
         } else {
-            format!("{}{}", existing, version_content)
+            // Fallback: append to the end
+            existing.len()
         };
+
+        let new_content = format!(
+            "{}{}{}",
+            &existing[..insert_pos],
+            version_content,
+            &existing[insert_pos..]
+        );
 
         fs::write(&changelog_path, new_content)
             .with_context(|| format!("Failed to write {}", changelog_path.display()))?;
