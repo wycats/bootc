@@ -616,11 +616,13 @@ fn handle_copr_enable(name: String, plan: &ExecutionPlan) -> Result<()> {
     let mut user = SystemPackagesManifest::load_user()?;
 
     // Check if already enabled
-    if let Some(copr) = system.find_copr(&name).or_else(|| user.find_copr(&name)) {
-        if copr.enabled {
-            println!("COPR already enabled: {}", name);
-            return Ok(());
-        }
+    if let Some(copr) = system
+        .find_copr(&name)
+        .or_else(|| user.find_copr(&name))
+        .filter(|c| c.enabled)
+    {
+        println!("COPR already enabled: {}", copr.name);
+        return Ok(());
     }
 
     // Update manifest
