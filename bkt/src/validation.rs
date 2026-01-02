@@ -290,11 +290,12 @@ mod tests {
     #[test]
     fn test_dnf_validation_format() {
         // This test documents the error message format
+        // Note: May fail with "Failed to query" if dnf5/dnf is not installed
         let err = validate_dnf_package("nonexistent-package-xyz-12345");
         if let Err(e) = err {
             let msg = e.to_string();
             assert!(
-                msg.contains("not found"),
+                msg.contains("not found") || msg.contains("Failed to query"),
                 "Error message should be helpful: {}",
                 msg
             );
