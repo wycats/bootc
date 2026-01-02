@@ -125,6 +125,12 @@ pub enum Commands {
 
     /// Manage distribution changelog and version history
     Changelog(commands::changelog::ChangelogArgs),
+
+    /// Check for configuration drift between manifests and system
+    Drift(commands::drift::DriftArgs),
+
+    /// Manage base image assumptions
+    Base(commands::base::BaseArgs),
 }
 
 fn main() -> Result<()> {
@@ -163,5 +169,7 @@ fn main() -> Result<()> {
         Commands::Status(args) => commands::status::run(args),
         Commands::Upstream(args) => commands::upstream::run(args),
         Commands::Changelog(args) => commands::changelog::run(args),
+        Commands::Drift(args) => commands::drift::run(args),
+        Commands::Base(args) => commands::base::run(args),
     }
 }

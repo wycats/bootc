@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BaseImageAssumptions",
+  "description": "Base image assumptions manifest.\n\nStored at `manifests/base-image-assumptions.json`.",
+  "type": "object",
+  "properties": {
+    "base_image": {
+      "description": "Information about the base image",
+      "$ref": "#/$defs/BaseImageInfo",
+      "default": {}
+    },
+    "packages": {
+      "description": "Packages assumed to be provided by the base image",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/PackageAssumption"
+      }
+    },
+    "paths": {
+      "description": "Paths assumed to exist",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "services": {
+      "description": "Systemd services assumed to be provided",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "BaseImageInfo": {
+      "description": "Information about the base container image.",
+      "type": "object",
+      "properties": {
+        "last_verified_at": {
+          "description": "When the assumptions were last verified against the image",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_verified_digest": {
+          "description": "The last verified sha256 digest",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "The source image reference (e.g., \"ghcr.io/ublue-os/bazzite-gnome:stable\")",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "PackageAssumption": {
+      "description": "A package assumption - a package expected to be in the base image.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Package name",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why this package is assumed (optional documentation)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  }
+}
