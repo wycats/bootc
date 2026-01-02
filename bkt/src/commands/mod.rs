@@ -2,6 +2,7 @@
 
 pub mod apply;
 pub mod base;
+pub mod capture;
 pub mod changelog;
 pub mod completions;
 pub mod dev;
