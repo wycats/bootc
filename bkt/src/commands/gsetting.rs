@@ -67,6 +67,20 @@ pub enum GSettingAction {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Capture current GSettings values to manifest
+    Capture {
+        /// Schema name to capture (required - captures all keys from this schema)
+        schema: String,
+        /// Specific key to capture (optional - defaults to all keys in schema)
+        #[arg(short, long)]
+        key: Option<String>,
+        /// Show what would be done without making changes
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply the plan immediately
+        #[arg(long)]
+        apply: bool,
+    },
 }
 
 /// Get current value of a gsetting.
@@ -325,6 +339,54 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
             let report = plan.execute(&mut exec_ctx)?;
             print!("{}", report);
         }
+        GSettingAction::Capture {
+            schema,
+            key,
+            dry_run,
+            apply,
+        } => {
+            // Validate schema exists
+            validate_gsettings_schema(&schema)?;
+
+            // Use the Plan-based capture implementation
+            let cwd = std::env::current_dir()?;
+            let plan_ctx = PlanContext::new(
+                cwd,
+                ExecutionPlan {
+                    dry_run,
+                    ..Default::default()
+                },
+            );
+
+            let capture_plan = GsettingCaptureCommand {
+                schema: schema.clone(),
+                key: key.clone(),
+            }
+            .plan(&plan_ctx)?;
+
+            if capture_plan.is_empty() {
+                Output::success("All settings are already in the manifest.");
+                return Ok(());
+            }
+
+            // Always show the plan
+            print!("{}", capture_plan.describe());
+
+            if dry_run || !apply {
+                if !apply {
+                    Output::hint("Use --apply to execute this plan.");
+                }
+                return Ok(());
+            }
+
+            // Execute the plan
+            let mut exec_ctx = ExecuteContext::new(ExecutionPlan {
+                dry_run: false,
+                ..Default::default()
+            });
+            let report = capture_plan.execute(&mut exec_ctx)?;
+            print!("{}", report);
+        }
     }
     Ok(())
 }
@@ -441,5 +503,134 @@ impl Plan for GsettingApplyPlan {
 
     fn is_empty(&self) -> bool {
         self.to_apply.is_empty()
+    }
+}
+
+// ============================================================================
+// Plan-based GSettings Capture Implementation
+// ============================================================================
+
+/// Get all keys for a schema.
+fn get_schema_keys(schema: &str) -> Vec<String> {
+    let output = Command::new("gsettings")
+        .args(["list-keys", schema])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// A setting to capture (add to manifest).
+#[derive(Debug, Clone)]
+pub struct SettingToCapture {
+    /// The gsetting entry.
+    pub setting: GSetting,
+}
+
+/// Command to capture GSettings to manifest.
+pub struct GsettingCaptureCommand {
+    /// Schema to capture from.
+    pub schema: String,
+    /// Specific key (or all keys if None).
+    pub key: Option<String>,
+}
+
+/// Plan for capturing GSettings.
+pub struct GsettingCapturePlan {
+    /// Settings to add to manifest.
+    pub to_capture: Vec<SettingToCapture>,
+    /// Settings already in manifest.
+    pub already_in_manifest: usize,
+}
+
+impl Plannable for GsettingCaptureCommand {
+    type Plan = GsettingCapturePlan;
+
+    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+        // Get keys to capture
+        let keys = if let Some(ref key) = self.key {
+            vec![key.clone()]
+        } else {
+            get_schema_keys(&self.schema)
+        };
+
+        // Load manifests to see what's already tracked
+        let system = GSettingsManifest::load_system()?;
+        let user = GSettingsManifest::load_user()?;
+        let merged = GSettingsManifest::merged(&system, &user);
+
+        let mut to_capture = Vec::new();
+        let mut already_in_manifest = 0;
+
+        for key in keys {
+            if merged.find(&self.schema, &key).is_some() {
+                already_in_manifest += 1;
+            } else if let Some(value) = get_current_value(&self.schema, &key) {
+                to_capture.push(SettingToCapture {
+                    setting: GSetting {
+                        schema: self.schema.clone(),
+                        key,
+                        value,
+                        comment: None,
+                    },
+                });
+            }
+        }
+
+        // Sort for consistent output
+        to_capture.sort_by(|a, b| a.setting.key.cmp(&b.setting.key));
+
+        Ok(GsettingCapturePlan {
+            to_capture,
+            already_in_manifest,
+        })
+    }
+}
+
+impl Plan for GsettingCapturePlan {
+    fn describe(&self) -> PlanSummary {
+        let mut summary = PlanSummary::new(format!(
+            "GSettings Capture: {} to add, {} already in manifest",
+            self.to_capture.len(),
+            self.already_in_manifest
+        ));
+
+        for item in &self.to_capture {
+            summary.add_operation(Operation::with_details(
+                Verb::Capture,
+                format!("gsetting:{}.{}", item.setting.schema, item.setting.key),
+                truncate(&item.setting.value, 30),
+            ));
+        }
+
+        summary
+    }
+
+    fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
+        let mut report = ExecutionReport::new();
+
+        // Load user manifest (we add captured settings there)
+        let mut user = GSettingsManifest::load_user()?;
+
+        for item in self.to_capture {
+            let target = format!("{}.{}", item.setting.schema, item.setting.key);
+            user.upsert(item.setting);
+            report.record_success(Verb::Capture, format!("gsetting:{}", target));
+        }
+
+        // Save the updated manifest
+        user.save_user()?;
+
+        Ok(report)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.to_capture.is_empty()
     }
 }

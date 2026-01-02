@@ -44,6 +44,26 @@ fn cli_version_flag_shows_version() {
 }
 
 // ============================================================================
+// Capture command tests
+// ============================================================================
+
+#[test]
+fn capture_help_shows_options() {
+    bkt()
+        .args(["capture", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--only"))
+        .stdout(predicate::str::contains("--exclude"))
+        .stdout(predicate::str::contains("--apply"));
+}
+
+#[test]
+fn capture_dry_run_succeeds() {
+    bkt().args(["capture", "--dry-run"]).assert().success();
+}
+
+// ============================================================================
 // Shim command tests
 // ============================================================================
 
@@ -95,12 +115,21 @@ fn flatpak_help_shows_subcommands() {
         .stdout(predicate::str::contains("add"))
         .stdout(predicate::str::contains("remove"))
         .stdout(predicate::str::contains("list"))
-        .stdout(predicate::str::contains("sync"));
+        .stdout(predicate::str::contains("sync"))
+        .stdout(predicate::str::contains("capture"));
 }
 
 #[test]
 fn flatpak_list_succeeds() {
     bkt().args(["flatpak", "list"]).assert().success();
+}
+
+#[test]
+fn flatpak_capture_dry_run_succeeds() {
+    bkt()
+        .args(["flatpak", "capture", "--dry-run"])
+        .assert()
+        .success();
 }
 
 #[test]
@@ -134,7 +163,8 @@ fn extension_help_shows_subcommands() {
         .stdout(predicate::str::contains("add"))
         .stdout(predicate::str::contains("remove"))
         .stdout(predicate::str::contains("list"))
-        .stdout(predicate::str::contains("sync"));
+        .stdout(predicate::str::contains("sync"))
+        .stdout(predicate::str::contains("capture"));
 }
 
 #[test]
@@ -160,6 +190,14 @@ fn extension_remove_requires_uuid() {
         .stderr(predicate::str::contains("UUID"));
 }
 
+#[test]
+fn extension_capture_dry_run_succeeds() {
+    bkt()
+        .args(["extension", "capture", "--dry-run"])
+        .assert()
+        .success();
+}
+
 // ============================================================================
 // GSettings command tests
 // ============================================================================
@@ -173,12 +211,33 @@ fn gsetting_help_shows_subcommands() {
         .stdout(predicate::str::contains("set"))
         .stdout(predicate::str::contains("unset"))
         .stdout(predicate::str::contains("list"))
-        .stdout(predicate::str::contains("apply"));
+        .stdout(predicate::str::contains("apply"))
+        .stdout(predicate::str::contains("capture"));
 }
 
 #[test]
 fn gsetting_list_succeeds() {
     bkt().args(["gsetting", "list"]).assert().success();
+}
+
+#[test]
+fn gsetting_capture_requires_schema() {
+    bkt()
+        .args(["gsetting", "capture"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("SCHEMA"));
+}
+
+#[test]
+fn gsetting_capture_validates_schema() {
+    // Test that capture fails gracefully with a non-existent schema
+    // (GNOME schemas may not be available in CI environments)
+    bkt()
+        .args(["gsetting", "capture", "org.nonexistent.schema", "--dry-run"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not found"));
 }
 
 #[test]

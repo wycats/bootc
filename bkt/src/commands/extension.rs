@@ -58,6 +58,15 @@ pub enum ExtensionAction {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Capture enabled extensions to manifest
+    Capture {
+        /// Show what would be done without making changes
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply the plan immediately
+        #[arg(long)]
+        apply: bool,
+    },
 }
 
 /// Check if an extension is installed.
@@ -288,6 +297,42 @@ pub fn run(args: ExtensionArgs, _plan: &ExecutionPlan) -> Result<()> {
             let report = plan.execute(&mut exec_ctx)?;
             print!("{}", report);
         }
+        ExtensionAction::Capture { dry_run, apply } => {
+            // Use the Plan-based capture implementation
+            let cwd = std::env::current_dir()?;
+            let plan_ctx = PlanContext::new(
+                cwd,
+                ExecutionPlan {
+                    dry_run,
+                    ..Default::default()
+                },
+            );
+
+            let plan = ExtensionCaptureCommand.plan(&plan_ctx)?;
+
+            if plan.is_empty() {
+                Output::success("All enabled extensions are already in the manifest.");
+                return Ok(());
+            }
+
+            // Always show the plan
+            print!("{}", plan.describe());
+
+            if dry_run || !apply {
+                if !apply {
+                    Output::hint("Use --apply to execute this plan.");
+                }
+                return Ok(());
+            }
+
+            // Execute the plan
+            let mut exec_ctx = ExecuteContext::new(ExecutionPlan {
+                dry_run: false,
+                ..Default::default()
+            });
+            let report = plan.execute(&mut exec_ctx)?;
+            print!("{}", report);
+        }
     }
     Ok(())
 }
@@ -439,5 +484,124 @@ impl Plan for ExtensionSyncPlan {
             .filter(|e| matches!(e.state, ExtensionState::Disabled))
             .count()
             == 0
+    }
+}
+
+// ============================================================================
+// Plan-based Extension Capture Implementation
+// ============================================================================
+
+/// Get list of enabled GNOME extension UUIDs from the system.
+fn get_enabled_extensions() -> Vec<String> {
+    let output = std::process::Command::new("gnome-extensions")
+        .args(["list", "--enabled"])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// An extension to capture (add to manifest).
+#[derive(Debug, Clone)]
+pub struct ExtensionToCapture {
+    /// The extension UUID.
+    pub uuid: String,
+}
+
+/// Command to capture enabled extensions to manifest.
+pub struct ExtensionCaptureCommand;
+
+/// Plan for capturing extensions.
+pub struct ExtensionCapturePlan {
+    /// Extensions to add to manifest.
+    pub to_capture: Vec<ExtensionToCapture>,
+    /// Extensions already in manifest.
+    pub already_in_manifest: usize,
+}
+
+impl Plannable for ExtensionCaptureCommand {
+    type Plan = ExtensionCapturePlan;
+
+    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+        // Get currently enabled extensions on the system
+        let enabled = get_enabled_extensions();
+
+        // Load manifests to see what's already tracked
+        let system = GnomeExtensionsManifest::load_system()?;
+        let user = GnomeExtensionsManifest::load_user()?;
+        let merged = GnomeExtensionsManifest::merged(&system, &user);
+
+        let mut to_capture = Vec::new();
+        let mut already_in_manifest = 0;
+
+        for uuid in enabled {
+            if merged.contains(&uuid) {
+                already_in_manifest += 1;
+            } else {
+                to_capture.push(ExtensionToCapture { uuid });
+            }
+        }
+
+        // Sort for consistent output
+        to_capture.sort_by(|a, b| a.uuid.cmp(&b.uuid));
+
+        Ok(ExtensionCapturePlan {
+            to_capture,
+            already_in_manifest,
+        })
+    }
+}
+
+impl Plan for ExtensionCapturePlan {
+    fn describe(&self) -> PlanSummary {
+        let mut summary = PlanSummary::new(format!(
+            "Extension Capture: {} to add, {} already in manifest",
+            self.to_capture.len(),
+            self.already_in_manifest
+        ));
+
+        for ext in &self.to_capture {
+            summary.add_operation(Operation::new(
+                Verb::Capture,
+                format!("extension:{}", ext.uuid),
+            ));
+        }
+
+        summary
+    }
+
+    fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
+        let mut report = ExecutionReport::new();
+
+        // Load user manifest (we add captured extensions there)
+        let mut user = GnomeExtensionsManifest::load_user()?;
+
+        for ext in self.to_capture {
+            if user.add(ext.uuid.clone()) {
+                report.record_success(Verb::Capture, format!("extension:{}", ext.uuid));
+            } else {
+                // Should not happen since we checked in planning, but handle gracefully
+                report.record_failure(
+                    Verb::Capture,
+                    format!("extension:{}", ext.uuid),
+                    "already in manifest",
+                );
+            }
+        }
+
+        // Save the updated manifest
+        user.save_user()?;
+
+        Ok(report)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.to_capture.is_empty()
     }
 }

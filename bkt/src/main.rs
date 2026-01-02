@@ -83,6 +83,9 @@ pub enum Commands {
     /// Apply all manifests to the running system
     Apply(commands::apply::ApplyArgs),
 
+    /// Capture system state to manifests
+    Capture(commands::capture::CaptureArgs),
+
     /// Manage RPM packages (rpm-ostree on host, dnf in toolbox)
     Dnf(commands::dnf::DnfArgs),
 
@@ -160,6 +163,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Apply(args) => commands::apply::run(args, &plan),
+        Commands::Capture(args) => commands::capture::run(args, &plan),
         Commands::Dnf(args) => commands::dnf::run(args, &plan),
         Commands::Dev(args) => commands::dev::run(args, &plan),
         Commands::Flatpak(args) => commands::flatpak::run(args, &plan),

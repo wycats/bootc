@@ -48,6 +48,15 @@ pub enum FlatpakAction {
     },
     /// Sync: install apps from manifest
     Sync,
+    /// Capture installed flatpaks to manifest
+    Capture {
+        /// Show what would be done without making changes
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply the plan immediately
+        #[arg(long)]
+        apply: bool,
+    },
 }
 
 /// Install a flatpak app using the flatpak CLI.
@@ -322,6 +331,45 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
             let report = sync_plan.execute(&mut exec_ctx)?;
             print!("{}", report);
         }
+        FlatpakAction::Capture { dry_run, apply } => {
+            // Note: No domain validation needed for capture since it only:
+            // 1. Reads installed flatpaks (same as `flatpak list` which works anywhere)
+            // 2. Writes to the local manifest file
+
+            // Use the Plan-based capture implementation
+            let plan_ctx = PlanContext::new(
+                std::env::current_dir().unwrap_or_default(),
+                ExecutionPlan {
+                    dry_run,
+                    ..plan.clone()
+                },
+            );
+
+            let capture_plan = FlatpakCaptureCommand.plan(&plan_ctx)?;
+
+            if capture_plan.is_empty() {
+                Output::success("All installed flatpaks are already in the manifest.");
+                return Ok(());
+            }
+
+            // Always show the plan
+            print!("{}", capture_plan.describe());
+
+            if dry_run || !apply {
+                if !apply {
+                    Output::hint("Use --apply to execute this plan.");
+                }
+                return Ok(());
+            }
+
+            // Execute the plan
+            let mut exec_ctx = ExecuteContext::new(ExecutionPlan {
+                dry_run: false,
+                ..plan.clone()
+            });
+            let report = capture_plan.execute(&mut exec_ctx)?;
+            print!("{}", report);
+        }
     }
     Ok(())
 }
@@ -424,5 +472,157 @@ impl Plan for FlatpakSyncPlan {
 
     fn is_empty(&self) -> bool {
         self.to_install.is_empty()
+    }
+}
+
+// ============================================================================
+// Plan-based Flatpak Capture Implementation
+// ============================================================================
+
+/// A flatpak installed on the system but not in manifest.
+#[derive(Debug, Clone)]
+pub struct InstalledFlatpak {
+    /// Scope: "system" or "user"
+    pub installation: String,
+    /// The app ID (e.g., org.gnome.Calculator)
+    pub id: String,
+    /// The remote/origin (e.g., flathub)
+    pub origin: String,
+}
+
+/// Get list of installed flatpaks from the system.
+fn get_installed_flatpaks() -> Vec<InstalledFlatpak> {
+    let output = Command::new("flatpak")
+        .args(["list", "--app", "--columns=installation,application,origin"])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let mut apps = Vec::new();
+
+            for line in stdout.lines() {
+                let parts: Vec<&str> = line.split('\t').collect();
+                if parts.len() >= 2 {
+                    apps.push(InstalledFlatpak {
+                        installation: parts.first().unwrap_or(&"system").to_string(),
+                        id: parts.get(1).unwrap_or(&"").to_string(),
+                        origin: parts.get(2).unwrap_or(&"flathub").to_string(),
+                    });
+                }
+            }
+
+            apps
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// A flatpak to capture (add to manifest).
+#[derive(Debug, Clone)]
+pub struct FlatpakToCapture {
+    /// The flatpak app to add.
+    pub app: FlatpakApp,
+}
+
+/// Command to capture installed flatpaks to manifest.
+pub struct FlatpakCaptureCommand;
+
+/// Plan for capturing flatpaks.
+pub struct FlatpakCapturePlan {
+    /// Flatpaks to add to manifest.
+    pub to_capture: Vec<FlatpakToCapture>,
+    /// Flatpaks already in manifest.
+    pub already_in_manifest: usize,
+}
+
+impl Plannable for FlatpakCaptureCommand {
+    type Plan = FlatpakCapturePlan;
+
+    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+        // Get currently installed flatpaks on the system
+        let installed = get_installed_flatpaks();
+
+        // Load manifests to see what's already tracked
+        let system = FlatpakAppsManifest::load_system()?;
+        let user = FlatpakAppsManifest::load_user()?;
+        let merged = FlatpakAppsManifest::merged(&system, &user);
+
+        let mut to_capture = Vec::new();
+        let mut already_in_manifest = 0;
+
+        for flatpak in installed {
+            if merged.find(&flatpak.id).is_some() {
+                already_in_manifest += 1;
+            } else {
+                // Convert installation string to FlatpakScope
+                let scope = if flatpak.installation == "user" {
+                    FlatpakScope::User
+                } else {
+                    FlatpakScope::System
+                };
+
+                to_capture.push(FlatpakToCapture {
+                    app: FlatpakApp {
+                        id: flatpak.id,
+                        remote: if flatpak.origin.is_empty() {
+                            "flathub".to_string()
+                        } else {
+                            flatpak.origin
+                        },
+                        scope,
+                    },
+                });
+            }
+        }
+
+        // Sort for consistent output
+        to_capture.sort_by(|a, b| a.app.id.cmp(&b.app.id));
+
+        Ok(FlatpakCapturePlan {
+            to_capture,
+            already_in_manifest,
+        })
+    }
+}
+
+impl Plan for FlatpakCapturePlan {
+    fn describe(&self) -> PlanSummary {
+        let mut summary = PlanSummary::new(format!(
+            "Flatpak Capture: {} to add, {} already in manifest",
+            self.to_capture.len(),
+            self.already_in_manifest
+        ));
+
+        for item in &self.to_capture {
+            summary.add_operation(Operation::with_details(
+                Verb::Capture,
+                format!("flatpak:{}", item.app.id),
+                format!("{} ({})", item.app.remote, item.app.scope),
+            ));
+        }
+
+        summary
+    }
+
+    fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
+        let mut report = ExecutionReport::new();
+
+        // Load user manifest (we add captured flatpaks there)
+        let mut user = FlatpakAppsManifest::load_user()?;
+
+        for item in self.to_capture {
+            user.upsert(item.app.clone());
+            report.record_success(Verb::Capture, format!("flatpak:{}", item.app.id));
+        }
+
+        // Save the updated manifest
+        user.save_user()?;
+
+        Ok(report)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.to_capture.is_empty()
     }
 }
