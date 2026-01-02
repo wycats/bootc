@@ -655,3 +655,81 @@ fn changelog_generate_requires_args() {
         .stderr(predicate::str::contains("--category"))
         .stderr(predicate::str::contains("<MESSAGE>"));
 }
+
+// ============================================================================
+// Drift command tests
+// ============================================================================
+
+#[test]
+fn drift_help_shows_subcommands() {
+    bkt()
+        .args(["drift", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("check"))
+        .stdout(predicate::str::contains("status"))
+        .stdout(predicate::str::contains("explain"));
+}
+
+#[test]
+fn drift_explain_succeeds() {
+    bkt()
+        .args(["drift", "explain"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Drift Detection"))
+        .stdout(predicate::str::contains("Types of Drift"));
+}
+
+#[test]
+fn drift_check_outside_repo_fails() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    bkt()
+        .current_dir(temp.path())
+        .args(["drift", "check"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Not in a git repository"));
+
+    temp.close().unwrap();
+}
+
+// ============================================================================
+// Base command tests
+// ============================================================================
+
+#[test]
+fn base_help_shows_subcommands() {
+    bkt()
+        .args(["base", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("verify"))
+        .stdout(predicate::str::contains("assume"))
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("info"));
+}
+
+#[test]
+fn base_list_outside_repo_fails() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    bkt()
+        .current_dir(temp.path())
+        .args(["base", "list"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Not in a git repository"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn base_assume_requires_package() {
+    bkt()
+        .args(["base", "assume"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("<PACKAGE>"));
+}

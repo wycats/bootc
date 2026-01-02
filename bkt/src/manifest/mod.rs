@@ -2,6 +2,7 @@
 //!
 //! These structs represent the JSON manifest files used by bootc.
 
+pub mod base;
 pub mod changelog;
 pub mod dnf;
 pub mod extension;
@@ -11,6 +12,7 @@ pub mod shim;
 pub mod toolbox;
 pub mod upstream;
 
+pub use base::*;
 pub use changelog::*;
 pub use dnf::*;
 pub use extension::*;

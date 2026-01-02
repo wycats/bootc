@@ -1,9 +1,9 @@
 //! Schema generation command implementation.
 
 use crate::manifest::{
-    ChangelogEntry, FlatpakApp, FlatpakAppsManifest, FlatpakRemote, FlatpakRemotesManifest,
-    GSetting, GSettingsManifest, GnomeExtensionsManifest, Shim, ShimsManifest, UpstreamManifest,
-    VersionMetadata,
+    BaseImageAssumptions, ChangelogEntry, FlatpakApp, FlatpakAppsManifest, FlatpakRemote,
+    FlatpakRemotesManifest, GSetting, GSettingsManifest, GnomeExtensionsManifest, Shim,
+    ShimsManifest, UpstreamManifest, VersionMetadata,
 };
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -97,6 +97,11 @@ const SCHEMAS: &[SchemaInfo] = &[
         filename: "changelog-version.schema.json",
         description: "A released version with its changelog entries stored in .changelog/versions/",
     },
+    SchemaInfo {
+        name: "BaseImageAssumptions",
+        filename: "base-image-assumptions.schema.json",
+        description: "Base image assumptions for drift detection",
+    },
 ];
 
 /// Generate all schemas and return them as (filename, json) pairs.
@@ -149,6 +154,10 @@ fn generate_all_schemas() -> Vec<(&'static str, String)> {
         (
             "changelog-version.schema.json",
             serde_json::to_string_pretty(&schema_for!(VersionMetadata)).unwrap(),
+        ),
+        (
+            "base-image-assumptions.schema.json",
+            serde_json::to_string_pretty(&schema_for!(BaseImageAssumptions)).unwrap(),
         ),
     ]
 }
