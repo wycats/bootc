@@ -3,6 +3,9 @@
 use crate::manifest::{GSetting, GSettingsManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
+use crate::plan::{
+    ExecuteContext, ExecutionReport, Operation, Plan, PlanContext, PlanSummary, Plannable, Verb,
+};
 use crate::pr::{PrChange, run_pr_workflow};
 use crate::validation::{validate_gsettings_key, validate_gsettings_schema};
 use anyhow::{Context, Result};
@@ -83,65 +86,6 @@ fn set_gsetting(schema: &str, key: &str, value: &str) -> Result<bool> {
         .status()
         .context("Failed to run gsettings set")?;
     Ok(status.success())
-}
-
-/// Apply all settings from manifest.
-fn apply_settings(dry_run: bool) -> Result<()> {
-    let system = GSettingsManifest::load_system()?;
-    let user = GSettingsManifest::load_user()?;
-    let merged = GSettingsManifest::merged(&system, &user);
-
-    let mut applied = 0;
-    let mut skipped = 0;
-    let mut failed = 0;
-
-    for setting in &merged.settings {
-        let current = get_current_value(&setting.schema, &setting.key);
-
-        if current.as_deref() == Some(&setting.value) {
-            skipped += 1;
-            continue;
-        }
-
-        if dry_run {
-            Output::dry_run(format!(
-                "Would set {}.{} = {} (currently: {})",
-                setting.schema,
-                setting.key,
-                setting.value,
-                current.as_deref().unwrap_or("(unset)")
-            ));
-        } else {
-            let spinner = Output::spinner(format!(
-                "Setting {}.{} = {}...",
-                setting.schema, setting.key, setting.value
-            ));
-            if set_gsetting(&setting.schema, &setting.key, &setting.value)? {
-                spinner.finish_success(format!("Set {}.{}", setting.schema, setting.key));
-                applied += 1;
-            } else {
-                spinner.finish_error(format!("Failed {}.{}", setting.schema, setting.key));
-                failed += 1;
-            }
-        }
-    }
-
-    if dry_run {
-        Output::blank();
-        Output::info(format!(
-            "Dry run: {} already set, {} would be applied",
-            skipped,
-            merged.settings.len() - skipped
-        ));
-    } else {
-        Output::blank();
-        Output::info(format!(
-            "Apply complete: {} applied, {} already set, {} failed",
-            applied, skipped, failed
-        ));
-    }
-
-    Ok(())
 }
 
 pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
@@ -349,7 +293,37 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
             }
         }
         GSettingAction::Apply { dry_run } => {
-            apply_settings(dry_run)?;
+            // Use the new Plan-based implementation
+            let cwd = std::env::current_dir()?;
+            let plan_ctx = PlanContext::new(
+                cwd,
+                ExecutionPlan {
+                    dry_run,
+                    ..Default::default()
+                },
+            );
+
+            let plan = GsettingApplyCommand.plan(&plan_ctx)?;
+
+            if plan.is_empty() {
+                Output::success("All settings are already applied.");
+                return Ok(());
+            }
+
+            // Always show the plan
+            print!("{}", plan.describe());
+
+            if dry_run {
+                return Ok(());
+            }
+
+            // Execute the plan
+            let mut exec_ctx = ExecuteContext::new(ExecutionPlan {
+                dry_run: false,
+                ..Default::default()
+            });
+            let report = plan.execute(&mut exec_ctx)?;
+            print!("{}", report);
         }
     }
     Ok(())
@@ -363,5 +337,109 @@ fn truncate(s: &str, max: usize) -> String {
     } else {
         let truncated: String = s.chars().take(max - 1).collect();
         format!("{}…", truncated)
+    }
+}
+
+// ============================================================================
+// Plan-based GSettings Apply Implementation
+// ============================================================================
+
+/// A setting that needs to be applied.
+#[derive(Debug, Clone)]
+pub struct SettingToApply {
+    /// The gsetting entry.
+    pub setting: GSetting,
+    /// Current value on the system.
+    pub current: Option<String>,
+}
+
+/// Command to apply all GSettings from manifests.
+pub struct GsettingApplyCommand;
+
+/// Plan for applying GSettings.
+pub struct GsettingApplyPlan {
+    /// Settings to apply (value differs from current).
+    pub to_apply: Vec<SettingToApply>,
+    /// Settings already in sync.
+    pub already_set: usize,
+}
+
+impl Plannable for GsettingApplyCommand {
+    type Plan = GsettingApplyPlan;
+
+    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+        // Load and merge manifests (read-only, no side effects)
+        let system = GSettingsManifest::load_system()?;
+        let user = GSettingsManifest::load_user()?;
+        let merged = GSettingsManifest::merged(&system, &user);
+
+        let mut to_apply = Vec::new();
+        let mut already_set = 0;
+
+        for setting in merged.settings {
+            let current = get_current_value(&setting.schema, &setting.key);
+
+            if current.as_deref() == Some(&setting.value) {
+                already_set += 1;
+            } else {
+                to_apply.push(SettingToApply { setting, current });
+            }
+        }
+
+        Ok(GsettingApplyPlan {
+            to_apply,
+            already_set,
+        })
+    }
+}
+
+impl Plan for GsettingApplyPlan {
+    fn describe(&self) -> PlanSummary {
+        let mut summary = PlanSummary::new(format!(
+            "GSettings Apply: {} to set, {} already in sync",
+            self.to_apply.len(),
+            self.already_set
+        ));
+
+        for item in &self.to_apply {
+            let current_display = item.current.as_deref().unwrap_or("(unset)");
+            summary.add_operation(Operation::with_details(
+                Verb::Set,
+                format!("gsetting:{}.{}", item.setting.schema, item.setting.key),
+                format!("{} → {}", current_display, item.setting.value),
+            ));
+        }
+
+        summary
+    }
+
+    fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
+        let mut report = ExecutionReport::new();
+
+        for item in self.to_apply {
+            let target = format!("{}.{}", item.setting.schema, item.setting.key);
+
+            match set_gsetting(&item.setting.schema, &item.setting.key, &item.setting.value) {
+                Ok(true) => {
+                    report.record_success(Verb::Set, format!("gsetting:{}", target));
+                }
+                Ok(false) => {
+                    report.record_failure(
+                        Verb::Set,
+                        format!("gsetting:{}", target),
+                        "gsettings command failed",
+                    );
+                }
+                Err(e) => {
+                    report.record_failure(Verb::Set, format!("gsetting:{}", target), e.to_string());
+                }
+            }
+        }
+
+        Ok(report)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.to_apply.is_empty()
     }
 }

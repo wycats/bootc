@@ -3,6 +3,9 @@
 use crate::manifest::GnomeExtensionsManifest;
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
+use crate::plan::{
+    ExecuteContext, ExecutionReport, Operation, Plan, PlanContext, PlanSummary, Plannable, Verb,
+};
 use crate::pr::{PrChange, run_pr_workflow};
 use crate::validation::validate_gnome_extension;
 use anyhow::{Context, Result};
@@ -87,70 +90,13 @@ fn enable_extension(uuid: &str) -> Result<bool> {
 }
 
 /// Disable an extension.
+#[allow(dead_code)]
 fn disable_extension(uuid: &str) -> Result<bool> {
     let status = Command::new("gnome-extensions")
         .args(["disable", uuid])
         .status()
         .context("Failed to run gnome-extensions disable")?;
     Ok(status.success())
-}
-
-/// Sync extensions from manifest.
-fn sync_extensions(dry_run: bool) -> Result<()> {
-    let system = GnomeExtensionsManifest::load_system()?;
-    let user = GnomeExtensionsManifest::load_user()?;
-    let merged = GnomeExtensionsManifest::merged(&system, &user);
-
-    let mut enabled = 0;
-    let mut skipped = 0;
-    let mut not_installed = 0;
-
-    for uuid in &merged.extensions {
-        if !is_installed(uuid) {
-            if dry_run {
-                Output::dry_run(format!("Not installed, would skip: {}", uuid));
-            } else {
-                Output::info(format!("Not installed, skipping: {}", uuid));
-            }
-            not_installed += 1;
-            continue;
-        }
-
-        if is_enabled(uuid) {
-            skipped += 1;
-            continue;
-        }
-
-        if dry_run {
-            Output::dry_run(format!("Would enable: {}", uuid));
-        } else {
-            let spinner = Output::spinner(format!("Enabling {}...", uuid));
-            if enable_extension(uuid)? {
-                spinner.finish_success(format!("Enabled {}", uuid));
-                enabled += 1;
-            } else {
-                spinner.finish_error(format!("Failed to enable {}", uuid));
-            }
-        }
-    }
-
-    if dry_run {
-        Output::blank();
-        Output::info(format!(
-            "Dry run: {} already enabled, {} would be enabled, {} not installed",
-            skipped,
-            merged.extensions.len() - skipped - not_installed,
-            not_installed
-        ));
-    } else {
-        Output::blank();
-        Output::info(format!(
-            "Sync complete: {} enabled, {} already active, {} not installed",
-            enabled, skipped, not_installed
-        ));
-    }
-
-    Ok(())
 }
 
 pub fn run(args: ExtensionArgs, _plan: &ExecutionPlan) -> Result<()> {
@@ -310,8 +256,188 @@ pub fn run(args: ExtensionArgs, _plan: &ExecutionPlan) -> Result<()> {
             }
         }
         ExtensionAction::Sync { dry_run } => {
-            sync_extensions(dry_run)?;
+            // Use the new Plan-based implementation
+            let cwd = std::env::current_dir()?;
+            let plan_ctx = PlanContext::new(
+                cwd,
+                ExecutionPlan {
+                    dry_run,
+                    ..Default::default()
+                },
+            );
+
+            let plan = ExtensionSyncCommand.plan(&plan_ctx)?;
+
+            if plan.is_empty() {
+                Output::success("All extensions are already enabled.");
+                return Ok(());
+            }
+
+            // Always show the plan
+            print!("{}", plan.describe());
+
+            if dry_run {
+                return Ok(());
+            }
+
+            // Execute the plan
+            let mut exec_ctx = ExecuteContext::new(ExecutionPlan {
+                dry_run: false,
+                ..Default::default()
+            });
+            let report = plan.execute(&mut exec_ctx)?;
+            print!("{}", report);
         }
     }
     Ok(())
+}
+
+// ============================================================================
+// Plan-based Extension Sync Implementation
+// ============================================================================
+
+/// State of an extension for planning.
+#[derive(Debug, Clone)]
+pub enum ExtensionState {
+    /// Extension is installed but not enabled.
+    Disabled,
+    /// Extension is not installed.
+    NotInstalled,
+}
+
+/// An extension that needs action.
+#[derive(Debug, Clone)]
+pub struct ExtensionToSync {
+    /// The extension UUID.
+    pub uuid: String,
+    /// Current state.
+    pub state: ExtensionState,
+}
+
+/// Command to sync extensions from manifests.
+pub struct ExtensionSyncCommand;
+
+/// Plan for syncing extensions.
+pub struct ExtensionSyncPlan {
+    /// Extensions to enable.
+    pub to_enable: Vec<ExtensionToSync>,
+    /// Extensions already enabled.
+    pub already_enabled: usize,
+}
+
+impl Plannable for ExtensionSyncCommand {
+    type Plan = ExtensionSyncPlan;
+
+    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+        // Load and merge manifests (read-only, no side effects)
+        let system = GnomeExtensionsManifest::load_system()?;
+        let user = GnomeExtensionsManifest::load_user()?;
+        let merged = GnomeExtensionsManifest::merged(&system, &user);
+
+        let mut to_enable = Vec::new();
+        let mut already_enabled = 0;
+
+        for uuid in merged.extensions {
+            if is_enabled(&uuid) {
+                already_enabled += 1;
+            } else if is_installed(&uuid) {
+                to_enable.push(ExtensionToSync {
+                    uuid,
+                    state: ExtensionState::Disabled,
+                });
+            } else {
+                to_enable.push(ExtensionToSync {
+                    uuid,
+                    state: ExtensionState::NotInstalled,
+                });
+            }
+        }
+
+        Ok(ExtensionSyncPlan {
+            to_enable,
+            already_enabled,
+        })
+    }
+}
+
+impl Plan for ExtensionSyncPlan {
+    fn describe(&self) -> PlanSummary {
+        let installable = self
+            .to_enable
+            .iter()
+            .filter(|e| matches!(e.state, ExtensionState::Disabled))
+            .count();
+        let not_installed = self
+            .to_enable
+            .iter()
+            .filter(|e| matches!(e.state, ExtensionState::NotInstalled))
+            .count();
+
+        let mut summary = PlanSummary::new(format!(
+            "Extension Sync: {} to enable, {} already enabled, {} not installed",
+            installable, self.already_enabled, not_installed
+        ));
+
+        for ext in &self.to_enable {
+            match ext.state {
+                ExtensionState::Disabled => {
+                    summary.add_operation(Operation::new(
+                        Verb::Enable,
+                        format!("extension:{}", ext.uuid),
+                    ));
+                }
+                ExtensionState::NotInstalled => {
+                    summary.add_operation(Operation::with_details(
+                        Verb::Skip,
+                        format!("extension:{}", ext.uuid),
+                        "not installed",
+                    ));
+                }
+            }
+        }
+
+        summary
+    }
+
+    fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
+        let mut report = ExecutionReport::new();
+
+        for ext in self.to_enable {
+            match ext.state {
+                ExtensionState::Disabled => match enable_extension(&ext.uuid) {
+                    Ok(true) => {
+                        report.record_success(Verb::Enable, format!("extension:{}", ext.uuid));
+                    }
+                    Ok(false) => {
+                        report.record_failure(
+                            Verb::Enable,
+                            format!("extension:{}", ext.uuid),
+                            "gnome-extensions enable failed",
+                        );
+                    }
+                    Err(e) => {
+                        report.record_failure(
+                            Verb::Enable,
+                            format!("extension:{}", ext.uuid),
+                            e.to_string(),
+                        );
+                    }
+                },
+                ExtensionState::NotInstalled => {
+                    // Skip, don't record anything for not-installed extensions
+                }
+            }
+        }
+
+        Ok(report)
+    }
+
+    fn is_empty(&self) -> bool {
+        // Empty if no extensions need enabling (ignore not-installed ones)
+        self.to_enable
+            .iter()
+            .filter(|e| matches!(e.state, ExtensionState::Disabled))
+            .count()
+            == 0
+    }
 }

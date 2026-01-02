@@ -31,6 +31,7 @@ pub mod effects;
 mod manifest;
 pub mod output;
 pub mod pipeline;
+pub mod plan;
 mod pr;
 mod repo;
 pub mod validation;
@@ -79,6 +80,9 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    /// Apply all manifests to the running system
+    Apply(commands::apply::ApplyArgs),
+
     /// Manage RPM packages (rpm-ostree on host, dnf in toolbox)
     Dnf(commands::dnf::DnfArgs),
 
@@ -155,6 +159,7 @@ fn main() -> Result<()> {
     );
 
     match cli.command {
+        Commands::Apply(args) => commands::apply::run(args, &plan),
         Commands::Dnf(args) => commands::dnf::run(args, &plan),
         Commands::Dev(args) => commands::dev::run(args, &plan),
         Commands::Flatpak(args) => commands::flatpak::run(args, &plan),

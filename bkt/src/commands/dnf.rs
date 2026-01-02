@@ -10,6 +10,9 @@ use crate::context::{CommandDomain, ExecutionContext};
 use crate::manifest::{CoprRepo, SystemPackagesManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
+use crate::plan::{
+    ExecuteContext, ExecutionReport, Operation, Plan, PlanContext, PlanSummary, Plannable, Verb,
+};
 use crate::validation::validate_dnf_package;
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
@@ -105,7 +108,38 @@ pub fn run(args: DnfArgs, plan: &ExecutionPlan) -> Result<()> {
         DnfAction::Info { package } => handle_info(package),
         DnfAction::Provides { path } => handle_provides(path),
         DnfAction::Diff => handle_diff(plan),
-        DnfAction::Sync { now } => handle_sync(now, plan),
+        DnfAction::Sync { now } => {
+            plan.validate_domain(CommandDomain::Dnf)?;
+
+            // Use the new Plan-based implementation
+            let plan_ctx =
+                PlanContext::new(std::env::current_dir().unwrap_or_default(), plan.clone());
+
+            let sync_plan = DnfSyncCommand {
+                now,
+                context: plan.context,
+            }
+            .plan(&plan_ctx)?;
+
+            if sync_plan.is_empty() {
+                Output::success("All manifest packages are already installed.");
+                return Ok(());
+            }
+
+            // Always show the plan
+            print!("{}", sync_plan.describe());
+
+            if plan.dry_run {
+                return Ok(());
+            }
+
+            // Execute the plan
+            let mut exec_ctx = ExecuteContext::new(plan.clone());
+            let report = sync_plan.execute(&mut exec_ctx)?;
+            print!("{}", report);
+
+            Ok(())
+        }
         DnfAction::Copr { action } => handle_copr(action, plan),
     }
 }
@@ -587,52 +621,6 @@ fn handle_diff(_plan: &ExecutionPlan) -> Result<()> {
 }
 
 // =============================================================================
-// Sync Command
-// =============================================================================
-
-fn handle_sync(now: bool, plan: &ExecutionPlan) -> Result<()> {
-    plan.validate_domain(CommandDomain::Dnf)?;
-
-    let system = SystemPackagesManifest::load_system()?;
-    let user = SystemPackagesManifest::load_user()?;
-    let merged = SystemPackagesManifest::merged(&system, &user);
-
-    let mut to_install = Vec::new();
-
-    for pkg in &merged.packages {
-        if !is_package_installed(pkg) {
-            to_install.push(pkg.clone());
-        }
-    }
-
-    if to_install.is_empty() {
-        Output::success("All manifest packages are already installed.");
-        return Ok(());
-    }
-
-    Output::info(format!("{} package(s) to install:", to_install.len()));
-    for pkg in &to_install {
-        Output::list_item(pkg);
-    }
-
-    if plan.should_execute_locally() {
-        match plan.context {
-            ExecutionContext::Host => {
-                install_via_rpm_ostree(&to_install, now)?;
-            }
-            ExecutionContext::Dev => {
-                install_via_dnf(&to_install)?;
-            }
-            ExecutionContext::Image => {}
-        }
-    } else if plan.dry_run {
-        Output::dry_run(format!("Would install {} packages", to_install.len()));
-    }
-
-    Ok(())
-}
-
-// =============================================================================
 // COPR Commands
 // =============================================================================
 
@@ -811,4 +799,125 @@ fn is_package_installed(pkg: &str) -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+// ============================================================================
+// Plan-based DNF Sync Implementation
+// ============================================================================
+
+/// Command to sync DNF packages from manifests.
+pub struct DnfSyncCommand {
+    /// Whether to apply live (rpm-ostree only).
+    pub now: bool,
+    /// Execution context (Host uses rpm-ostree, Dev uses dnf).
+    pub context: ExecutionContext,
+}
+
+/// Plan for syncing DNF packages.
+pub struct DnfSyncPlan {
+    /// Packages to install.
+    pub to_install: Vec<String>,
+    /// Packages already installed.
+    pub already_installed: usize,
+    /// Whether to apply live (rpm-ostree only).
+    pub now: bool,
+    /// Execution context.
+    pub context: ExecutionContext,
+}
+
+impl Plannable for DnfSyncCommand {
+    type Plan = DnfSyncPlan;
+
+    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+        // Load and merge manifests (read-only, no side effects)
+        let system = SystemPackagesManifest::load_system()?;
+        let user = SystemPackagesManifest::load_user()?;
+        let merged = SystemPackagesManifest::merged(&system, &user);
+
+        let mut to_install = Vec::new();
+        let mut already_installed = 0;
+
+        for pkg in merged.packages {
+            if is_package_installed(&pkg) {
+                already_installed += 1;
+            } else {
+                to_install.push(pkg);
+            }
+        }
+
+        Ok(DnfSyncPlan {
+            to_install,
+            already_installed,
+            now: self.now,
+            context: self.context,
+        })
+    }
+}
+
+impl Plan for DnfSyncPlan {
+    fn describe(&self) -> PlanSummary {
+        let method = match self.context {
+            ExecutionContext::Host => {
+                if self.now {
+                    "rpm-ostree --apply-live"
+                } else {
+                    "rpm-ostree (reboot required)"
+                }
+            }
+            ExecutionContext::Dev => "dnf",
+            ExecutionContext::Image => "image-only",
+        };
+
+        let mut summary = PlanSummary::new(format!(
+            "DNF Sync: {} to install, {} already installed (via {})",
+            self.to_install.len(),
+            self.already_installed,
+            method
+        ));
+
+        for pkg in &self.to_install {
+            summary.add_operation(Operation::new(Verb::Install, format!("package:{}", pkg)));
+        }
+
+        summary
+    }
+
+    fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
+        let mut report = ExecutionReport::new();
+
+        if self.to_install.is_empty() {
+            return Ok(report);
+        }
+
+        // Install all packages in one batch for efficiency
+        let result = match self.context {
+            ExecutionContext::Host => install_via_rpm_ostree(&self.to_install, self.now),
+            ExecutionContext::Dev => install_via_dnf(&self.to_install),
+            ExecutionContext::Image => {
+                // No-op for image context
+                Ok(())
+            }
+        };
+
+        match result {
+            Ok(()) => {
+                // Record success for all packages
+                for pkg in self.to_install {
+                    report.record_success(Verb::Install, format!("package:{}", pkg));
+                }
+            }
+            Err(e) => {
+                // Record failure for all packages
+                for pkg in self.to_install {
+                    report.record_failure(Verb::Install, format!("package:{}", pkg), e.to_string());
+                }
+            }
+        }
+
+        Ok(report)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.to_install.is_empty()
+    }
 }
