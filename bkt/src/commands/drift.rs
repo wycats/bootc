@@ -122,19 +122,13 @@ fn handle_check(
     }
 
     // Add category filter (the Python script doesn't support this yet, but we prepare for it)
-    if let Some(cat) = category {
-        match cat {
-            DriftCategory::Packages => {
-                // Future: cmd.args(["--category", "packages"]);
-            }
-            DriftCategory::Flatpaks => {
-                // Future: cmd.args(["--category", "flatpaks"]);
-            }
-            DriftCategory::Extensions => {
-                // Future: cmd.args(["--category", "extensions"]);
-            }
-            DriftCategory::All => {}
-        }
+    if let Some(cat) = &category
+        && !matches!(cat, DriftCategory::All)
+    {
+        Output::warning(format!(
+            "Category filter '{:?}' is not yet supported. Running full drift check.",
+            cat
+        ));
     }
 
     Output::info("Running drift detection...");

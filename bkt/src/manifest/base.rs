@@ -133,9 +133,12 @@ impl BaseImageAssumptions {
         self.packages.retain(|p| p.name != name);
         self.packages.len() < len_before
     }
+}
 
+/// Test-only methods
+#[cfg(test)]
+impl BaseImageAssumptions {
     /// Check if a package is assumed.
-    #[allow(dead_code)]
     pub fn has_package(&self, name: &str) -> bool {
         self.packages.iter().any(|p| p.name == name)
     }
@@ -145,6 +148,16 @@ impl BaseImageAssumptions {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn test_has_package() {
+        let mut assumptions = BaseImageAssumptions::default();
+        assert!(!assumptions.has_package("flatpak"));
+
+        assumptions.add_package("flatpak", Some("Test"));
+        assert!(assumptions.has_package("flatpak"));
+        assert!(!assumptions.has_package("other"));
+    }
 
     #[test]
     fn test_default_is_empty() {
@@ -202,15 +215,6 @@ mod tests {
 
         // Removing again should return false
         assert!(!assumptions.remove_package("flatpak"));
-    }
-
-    #[test]
-    fn test_has_package() {
-        let mut assumptions = BaseImageAssumptions::default();
-        assumptions.add_package("flatpak", None);
-
-        assert!(assumptions.has_package("flatpak"));
-        assert!(!assumptions.has_package("nonexistent"));
     }
 
     #[test]

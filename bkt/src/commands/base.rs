@@ -88,14 +88,6 @@ fn get_repo_root() -> Result<PathBuf> {
         .context("Not in a git repository. Run this command from within the bootc repository.")
 }
 
-#[allow(dead_code)]
-fn get_assumptions_path() -> Result<PathBuf> {
-    let repo_root = get_repo_root()?;
-    Ok(repo_root
-        .join("manifests")
-        .join("base-image-assumptions.json"))
-}
-
 fn handle_verify() -> Result<()> {
     let assumptions = BaseImageAssumptions::load_from_repo()?;
 
@@ -113,12 +105,9 @@ fn handle_verify() -> Result<()> {
     println!();
 
     let mut missing = Vec::new();
-    let mut present = Vec::new();
 
     for pkg in &assumptions.packages {
-        if is_package_installed(&pkg.name)? {
-            present.push(&pkg.name);
-        } else {
+        if !is_package_installed(&pkg.name)? {
             missing.push(&pkg.name);
         }
     }
@@ -209,11 +198,8 @@ fn handle_list() -> Result<()> {
         println!("  {} {}", "Base Image:".dimmed(), source);
     }
     if let Some(ref digest) = assumptions.base_image.last_verified_digest {
-        println!(
-            "  {} {}",
-            "Digest:".dimmed(),
-            &digest[..32.min(digest.len())]
-        );
+        let truncated: String = digest.chars().take(32).collect();
+        println!("  {} {}", "Digest:".dimmed(), truncated);
     }
     if let Some(ref at) = assumptions.base_image.last_verified_at {
         println!("  {} {}", "Verified:".dimmed(), at);
@@ -290,7 +276,10 @@ fn handle_info() -> Result<()> {
     Ok(())
 }
 
-fn handle_snapshot(filter: Option<String>, output: Option<PathBuf>, _yes: bool) -> Result<()> {
+fn handle_snapshot(filter: Option<String>, output: Option<PathBuf>, yes: bool) -> Result<()> {
+    // TODO: Use yes flag to skip confirmation prompt when implemented
+    let _ = yes;
+
     Output::info("Collecting installed packages from base image...");
 
     // Get list of packages that came with the base image
