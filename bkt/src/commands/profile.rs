@@ -3,8 +3,10 @@
 //! Captures current system state and compares against manifests.
 
 use crate::manifest::{FlatpakAppsManifest, GSettingsManifest, GnomeExtensionsManifest};
+use crate::output::Output;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
+use owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -187,7 +189,7 @@ fn show_diff(section: Option<&str>) -> Result<()> {
 
     // Flatpak diff
     if show_all || section == "flatpak" || section == "fp" {
-        println!("=== FLATPAK DIFF ===\n");
+        Output::subheader("=== FLATPAK DIFF ===");
 
         let system = FlatpakAppsManifest::load_system()?;
         let user = FlatpakAppsManifest::load_user().unwrap_or_default();
@@ -201,28 +203,29 @@ fn show_diff(section: Option<&str>) -> Result<()> {
         let installed_not_in_manifest: Vec<_> = installed_ids.difference(&manifest_ids).collect();
 
         if in_manifest_not_installed.is_empty() && installed_not_in_manifest.is_empty() {
-            println!("✓ No drift detected\n");
+            Output::success("No drift detected");
+            Output::blank();
         } else {
             if !in_manifest_not_installed.is_empty() {
-                println!("Missing (in manifest, not installed):");
+                println!("{}", "Missing (in manifest, not installed):".yellow());
                 for id in &in_manifest_not_installed {
-                    println!("  - {}", id);
+                    println!("  {} {}", "-".red(), id);
                 }
-                println!();
+                Output::blank();
             }
             if !installed_not_in_manifest.is_empty() {
-                println!("Extra (installed, not in manifest):");
+                println!("{}", "Extra (installed, not in manifest):".yellow());
                 for id in &installed_not_in_manifest {
-                    println!("  + {}", id);
+                    println!("  {} {}", "+".green(), id);
                 }
-                println!();
+                Output::blank();
             }
         }
     }
 
     // Extension diff
     if show_all || section == "extension" || section == "ext" {
-        println!("=== EXTENSION DIFF ===\n");
+        Output::subheader("=== EXTENSION DIFF ===");
 
         let system = GnomeExtensionsManifest::load_system()?;
         let user = GnomeExtensionsManifest::load_user().unwrap_or_default();
@@ -236,35 +239,37 @@ fn show_diff(section: Option<&str>) -> Result<()> {
         let installed_not_in_manifest: Vec<_> = installed_set.difference(&manifest_set).collect();
 
         if in_manifest_not_installed.is_empty() && installed_not_in_manifest.is_empty() {
-            println!("✓ No drift detected\n");
+            Output::success("No drift detected");
+            Output::blank();
         } else {
             if !in_manifest_not_installed.is_empty() {
-                println!("Missing (in manifest, not installed):");
+                println!("{}", "Missing (in manifest, not installed):".yellow());
                 for uuid in &in_manifest_not_installed {
-                    println!("  - {}", uuid);
+                    println!("  {} {}", "-".red(), uuid);
                 }
-                println!();
+                Output::blank();
             }
             if !installed_not_in_manifest.is_empty() {
-                println!("Extra (installed, not in manifest):");
+                println!("{}", "Extra (installed, not in manifest):".yellow());
                 for uuid in &installed_not_in_manifest {
-                    println!("  + {}", uuid);
+                    println!("  {} {}", "+".green(), uuid);
                 }
-                println!();
+                Output::blank();
             }
         }
     }
 
     // GSettings diff
     if show_all || section == "gsetting" || section == "gs" {
-        println!("=== GSETTINGS DIFF ===\n");
+        Output::subheader("=== GSETTINGS DIFF ===");
 
         let system = GSettingsManifest::load_system()?;
         let user = GSettingsManifest::load_user().unwrap_or_default();
         let manifest = GSettingsManifest::merged(&system, &user);
 
         if manifest.settings.is_empty() {
-            println!("(no gsettings in manifest)\n");
+            Output::info("(no gsettings in manifest)");
+            Output::blank();
         } else {
             let mut drifted = 0;
             for setting in &manifest.settings {
@@ -283,25 +288,34 @@ fn show_diff(section: Option<&str>) -> Result<()> {
                         .unwrap_or(&current_val);
                     if normalized_current != setting.value {
                         println!(
-                            "≠ {}.{}\n  manifest: {}\n  current:  {}\n",
-                            setting.schema, setting.key, setting.value, current_val
+                            "{} {}.{}\n  manifest: {}\n  current:  {}",
+                            "≠".yellow(),
+                            setting.schema,
+                            setting.key,
+                            setting.value.green(),
+                            current_val.red()
                         );
+                        Output::blank();
                         drifted += 1;
                     }
                 } else {
                     println!(
-                        "? {}.{} (could not read current value)\n",
-                        setting.schema, setting.key
+                        "{} {}.{} (could not read current value)",
+                        "?".yellow(),
+                        setting.schema,
+                        setting.key
                     );
+                    Output::blank();
                     drifted += 1;
                 }
             }
 
             if drifted == 0 {
-                println!(
-                    "✓ All {} settings match manifest\n",
+                Output::success(format!(
+                    "All {} settings match manifest",
                     manifest.settings.len()
-                );
+                ));
+                Output::blank();
             }
         }
     }
@@ -314,11 +328,11 @@ fn show_unowned(dir: &PathBuf) -> Result<()> {
     use std::fs;
 
     if !dir.exists() {
-        println!("Directory does not exist: {}", dir.display());
+        Output::warning(format!("Directory does not exist: {}", dir.display()));
         return Ok(());
     }
 
-    println!("=== UNOWNED FILES IN {} ===\n", dir.display());
+    Output::subheader(format!("=== UNOWNED FILES IN {} ===", dir.display()));
 
     let entries = fs::read_dir(dir).context("Failed to read directory")?;
     let mut unowned = Vec::new();
@@ -342,13 +356,14 @@ fn show_unowned(dir: &PathBuf) -> Result<()> {
     }
 
     if unowned.is_empty() {
-        println!("All files are owned by packages.\n");
+        Output::success("All files are owned by packages.");
+        Output::blank();
     } else {
-        println!("Unowned files ({}):", unowned.len());
+        println!("{} ({}):", "Unowned files".yellow(), unowned.len());
         for path in &unowned {
-            println!("  {}", path.display());
+            Output::list_item(path.display().to_string());
         }
-        println!();
+        Output::blank();
     }
 
     Ok(())
@@ -363,7 +378,7 @@ pub fn run(args: ProfileArgs) -> Result<()> {
             if let Some(path) = output {
                 std::fs::write(&path, &json)
                     .with_context(|| format!("Failed to write to {}", path.display()))?;
-                println!("Profile saved to {}", path.display());
+                Output::success(format!("Profile saved to {}", path.display()));
             } else {
                 println!("{}", json);
             }

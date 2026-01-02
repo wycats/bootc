@@ -1,10 +1,12 @@
 //! GNOME extension command implementation.
 
 use crate::manifest::GnomeExtensionsManifest;
+use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::pr::{PrChange, run_pr_workflow};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
+use owo_colors::OwoColorize;
 use std::process::Command;
 
 #[derive(Debug, Args)]
@@ -102,9 +104,9 @@ fn sync_extensions(dry_run: bool) -> Result<()> {
     for uuid in &merged.extensions {
         if !is_installed(uuid) {
             if dry_run {
-                println!("Not installed (would skip): {}", uuid);
+                Output::dry_run(format!("Not installed, would skip: {}", uuid));
             } else {
-                println!("Not installed (skipping): {}", uuid);
+                Output::info(format!("Not installed, skipping: {}", uuid));
             }
             not_installed += 1;
             continue;
@@ -116,30 +118,32 @@ fn sync_extensions(dry_run: bool) -> Result<()> {
         }
 
         if dry_run {
-            println!("Would enable: {}", uuid);
+            Output::dry_run(format!("Would enable: {}", uuid));
         } else {
-            print!("Enabling {}... ", uuid);
+            let spinner = Output::spinner(format!("Enabling {}...", uuid));
             if enable_extension(uuid)? {
-                println!("✓");
+                spinner.finish_success(format!("Enabled {}", uuid));
                 enabled += 1;
             } else {
-                println!("✗");
+                spinner.finish_error(format!("Failed to enable {}", uuid));
             }
         }
     }
 
     if dry_run {
-        println!(
-            "\nDry run: {} already enabled, {} would be enabled, {} not installed",
+        Output::blank();
+        Output::info(format!(
+            "Dry run: {} already enabled, {} would be enabled, {} not installed",
             skipped,
             merged.extensions.len() - skipped - not_installed,
             not_installed
-        );
+        ));
     } else {
-        println!(
-            "\nSync complete: {} enabled, {} already active, {} not installed",
+        Output::blank();
+        Output::info(format!(
+            "Sync complete: {} enabled, {} already active, {} not installed",
             enabled, skipped, not_installed
-        );
+        ));
     }
 
     Ok(())
@@ -159,28 +163,28 @@ pub fn run(args: ExtensionArgs, _plan: &ExecutionPlan) -> Result<()> {
             let mut user = GnomeExtensionsManifest::load_user()?;
 
             if system.contains(&uuid) || user.contains(&uuid) {
-                println!("Extension already in manifest: {}", uuid);
+                Output::warning(format!("Extension already in manifest: {}", uuid));
             } else {
                 user.add(uuid.clone());
                 user.save_user()?;
-                println!("Added to user manifest: {}", uuid);
+                Output::success(format!("Added to user manifest: {}", uuid));
             }
 
             // Enable if installed
             if is_installed(&uuid) {
                 if !is_enabled(&uuid) {
-                    print!("Enabling {}... ", uuid);
+                    let spinner = Output::spinner(format!("Enabling {}...", uuid));
                     if enable_extension(&uuid)? {
-                        println!("✓");
+                        spinner.finish_success(format!("Enabled {}", uuid));
                     } else {
-                        println!("✗");
+                        spinner.finish_error(format!("Failed to enable {}", uuid));
                     }
                 } else {
-                    println!("Already enabled: {}", uuid);
+                    Output::info(format!("Already enabled: {}", uuid));
                 }
             } else {
-                println!(
-                    "Note: Extension not installed. Install via Extension Manager or extensions.gnome.org"
+                Output::hint(
+                    "Extension not installed. Install via Extension Manager or extensions.gnome.org",
                 );
             }
 
@@ -208,26 +212,26 @@ pub fn run(args: ExtensionArgs, _plan: &ExecutionPlan) -> Result<()> {
 
             let in_system = system.contains(&uuid);
             if in_system && !user.contains(&uuid) {
-                println!(
-                    "Note: '{}' is in the system manifest; use --pr to remove from source",
+                Output::info(format!(
+                    "'{}' is in the system manifest; use --pr to remove from source",
                     uuid
-                );
+                ));
             }
 
             if user.remove(&uuid) {
                 user.save_user()?;
-                println!("Removed from user manifest: {}", uuid);
+                Output::success(format!("Removed from user manifest: {}", uuid));
             } else if !in_system {
-                println!("Extension not found in manifest: {}", uuid);
+                Output::warning(format!("Extension not found in manifest: {}", uuid));
             }
 
             // Disable if enabled
             if is_enabled(&uuid) {
-                print!("Disabling {}... ", uuid);
+                let spinner = Output::spinner(format!("Disabling {}...", uuid));
                 if disable_extension(&uuid)? {
-                    println!("✓");
+                    spinner.finish_success(format!("Disabled {}", uuid));
                 } else {
-                    println!("✗");
+                    spinner.finish_error(format!("Failed to disable {}", uuid));
                 }
             }
 
@@ -244,7 +248,7 @@ pub fn run(args: ExtensionArgs, _plan: &ExecutionPlan) -> Result<()> {
                     };
                     run_pr_workflow(&change, &manifest_content, skip_preflight)?;
                 } else {
-                    println!("Note: '{}' not in system manifest, no PR needed", uuid);
+                    Output::info(format!("'{}' not in system manifest, no PR needed", uuid));
                 }
             }
         }
@@ -257,35 +261,42 @@ pub fn run(args: ExtensionArgs, _plan: &ExecutionPlan) -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&merged)?);
             } else {
                 if merged.extensions.is_empty() {
-                    println!("No extensions in manifest.");
+                    Output::info("No extensions in manifest.");
                     return Ok(());
                 }
 
-                println!("{:<50} {:<10} STATUS", "UUID", "SOURCE");
-                println!("{}", "-".repeat(70));
+                Output::subheader("GNOME EXTENSIONS:");
+                println!(
+                    "{:<50} {:<10} {}",
+                    "UUID".cyan(),
+                    "SOURCE".cyan(),
+                    "STATUS".cyan()
+                );
+                Output::separator();
 
                 for uuid in &merged.extensions {
                     let source = if user.contains(uuid) {
-                        "user"
+                        "user".yellow().to_string()
                     } else {
-                        "system"
+                        "system".dimmed().to_string()
                     };
                     let status = if is_enabled(uuid) {
-                        "✓ enabled"
+                        format!("{} enabled", "✓".green())
                     } else if is_installed(uuid) {
-                        "○ disabled"
+                        format!("{} disabled", "○".yellow())
                     } else {
-                        "✗ not installed"
+                        format!("{} not installed", "✗".red())
                     };
                     println!("{:<50} {:<10} {}", uuid, source, status);
                 }
 
-                println!(
-                    "\n{} extensions ({} system, {} user)",
+                Output::blank();
+                Output::info(format!(
+                    "{} extensions ({} system, {} user)",
                     merged.extensions.len(),
                     system.extensions.len(),
                     user.extensions.len()
-                );
+                ));
             }
         }
         ExtensionAction::Sync { dry_run } => {

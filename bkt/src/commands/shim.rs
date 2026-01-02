@@ -2,10 +2,12 @@
 
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
+use owo_colors::OwoColorize;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 use crate::manifest::{Shim, ShimsManifest};
+use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::pr::{PrChange, run_pr_workflow};
 
@@ -107,7 +109,11 @@ fn sync_shims(dry_run: bool) -> Result<()> {
         let content = generate_shim_script(shim.host_cmd())?;
 
         if dry_run {
-            println!("Would create: {} -> {}", shim.name, shim.host_cmd());
+            Output::dry_run(format!(
+                "Would create: {} -> {}",
+                shim.name,
+                shim.host_cmd()
+            ));
         } else {
             fs::write(&shim_path, &content)
                 .with_context(|| format!("Failed to write shim: {}", shim_path.display()))?;
@@ -121,9 +127,17 @@ fn sync_shims(dry_run: bool) -> Result<()> {
     }
 
     if dry_run {
-        println!("Would generate {} shims in {}", count, shims_dir.display());
+        Output::dry_run(format!(
+            "Would generate {} shims in {}",
+            count,
+            shims_dir.display()
+        ));
     } else {
-        println!("✓ Generated {} shims in {}", count, shims_dir.display());
+        Output::success(format!(
+            "Generated {} shims in {}",
+            count,
+            shims_dir.display()
+        ));
     }
 
     Ok(())
@@ -169,9 +183,9 @@ pub fn run(args: ShimArgs, _plan: &ExecutionPlan) -> Result<()> {
             user.save_user()?;
 
             if is_update {
-                println!("Updated shim: {} -> {}", name, host_cmd);
+                Output::success(format!("Updated shim: {} -> {}", name, host_cmd));
             } else {
-                println!("Added shim: {} -> {}", name, host_cmd);
+                Output::success(format!("Added shim: {} -> {}", name, host_cmd));
             }
 
             // Sync shims to disk
@@ -210,17 +224,17 @@ pub fn run(args: ShimArgs, _plan: &ExecutionPlan) -> Result<()> {
 
             // Check if it's in system manifest
             if system.find(&name).is_some() && user.find(&name).is_none() {
-                println!(
-                    "Note: '{}' is in the system manifest; you can add a user override to hide it",
+                Output::info(format!(
+                    "'{}' is in the system manifest; you can add a user override to hide it",
                     name
-                );
+                ));
             }
 
             if user.remove(&name) {
                 user.save_user()?;
-                println!("Removed shim: {}", name);
+                Output::success(format!("Removed shim: {}", name));
             } else {
-                println!("Shim not found in user manifest: {}", name);
+                Output::warning(format!("Shim not found in user manifest: {}", name));
             }
 
             // Sync shims to disk
@@ -240,7 +254,7 @@ pub fn run(args: ShimArgs, _plan: &ExecutionPlan) -> Result<()> {
                     };
                     run_pr_workflow(&change, &manifest_content, skip_preflight)?;
                 } else {
-                    println!("Note: '{}' not in system manifest, no PR needed", name);
+                    Output::info(format!("'{}' not in system manifest, no PR needed", name));
                 }
             }
         }
@@ -254,22 +268,28 @@ pub fn run(args: ShimArgs, _plan: &ExecutionPlan) -> Result<()> {
                 println!("{}", json);
             } else {
                 let shims_dir = ShimsManifest::shims_dir();
-                println!("Shims (from {}):", shims_dir.display());
-                println!();
+                Output::subheader(format!("SHIMS (from {}):", shims_dir.display()));
 
                 if merged.shims.is_empty() {
-                    println!("  (none)");
+                    Output::info("(none)");
                 } else {
                     for shim in &merged.shims {
                         let source = shim_source(&shim.name, &system, &user);
+                        let source_styled = match source {
+                            "user" => source.yellow().to_string(),
+                            "system" => source.dimmed().to_string(),
+                            "system+user" => source.cyan().to_string(),
+                            _ => source.to_string(),
+                        };
                         if shim.name == shim.host_cmd() {
-                            println!("  {:<20}  [{}]", shim.name, source);
+                            println!("  {:<20}  [{}]", shim.name, source_styled);
                         } else {
                             println!(
-                                "  {:<20} -> {:<20}  [{}]",
+                                "  {:<20} {} {:<20}  [{}]",
                                 shim.name,
+                                "->".dimmed(),
                                 shim.host_cmd(),
-                                source
+                                source_styled
                             );
                         }
                     }

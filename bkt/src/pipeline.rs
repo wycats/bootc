@@ -56,7 +56,14 @@ impl ExecutionPlan {
     }
 
     /// Check if this plan should create a PR.
+    ///
+    /// PRs are not created for Dev context since toolbox packages are personal
+    /// and not part of the system image.
     pub fn should_create_pr(&self) -> bool {
+        // Toolbox changes are personal, not part of system image
+        if self.context == ExecutionContext::Dev {
+            return false;
+        }
         !self.dry_run && self.pr_mode.should_create_pr()
     }
 
@@ -233,5 +240,28 @@ mod tests {
         // DNF should work everywhere
         assert!(host_plan.validate_domain(CommandDomain::Dnf).is_ok());
         assert!(dev_plan.validate_domain(CommandDomain::Dnf).is_ok());
+    }
+
+    #[test]
+    fn test_dev_context_disables_pr_creation() {
+        // Dev context should never create PRs (toolbox packages are personal)
+        let dev_plan = ExecutionPlanBuilder::new()
+            .context(ExecutionContext::Dev)
+            .build();
+        assert!(!dev_plan.should_create_pr());
+
+        // Even with PrMode::Both, Dev context should not create PRs
+        let dev_both = ExecutionPlanBuilder::new()
+            .context(ExecutionContext::Dev)
+            .pr_mode(PrMode::Both)
+            .build();
+        assert!(!dev_both.should_create_pr());
+
+        // Host context should still create PRs
+        let host_plan = ExecutionPlanBuilder::new()
+            .context(ExecutionContext::Host)
+            .pr_mode(PrMode::Both)
+            .build();
+        assert!(host_plan.should_create_pr());
     }
 }

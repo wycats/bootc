@@ -29,6 +29,7 @@ mod commands;
 pub mod context;
 pub mod effects;
 mod manifest;
+pub mod output;
 pub mod pipeline;
 mod pr;
 mod repo;
@@ -79,6 +80,9 @@ pub struct Cli {
 pub enum Commands {
     /// Manage RPM packages (rpm-ostree on host, dnf in toolbox)
     Dnf(commands::dnf::DnfArgs),
+
+    /// Development toolbox commands (shortcut for --context dev)
+    Dev(commands::dev::DevArgs),
 
     /// Manage Flatpak apps in the manifest
     #[command(alias = "fp")]
@@ -139,6 +143,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Dnf(args) => commands::dnf::run(args, &plan),
+        Commands::Dev(args) => commands::dev::run(args, &plan),
         Commands::Flatpak(args) => commands::flatpak::run(args, &plan),
         Commands::Shim(args) => commands::shim::run(args, &plan),
         Commands::Extension(args) => commands::extension::run(args, &plan),

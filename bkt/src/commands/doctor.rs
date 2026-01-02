@@ -2,6 +2,7 @@
 //!
 //! Runs pre-flight checks and reports system readiness.
 
+use crate::output::Output;
 use crate::pr::run_preflight_checks;
 use anyhow::Result;
 use clap::Args;
@@ -32,26 +33,27 @@ pub fn run(args: DoctorArgs) -> Result<()> {
         return Ok(());
     }
 
-    println!("bkt doctor - checking system readiness\n");
+    Output::header("bkt doctor - checking system readiness");
+    Output::blank();
 
     let mut all_passed = true;
     for result in &results {
         if result.passed {
-            println!("  ✓ {}: {}", result.name, result.message);
+            Output::success(format!("{}: {}", result.name, result.message));
         } else {
-            println!("  ✗ {}: {}", result.name, result.message);
+            Output::error(format!("{}: {}", result.name, result.message));
             if let Some(hint) = &result.fix_hint {
-                println!("    → {}", hint);
+                Output::hint(hint);
             }
             all_passed = false;
         }
     }
 
-    println!();
+    Output::blank();
     if all_passed {
-        println!("✓ All checks passed! Ready to use bkt --pr workflows.");
+        Output::success("All checks passed! Ready to use bkt --pr workflows.");
     } else {
-        println!("✗ Some checks failed. Fix the issues above to enable --pr workflows.");
+        Output::error("Some checks failed. Fix the issues above to enable --pr workflows.");
     }
 
     Ok(())

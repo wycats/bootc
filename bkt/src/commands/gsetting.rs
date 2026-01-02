@@ -1,10 +1,12 @@
 //! GSettings command implementation.
 
 use crate::manifest::{GSetting, GSettingsManifest};
+use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::pr::{PrChange, run_pr_workflow};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
+use owo_colors::OwoColorize;
 use std::process::Command;
 
 #[derive(Debug, Args)]
@@ -98,39 +100,41 @@ fn apply_settings(dry_run: bool) -> Result<()> {
         }
 
         if dry_run {
-            println!(
+            Output::dry_run(format!(
                 "Would set {}.{} = {} (currently: {})",
                 setting.schema,
                 setting.key,
                 setting.value,
                 current.as_deref().unwrap_or("(unset)")
-            );
+            ));
         } else {
-            print!(
-                "Setting {}.{} = {}... ",
+            let spinner = Output::spinner(format!(
+                "Setting {}.{} = {}...",
                 setting.schema, setting.key, setting.value
-            );
+            ));
             if set_gsetting(&setting.schema, &setting.key, &setting.value)? {
-                println!("✓");
+                spinner.finish_success(format!("Set {}.{}", setting.schema, setting.key));
                 applied += 1;
             } else {
-                println!("✗");
+                spinner.finish_error(format!("Failed {}.{}", setting.schema, setting.key));
                 failed += 1;
             }
         }
     }
 
     if dry_run {
-        println!(
-            "\nDry run: {} already set, {} would be applied",
+        Output::blank();
+        Output::info(format!(
+            "Dry run: {} already set, {} would be applied",
             skipped,
             merged.settings.len() - skipped
-        );
+        ));
     } else {
-        println!(
-            "\nApply complete: {} applied, {} already set, {} failed",
+        Output::blank();
+        Output::info(format!(
+            "Apply complete: {} applied, {} already set, {} failed",
             applied, skipped, failed
-        );
+        ));
     }
 
     Ok(())
@@ -159,7 +163,10 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
 
             if let Some(e) = existing {
                 if e.value == value {
-                    println!("Already in manifest: {}.{} = {}", schema, key, value);
+                    Output::info(format!(
+                        "Already in manifest: {}.{} = {}",
+                        schema, key, value
+                    ));
                 } else {
                     // Update in user manifest
                     let setting = GSetting {
@@ -170,7 +177,10 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
                     };
                     user.upsert(setting);
                     user.save_user()?;
-                    println!("Updated in user manifest: {}.{} = {}", schema, key, value);
+                    Output::success(format!(
+                        "Updated in user manifest: {}.{} = {}",
+                        schema, key, value
+                    ));
                 }
             } else {
                 let setting = GSetting {
@@ -181,15 +191,18 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
                 };
                 user.upsert(setting);
                 user.save_user()?;
-                println!("Added to user manifest: {}.{} = {}", schema, key, value);
+                Output::success(format!(
+                    "Added to user manifest: {}.{} = {}",
+                    schema, key, value
+                ));
             }
 
             // Apply immediately
-            print!("Applying {}.{} = {}... ", schema, key, value);
+            let spinner = Output::spinner(format!("Applying {}.{} = {}...", schema, key, value));
             if set_gsetting(&schema, &key, &value)? {
-                println!("✓");
+                spinner.finish_success(format!("Applied {}.{}", schema, key));
             } else {
-                println!("✗");
+                spinner.finish_error(format!("Failed to apply {}.{}", schema, key));
             }
 
             if pr {
@@ -223,29 +236,29 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
 
             let in_system = system.find(&schema, &key).is_some();
             if in_system && user.find(&schema, &key).is_none() {
-                println!(
-                    "Note: '{}.{}' is in the system manifest; use --pr to remove from source",
+                Output::info(format!(
+                    "'{}.{}' is in the system manifest; use --pr to remove from source",
                     schema, key
-                );
+                ));
             }
 
             if user.remove(&schema, &key) {
                 user.save_user()?;
-                println!("Removed from user manifest: {}.{}", schema, key);
+                Output::success(format!("Removed from user manifest: {}.{}", schema, key));
             } else if !in_system {
-                println!("Setting not found in manifest: {}.{}", schema, key);
+                Output::warning(format!("Setting not found in manifest: {}.{}", schema, key));
             }
 
             // Reset to default
-            print!("Resetting {}.{} to default... ", schema, key);
+            let spinner = Output::spinner(format!("Resetting {}.{} to default...", schema, key));
             let status = Command::new("gsettings")
                 .args(["reset", &schema, &key])
                 .status()
                 .context("Failed to run gsettings reset")?;
             if status.success() {
-                println!("✓");
+                spinner.finish_success(format!("Reset {}.{}", schema, key));
             } else {
-                println!("✗");
+                spinner.finish_error(format!("Failed to reset {}.{}", schema, key));
             }
 
             if pr {
@@ -261,10 +274,10 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
                     };
                     run_pr_workflow(&change, &manifest_content, skip_preflight)?;
                 } else {
-                    println!(
-                        "Note: '{}.{}' not in system manifest, no PR needed",
+                    Output::info(format!(
+                        "'{}.{}' not in system manifest, no PR needed",
                         schema, key
-                    );
+                    ));
                 }
             }
         }
@@ -277,28 +290,32 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&merged)?);
             } else {
                 if merged.settings.is_empty() {
-                    println!("No gsettings in manifest.");
+                    Output::info("No gsettings in manifest.");
                     return Ok(());
                 }
 
+                Output::subheader("GSETTINGS:");
                 println!(
-                    "{:<45} {:<20} {:<10} CURRENT",
-                    "SCHEMA.KEY", "VALUE", "SOURCE"
+                    "{:<45} {:<20} {:<10} {}",
+                    "SCHEMA.KEY".cyan(),
+                    "VALUE".cyan(),
+                    "SOURCE".cyan(),
+                    "CURRENT".cyan()
                 );
-                println!("{}", "-".repeat(90));
+                Output::separator();
 
                 for setting in &merged.settings {
                     let source = if user.find(&setting.schema, &setting.key).is_some() {
-                        "user"
+                        "user".yellow().to_string()
                     } else {
-                        "system"
+                        "system".dimmed().to_string()
                     };
                     let current = get_current_value(&setting.schema, &setting.key)
                         .unwrap_or_else(|| "(unset)".to_string());
                     let matches = if current == setting.value {
-                        "✓"
+                        "✓".green().to_string()
                     } else {
-                        "≠"
+                        "≠".yellow().to_string()
                     };
 
                     println!(
@@ -311,12 +328,13 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
                     );
                 }
 
-                println!(
-                    "\n{} settings ({} system, {} user)",
+                Output::blank();
+                Output::info(format!(
+                    "{} settings ({} system, {} user)",
                     merged.settings.len(),
                     system.settings.len(),
                     user.settings.len()
-                );
+                ));
             }
         }
         GSettingAction::Apply { dry_run } => {

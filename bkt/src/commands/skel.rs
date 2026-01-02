@@ -8,6 +8,7 @@
 //! Files can only be copied from within $HOME, and paths containing ".."
 //! are rejected.
 
+use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::pr::{PrChange, run_pr_workflow};
 use crate::repo::find_repo_path;
@@ -192,8 +193,8 @@ pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
                 format!("Failed to copy {} to {}", source.display(), dest.display())
             })?;
 
-            println!("Added to skel: {}", file);
-            println!("  {} → {}", source.display(), dest.display());
+            Output::success(format!("Added to skel: {}", file));
+            Output::hint(format!("{} → {}", source.display(), dest.display()));
 
             if pr {
                 // Read the file content for the PR
@@ -225,17 +226,17 @@ pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
                 let skel_file = skel.join(&file);
                 let home_file = home.join(&file);
 
-                println!("=== {} ===\n", file);
+                Output::subheader(format!("=== {} ===", file));
                 match diff_files(&skel_file, &home_file)? {
                     Some(diff) => println!("{}", diff),
-                    None => println!("✓ Files are identical\n"),
+                    None => Output::success("Files are identical"),
                 }
             } else {
                 // Diff all skel files
                 let files = list_skel_files(&skel)?;
 
                 if files.is_empty() {
-                    println!("No files in skel/");
+                    Output::info("No files in skel/");
                     return Ok(());
                 }
 
@@ -250,10 +251,13 @@ pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
                     match diff_files(&skel_file, &home_file)? {
                         Some(diff) => {
                             if home_file.exists() {
-                                println!("=== {} ===\n{}", file.display(), diff);
+                                Output::subheader(format!("=== {} ===", file.display()));
+                                println!("{}", diff);
                                 different += 1;
                             } else {
-                                println!("=== {} ===\n  (missing in $HOME)\n", file.display());
+                                Output::subheader(format!("=== {} ===", file.display()));
+                                Output::warning("missing in $HOME");
+                                Output::blank();
                                 missing += 1;
                             }
                         }
@@ -263,10 +267,11 @@ pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
                     }
                 }
 
-                println!(
-                    "\nSummary: {} identical, {} different, {} missing in $HOME",
+                Output::blank();
+                Output::info(format!(
+                    "Summary: {} identical, {} different, {} missing in $HOME",
                     identical, different, missing
-                );
+                ));
             }
         }
         SkelAction::List => {
@@ -274,13 +279,13 @@ pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
             let files = list_skel_files(&skel)?;
 
             if files.is_empty() {
-                println!("No files in skel/");
+                Output::info("No files in skel/");
                 return Ok(());
             }
 
-            println!("Files in skel/ ({}):\n", files.len());
+            Output::subheader(format!("FILES IN SKEL/ ({}):", files.len()));
             for file in &files {
-                println!("  {}", file.display());
+                Output::list_item(file.display().to_string());
             }
         }
         SkelAction::Sync { dry_run, force } => {
@@ -289,7 +294,7 @@ pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
             let files = list_skel_files(&skel)?;
 
             if files.is_empty() {
-                println!("No files in skel/");
+                Output::info("No files in skel/");
                 return Ok(());
             }
 
@@ -302,18 +307,18 @@ pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
 
                 if home_file.exists() && !force {
                     if dry_run {
-                        println!("Would skip (exists): {}", file.display());
+                        Output::dry_run(format!("Would skip (exists): {}", file.display()));
                     }
                     skipped += 1;
                     continue;
                 }
 
                 if dry_run {
-                    println!(
+                    Output::dry_run(format!(
                         "Would copy: {} → {}",
                         skel_file.display(),
                         home_file.display()
-                    );
+                    ));
                 } else {
                     // Create parent directories
                     if let Some(parent) = home_file.parent() {
@@ -327,18 +332,22 @@ pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
                             home_file.display()
                         )
                     })?;
-                    println!("Copied: {}", file.display());
+                    Output::success(format!("Copied: {}", file.display()));
                 }
                 copied += 1;
             }
 
+            Output::blank();
             if dry_run {
-                println!(
-                    "\nDry run: {} would be copied, {} would be skipped",
+                Output::info(format!(
+                    "Dry run: {} would be copied, {} would be skipped",
                     copied, skipped
-                );
+                ));
             } else {
-                println!("\nSync complete: {} copied, {} skipped", copied, skipped);
+                Output::info(format!(
+                    "Sync complete: {} copied, {} skipped",
+                    copied, skipped
+                ));
             }
         }
     }
