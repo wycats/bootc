@@ -29,6 +29,7 @@ mod commands;
 pub mod context;
 pub mod effects;
 mod manifest;
+pub mod output;
 pub mod pipeline;
 mod pr;
 mod repo;

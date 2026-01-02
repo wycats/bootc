@@ -8,9 +8,11 @@
 
 use crate::context::{CommandDomain, ExecutionContext};
 use crate::manifest::{CoprRepo, SystemPackagesManifest};
+use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
+use owo_colors::OwoColorize;
 use std::process::Command;
 
 #[derive(Debug, Args)]
@@ -157,59 +159,67 @@ fn handle_list(format: String, _plan: &ExecutionPlan) -> Result<()> {
 
     // Table format
     if merged.packages.is_empty() && merged.groups.is_empty() && merged.copr_repos.is_empty() {
-        println!("No packages in manifest.");
+        Output::info("No packages in manifest.");
         return Ok(());
     }
 
     // List packages
     if !merged.packages.is_empty() {
-        println!("PACKAGES:");
-        println!("{:<40} SOURCE", "NAME");
-        println!("{}", "-".repeat(50));
+        Output::subheader("PACKAGES:");
+        println!("{:<40} {}", "NAME".cyan(), "SOURCE");
+        Output::separator();
         for pkg in &merged.packages {
             let source = if user.find_package(pkg) {
-                "user"
+                "user".yellow().to_string()
             } else {
-                "system"
+                "system".dimmed().to_string()
             };
             let installed = if is_package_installed(pkg) {
-                "✓"
+                "✓".green().to_string()
             } else {
-                "✗"
+                "✗".red().to_string()
             };
             println!("{:<40} {} {}", pkg, source, installed);
         }
-        println!();
+        Output::blank();
     }
 
     // List groups
     if !merged.groups.is_empty() {
-        println!("GROUPS:");
+        Output::subheader("GROUPS:");
         for group in &merged.groups {
-            println!("  {}", group);
+            Output::list_item(group);
         }
-        println!();
+        Output::blank();
     }
 
     // List COPR repos
     if !merged.copr_repos.is_empty() {
-        println!("COPR REPOSITORIES:");
-        println!("{:<40} ENABLED  GPG", "NAME");
-        println!("{}", "-".repeat(60));
+        Output::subheader("COPR REPOSITORIES:");
+        println!("{:<40} {} {}", "NAME".cyan(), "ENABLED", "GPG");
+        Output::separator();
         for copr in &merged.copr_repos {
-            let enabled = if copr.enabled { "yes" } else { "no" };
-            let gpg = if copr.gpg_check { "yes" } else { "no" };
+            let enabled = if copr.enabled {
+                "yes".green().to_string()
+            } else {
+                "no".red().to_string()
+            };
+            let gpg = if copr.gpg_check {
+                "yes".green().to_string()
+            } else {
+                "no".yellow().to_string()
+            };
             println!("{:<40} {:<8} {}", copr.name, enabled, gpg);
         }
-        println!();
+        Output::blank();
     }
 
-    println!(
+    Output::success(format!(
         "{} packages, {} groups, {} COPR repos",
         merged.packages.len(),
         merged.groups.len(),
         merged.copr_repos.len()
-    );
+    ));
 
     Ok(())
 }
@@ -243,11 +253,11 @@ fn handle_install(packages: Vec<String>, now: bool, plan: &ExecutionPlan) -> Res
 
     // Report already-managed packages
     for pkg in &already_in_manifest {
-        println!("Already in manifest: {}", pkg);
+        Output::info(format!("Already in manifest: {}", pkg));
     }
 
     if new_packages.is_empty() && already_in_manifest.len() == packages.len() {
-        println!("All packages already in manifest.");
+        Output::success("All packages already in manifest.");
         return Ok(());
     }
 
@@ -257,10 +267,10 @@ fn handle_install(packages: Vec<String>, now: bool, plan: &ExecutionPlan) -> Res
             user.add_package(pkg.clone());
         }
         user.save_user()?;
-        println!("Added {} package(s) to user manifest", new_packages.len());
+        Output::success(format!("Added {} package(s) to user manifest", new_packages.len()));
     } else if plan.dry_run {
         for pkg in &new_packages {
-            println!("[dry-run] Would add to manifest: {}", pkg);
+            Output::dry_run(format!("Would add to manifest: {}", pkg));
         }
     }
 
@@ -281,14 +291,14 @@ fn handle_install(packages: Vec<String>, now: bool, plan: &ExecutionPlan) -> Res
         match plan.context {
             ExecutionContext::Host => {
                 let live = if now { " --apply-live" } else { "" };
-                println!(
-                    "[dry-run] Would run: rpm-ostree install{} {}",
+                Output::dry_run(format!(
+                    "Would run: rpm-ostree install{} {}",
                     live,
                     packages.join(" ")
-                );
+                ));
             }
             ExecutionContext::Dev => {
-                println!("[dry-run] Would run: dnf install -y {}", packages.join(" "));
+                Output::dry_run(format!("Would run: dnf install -y {}", packages.join(" ")));
             }
             ExecutionContext::Image => {}
         }
@@ -325,7 +335,7 @@ fn install_via_rpm_ostree(packages: &[String], now: bool) -> Result<()> {
         args.push(pkg.as_str());
     }
 
-    println!("Running: rpm-ostree {}", args.join(" "));
+    Output::running(format!("rpm-ostree {}", args.join(" ")));
 
     let status = Command::new("rpm-ostree")
         .args(&args)
@@ -337,9 +347,9 @@ fn install_via_rpm_ostree(packages: &[String], now: bool) -> Result<()> {
     }
 
     if now {
-        println!("✓ Packages installed and applied live");
+        Output::success("Packages installed and applied live");
     } else {
-        println!("✓ Packages staged for next boot (reboot required)");
+        Output::success("Packages staged for next boot (reboot required)");
     }
 
     Ok(())
@@ -352,7 +362,7 @@ fn install_via_dnf(packages: &[String]) -> Result<()> {
         args.push(pkg.as_str());
     }
 
-    println!("Running: dnf {}", args.join(" "));
+    Output::running(format!("dnf {}", args.join(" ")));
 
     let status = Command::new("dnf")
         .args(&args)
@@ -363,7 +373,7 @@ fn install_via_dnf(packages: &[String]) -> Result<()> {
         bail!("dnf install failed");
     }
 
-    println!("✓ Packages installed in toolbox");
+    Output::success("Packages installed in toolbox");
     Ok(())
 }
 
@@ -386,23 +396,23 @@ fn handle_remove(packages: Vec<String>, plan: &ExecutionPlan) -> Result<()> {
         let in_user = user.find_package(pkg);
 
         if in_system && !in_user && !plan.should_create_pr() {
-            println!(
-                "Note: '{}' is only in the system manifest; run this command without the --local flag to also create a PR to remove it from the system manifest",
+            Output::info(format!(
+                "'{}' is only in the system manifest; run without --local to create a PR",
                 pkg
-            );
+            ));
         }
 
         if plan.should_update_local_manifest() {
             if user.remove_package(pkg) {
-                println!("Removed from user manifest: {}", pkg);
+                Output::success(format!("Removed from user manifest: {}", pkg));
             } else if !in_system {
-                println!("Package not found in manifest: {}", pkg);
+                Output::warning(format!("Package not found in manifest: {}", pkg));
             }
         } else if plan.dry_run {
             if in_user {
-                println!("[dry-run] Would remove from user manifest: {}", pkg);
+                Output::dry_run(format!("Would remove from user manifest: {}", pkg));
             } else if !in_system {
-                println!("[dry-run] Package not found in manifest: {}", pkg);
+                Output::dry_run(format!("Package not found in manifest: {}", pkg));
             }
         }
     }
@@ -425,13 +435,13 @@ fn handle_remove(packages: Vec<String>, plan: &ExecutionPlan) -> Result<()> {
     } else if plan.dry_run {
         match plan.context {
             ExecutionContext::Host => {
-                println!(
-                    "[dry-run] Would run: rpm-ostree uninstall {}",
+                Output::dry_run(format!(
+                    "Would run: rpm-ostree uninstall {}",
                     packages.join(" ")
-                );
+                ));
             }
             ExecutionContext::Dev => {
-                println!("[dry-run] Would run: dnf remove -y {}", packages.join(" "));
+                Output::dry_run(format!("Would run: dnf remove -y {}", packages.join(" ")));
             }
             ExecutionContext::Image => {}
         }
@@ -458,7 +468,7 @@ fn handle_remove(packages: Vec<String>, plan: &ExecutionPlan) -> Result<()> {
                 &manifest_content,
             )?;
         } else {
-            println!("Note: No packages to remove from system manifest, no PR needed");
+            Output::info("No packages to remove from system manifest, no PR needed");
         }
     }
 
@@ -472,7 +482,7 @@ fn remove_via_rpm_ostree(packages: &[String]) -> Result<()> {
         args.push(pkg.as_str());
     }
 
-    println!("Running: rpm-ostree {}", args.join(" "));
+    Output::running(format!("rpm-ostree {}", args.join(" ")));
 
     let status = Command::new("rpm-ostree")
         .args(&args)
@@ -483,7 +493,7 @@ fn remove_via_rpm_ostree(packages: &[String]) -> Result<()> {
         bail!("rpm-ostree uninstall failed");
     }
 
-    println!("✓ Packages staged for removal (reboot required)");
+    Output::success("Packages staged for removal (reboot required)");
     Ok(())
 }
 
@@ -494,7 +504,7 @@ fn remove_via_dnf(packages: &[String]) -> Result<()> {
         args.push(pkg.as_str());
     }
 
-    println!("Running: dnf {}", args.join(" "));
+    Output::running(format!("dnf {}", args.join(" ")));
 
     let status = Command::new("dnf")
         .args(&args)
@@ -505,7 +515,7 @@ fn remove_via_dnf(packages: &[String]) -> Result<()> {
         bail!("dnf remove failed");
     }
 
-    println!("✓ Packages removed from toolbox");
+    Output::success("Packages removed from toolbox");
     Ok(())
 }
 
@@ -529,23 +539,25 @@ fn handle_diff(_plan: &ExecutionPlan) -> Result<()> {
         }
     }
 
-    println!("Installed ({}):", installed.len());
+    Output::subheader(format!("Installed ({}):", installed.len()));
     for pkg in &installed {
-        println!("  ✓ {}", pkg);
+        println!("  {} {}", "✓".green(), pkg);
     }
 
-    println!("\nNot installed ({}):", not_installed.len());
+    Output::blank();
+    Output::subheader(format!("Not installed ({}):", not_installed.len()));
     for pkg in &not_installed {
-        println!("  ✗ {}", pkg);
+        println!("  {} {}", "✗".red(), pkg);
     }
 
+    Output::blank();
     if not_installed.is_empty() {
-        println!("\nAll manifest packages are installed.");
+        Output::success("All manifest packages are installed.");
     } else {
-        println!(
-            "\nRun 'bkt dnf sync' to install {} missing package(s).",
+        Output::hint(format!(
+            "Run 'bkt dnf sync' to install {} missing package(s).",
             not_installed.len()
-        );
+        ));
     }
 
     Ok(())
@@ -571,13 +583,13 @@ fn handle_sync(now: bool, plan: &ExecutionPlan) -> Result<()> {
     }
 
     if to_install.is_empty() {
-        println!("All manifest packages are already installed.");
+        Output::success("All manifest packages are already installed.");
         return Ok(());
     }
 
-    println!("{} package(s) to install:", to_install.len());
+    Output::info(format!("{} package(s) to install:", to_install.len()));
     for pkg in &to_install {
-        println!("  {}", pkg);
+        Output::list_item(pkg);
     }
 
     if plan.should_execute_locally() {
@@ -591,7 +603,7 @@ fn handle_sync(now: bool, plan: &ExecutionPlan) -> Result<()> {
             ExecutionContext::Image => {}
         }
     } else if plan.dry_run {
-        println!("[dry-run] Would install {} packages", to_install.len());
+        Output::dry_run(format!("Would install {} packages", to_install.len()));
     }
 
     Ok(())
@@ -616,12 +628,12 @@ fn handle_copr_enable(name: String, plan: &ExecutionPlan) -> Result<()> {
     let mut user = SystemPackagesManifest::load_user()?;
 
     // Check if already enabled
-    if let Some(copr) = system
+    if system
         .find_copr(&name)
         .or_else(|| user.find_copr(&name))
-        .filter(|c| c.enabled)
+        .is_some_and(|c| c.enabled)
     {
-        println!("COPR already enabled: {}", copr.name);
+        Output::info(format!("COPR already enabled: {}", name));
         return Ok(());
     }
 
@@ -629,14 +641,14 @@ fn handle_copr_enable(name: String, plan: &ExecutionPlan) -> Result<()> {
     if plan.should_update_local_manifest() {
         user.upsert_copr(CoprRepo::new(name.clone()));
         user.save_user()?;
-        println!("Added to user manifest: {}", name);
+        Output::success(format!("Added to user manifest: {}", name));
     } else if plan.dry_run {
-        println!("[dry-run] Would add COPR to manifest: {}", name);
+        Output::dry_run(format!("Would add COPR to manifest: {}", name));
     }
 
     // Execute on host
     if plan.should_execute_locally() && plan.context == ExecutionContext::Host {
-        println!("Running: dnf copr enable -y {}", name);
+        Output::running(format!("dnf copr enable -y {}", name));
         let status = Command::new("dnf")
             .args(["copr", "enable", "-y", &name])
             .status()
@@ -645,9 +657,9 @@ fn handle_copr_enable(name: String, plan: &ExecutionPlan) -> Result<()> {
         if !status.success() {
             bail!("Failed to enable COPR: {}", name);
         }
-        println!("✓ COPR enabled: {}", name);
+        Output::success(format!("COPR enabled: {}", name));
     } else if plan.dry_run && plan.context == ExecutionContext::Host {
-        println!("[dry-run] Would run: dnf copr enable -y {}", name);
+        Output::dry_run(format!("Would run: dnf copr enable -y {}", name));
     }
 
     // Create PR if needed
@@ -678,28 +690,28 @@ fn handle_copr_disable(name: String, plan: &ExecutionPlan) -> Result<()> {
     let in_user = user.find_copr(&name).is_some();
 
     if !in_system && !in_user {
-        println!("COPR not found in manifest: {}", name);
+        Output::warning(format!("COPR not found in manifest: {}", name));
         return Ok(());
     }
 
     if in_system && !in_user && !plan.should_create_pr() {
-        println!(
-            "Note: '{}' is only in the system manifest; run without --local to create a PR",
+        Output::info(format!(
+            "'{}' is only in the system manifest; run without --local to create a PR",
             name
-        );
+        ));
     }
 
     // Update manifest
     if plan.should_update_local_manifest() && user.remove_copr(&name) {
         user.save_user()?;
-        println!("Removed from user manifest: {}", name);
+        Output::success(format!("Removed from user manifest: {}", name));
     } else if plan.dry_run && in_user {
-        println!("[dry-run] Would remove COPR from manifest: {}", name);
+        Output::dry_run(format!("Would remove COPR from manifest: {}", name));
     }
 
     // Execute on host
     if plan.should_execute_locally() && plan.context == ExecutionContext::Host {
-        println!("Running: dnf copr disable {}", name);
+        Output::running(format!("dnf copr disable {}", name));
         let status = Command::new("dnf")
             .args(["copr", "disable", &name])
             .status()
@@ -708,7 +720,7 @@ fn handle_copr_disable(name: String, plan: &ExecutionPlan) -> Result<()> {
         if !status.success() {
             bail!("Failed to disable COPR: {}", name);
         }
-        println!("✓ COPR disabled: {}", name);
+        Output::success(format!("COPR disabled: {}", name));
     }
 
     // Create PR if needed
@@ -735,21 +747,30 @@ fn handle_copr_list() -> Result<()> {
     let merged = SystemPackagesManifest::merged(&system, &user);
 
     if merged.copr_repos.is_empty() {
-        println!("No COPR repositories in manifest.");
+        Output::info("No COPR repositories in manifest.");
         return Ok(());
     }
 
-    println!("{:<40} {:<8} {:<8} SOURCE", "NAME", "ENABLED", "GPG");
-    println!("{}", "-".repeat(70));
+    Output::subheader("COPR REPOSITORIES:");
+    println!("{:<40} {:<8} {:<8} {}", "NAME".cyan(), "ENABLED", "GPG", "SOURCE");
+    Output::separator();
 
     for copr in &merged.copr_repos {
         let source = if user.find_copr(&copr.name).is_some() {
-            "user"
+            "user".yellow().to_string()
         } else {
-            "system"
+            "system".dimmed().to_string()
         };
-        let enabled = if copr.enabled { "yes" } else { "no" };
-        let gpg = if copr.gpg_check { "yes" } else { "no" };
+        let enabled = if copr.enabled {
+            "yes".green().to_string()
+        } else {
+            "no".red().to_string()
+        };
+        let gpg = if copr.gpg_check {
+            "yes".green().to_string()
+        } else {
+            "no".yellow().to_string()
+        };
         println!("{:<40} {:<8} {:<8} {}", copr.name, enabled, gpg, source);
     }
 

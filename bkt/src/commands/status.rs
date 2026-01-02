@@ -5,6 +5,7 @@
 use crate::manifest::{
     FlatpakAppsManifest, GSettingsManifest, GnomeExtensionsManifest, ShimsManifest,
 };
+use crate::output::Output;
 use crate::repo::find_repo_path;
 use anyhow::Result;
 use clap::Args;
@@ -264,8 +265,8 @@ pub fn run(args: StatusArgs) -> Result<()> {
     }
 
     // Table output
-    println!("{}", "bkt status".bold());
-    println!();
+    Output::header("bkt status");
+    Output::blank();
 
     // Flatpaks
     let flatpak_info = if report.flatpaks.pending > 0 {

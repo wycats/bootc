@@ -2,9 +2,11 @@
 
 use crate::context::CommandDomain;
 use crate::manifest::{FlatpakApp, FlatpakAppsManifest, FlatpakScope};
+use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
+use owo_colors::OwoColorize;
 use std::process::Command;
 
 #[derive(Debug, Args)]
@@ -105,33 +107,35 @@ fn sync_flatpaks(plan: &ExecutionPlan) -> Result<()> {
         }
 
         if plan.dry_run {
-            println!(
+            Output::dry_run(format!(
                 "Would install: {} from {} ({})",
                 app.id, app.remote, app.scope
-            );
+            ));
         } else if plan.should_execute_locally() {
-            print!("Installing {} ({})... ", app.id, app.scope);
+            let spinner = Output::spinner(format!("Installing {} ({})...", app.id, app.scope));
             if install_flatpak(app)? {
-                println!("✓");
+                spinner.finish_success(format!("Installed {}", app.id));
                 installed += 1;
             } else {
-                println!("✗");
+                spinner.finish_error(format!("Failed to install {}", app.id));
                 failed += 1;
             }
         }
     }
 
     if plan.dry_run {
-        println!(
-            "\nDry run: {} already installed, {} would be installed",
+        Output::blank();
+        Output::info(format!(
+            "Dry run: {} already installed, {} would be installed",
             skipped,
             merged.apps.len() - skipped
-        );
+        ));
     } else {
-        println!(
-            "\nSync complete: {} installed, {} already present, {} failed",
+        Output::blank();
+        Output::info(format!(
+            "Sync complete: {} installed, {} already present, {} failed",
             installed, skipped, failed
-        );
+        ));
     }
 
     Ok(())
@@ -156,7 +160,7 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
             let already_exists = system.find(&app_id).is_some() || user.find(&app_id).is_some();
 
             if already_exists {
-                println!("Flatpak already in manifest: {}", app_id);
+                Output::warning(format!("Flatpak already in manifest: {}", app_id));
             } else if plan.should_update_local_manifest() {
                 let app = FlatpakApp {
                     id: app_id.clone(),
@@ -165,31 +169,34 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
                 };
                 user.upsert(app.clone());
                 user.save_user()?;
-                println!("Added to user manifest: {} ({}, {})", app_id, remote, scope);
-            } else if plan.dry_run {
-                println!(
-                    "[dry-run] Would add to manifest: {} ({}, {})",
+                Output::success(format!(
+                    "Added to user manifest: {} ({}, {})",
                     app_id, remote, scope
-                );
+                ));
+            } else if plan.dry_run {
+                Output::dry_run(format!(
+                    "Would add to manifest: {} ({}, {})",
+                    app_id, remote, scope
+                ));
             }
 
             // Install the flatpak
             if plan.should_execute_locally() && !is_installed(&app_id) {
-                print!("Installing {}... ", app_id);
+                let spinner = Output::spinner(format!("Installing {}...", app_id));
                 let app = FlatpakApp {
                     id: app_id.clone(),
                     remote: remote.clone(),
                     scope,
                 };
                 if install_flatpak(&app)? {
-                    println!("✓");
+                    spinner.finish_success(format!("Installed {}", app_id));
                 } else {
-                    println!("✗ (failed)");
+                    spinner.finish_error(format!("Failed to install {}", app_id));
                 }
             } else if plan.dry_run && !is_installed(&app_id) {
-                println!("[dry-run] Would install: {}", app_id);
+                Output::dry_run(format!("Would install: {}", app_id));
             } else if is_installed(&app_id) {
-                println!("Already installed: {}", app_id);
+                Output::info(format!("Already installed: {}", app_id));
             }
 
             // Create PR if needed
@@ -222,40 +229,40 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
             // Check if it's in system manifest
             let in_system = system.find(&app_id).is_some();
             if in_system && user.find(&app_id).is_none() && !plan.should_create_pr() {
-                println!(
-                    "Note: '{}' is only in the system manifest; run this command without the --local flag to also create a PR to remove it from the system manifest",
+                Output::info(format!(
+                    "'{}' is only in the system manifest; run without --local to create a PR",
                     app_id
-                );
+                ));
             }
 
             if plan.should_update_local_manifest() {
                 if user.remove(&app_id) {
                     user.save_user()?;
-                    println!("Removed from user manifest: {}", app_id);
+                    Output::success(format!("Removed from user manifest: {}", app_id));
                 } else if !in_system {
-                    println!("Flatpak not found in manifest: {}", app_id);
+                    Output::warning(format!("Flatpak not found in manifest: {}", app_id));
                 }
             } else if plan.dry_run {
                 if user.find(&app_id).is_some() {
-                    println!("[dry-run] Would remove from user manifest: {}", app_id);
+                    Output::dry_run(format!("Would remove from user manifest: {}", app_id));
                 } else if !in_system {
-                    println!("[dry-run] Flatpak not found in manifest: {}", app_id);
+                    Output::dry_run(format!("Flatpak not found in manifest: {}", app_id));
                 }
             }
 
             // Optionally uninstall
             if plan.should_execute_locally() && is_installed(&app_id) {
-                print!("Uninstalling {}... ", app_id);
+                let spinner = Output::spinner(format!("Uninstalling {}...", app_id));
                 // Try system first, then user
                 if uninstall_flatpak(&app_id, FlatpakScope::System)?
                     || uninstall_flatpak(&app_id, FlatpakScope::User)?
                 {
-                    println!("✓");
+                    spinner.finish_success(format!("Uninstalled {}", app_id));
                 } else {
-                    println!("✗ (may need manual removal)");
+                    spinner.finish_warning(format!("May need manual removal: {}", app_id));
                 }
             } else if plan.dry_run && is_installed(&app_id) {
-                println!("[dry-run] Would uninstall: {}", app_id);
+                Output::dry_run(format!("Would uninstall: {}", app_id));
             }
 
             // Create PR if needed
@@ -272,7 +279,7 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
                         &manifest_content,
                     )?;
                 } else {
-                    println!("Note: '{}' not in system manifest, no PR needed", app_id);
+                    Output::info(format!("'{}' not in system manifest, no PR needed", app_id));
                 }
             }
         }
@@ -285,32 +292,45 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&merged)?);
             } else {
                 if merged.apps.is_empty() {
-                    println!("No flatpak apps in manifest.");
+                    Output::info("No flatpak apps in manifest.");
                     return Ok(());
                 }
 
-                println!("{:<50} {:<12} {:<8} SOURCE", "ID", "REMOTE", "SCOPE");
-                println!("{}", "-".repeat(80));
+                Output::subheader("FLATPAK APPS:");
+                println!(
+                    "{:<50} {:<12} {:<8} {} {}",
+                    "ID".cyan(),
+                    "REMOTE".cyan(),
+                    "SCOPE".cyan(),
+                    "SOURCE".cyan(),
+                    "INSTALLED".cyan()
+                );
+                Output::separator();
 
                 for app in &merged.apps {
                     let source = if user.find(&app.id).is_some() {
-                        "user"
+                        "user".yellow().to_string()
                     } else {
-                        "system"
+                        "system".dimmed().to_string()
                     };
-                    let installed = if is_installed(&app.id) { "✓" } else { "✗" };
+                    let installed = if is_installed(&app.id) {
+                        "✓".green().to_string()
+                    } else {
+                        "✗".red().to_string()
+                    };
                     println!(
-                        "{:<50} {:<12} {:<8} {} {}",
+                        "{:<50} {:<12} {:<8} {:>8} {}",
                         app.id, app.remote, app.scope, source, installed
                     );
                 }
 
-                println!(
-                    "\n{} apps ({} system, {} user)",
+                Output::blank();
+                Output::info(format!(
+                    "{} apps ({} system, {} user)",
                     merged.apps.len(),
                     system.apps.len(),
                     user.apps.len()
-                );
+                ));
             }
         }
         FlatpakAction::Sync => {

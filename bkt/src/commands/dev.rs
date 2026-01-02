@@ -22,9 +22,11 @@
 
 use crate::context::{CommandDomain, ExecutionContext};
 use crate::manifest::ToolboxPackagesManifest;
+use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
+use owo_colors::OwoColorize;
 use std::process::Command;
 
 #[derive(Debug, Args)]
@@ -101,12 +103,12 @@ fn handle_enter(name: Option<String>) -> Result<()> {
     let exists = check_toolbox_exists(&toolbox_name)?;
 
     if !exists {
-        println!("Toolbox '{}' not found. Creating...", toolbox_name);
+        Output::info(format!("Toolbox '{}' not found. Creating...", toolbox_name));
         create_toolbox(&toolbox_name)?;
     }
 
     // Enter toolbox (uses exec, doesn't return)
-    println!("Entering toolbox: {}", toolbox_name);
+    Output::info(format!("Entering toolbox: {}", toolbox_name));
     enter_toolbox(&toolbox_name)
 }
 
@@ -137,7 +139,7 @@ fn create_toolbox(name: &str) -> Result<()> {
         bail!("Failed to create toolbox '{}'", name);
     }
 
-    println!("✓ Created toolbox: {}", name);
+    Output::success(format!("Created toolbox: {}", name));
     Ok(())
 }
 
@@ -145,9 +147,7 @@ fn enter_toolbox(name: &str) -> Result<()> {
     // Use exec to replace current process with toolbox shell
     use std::os::unix::process::CommandExt;
 
-    let err = Command::new("toolbox")
-        .args(["enter", name])
-        .exec();
+    let err = Command::new("toolbox").args(["enter", name]).exec();
 
     // exec() only returns on error
     bail!("Failed to enter toolbox: {}", err)
@@ -158,66 +158,70 @@ fn enter_toolbox(name: &str) -> Result<()> {
 // =============================================================================
 
 fn handle_status(plan: &ExecutionPlan) -> Result<()> {
-    println!("=== Development Toolbox Status ===\n");
+    Output::header("=== Development Toolbox Status ===");
 
     // Check if we're in a toolbox
     let in_toolbox = is_in_toolbox();
     if in_toolbox {
         if let Ok(name) = std::env::var("TOOLBOX_PATH") {
-            println!("Currently in toolbox: {}", name);
+            Output::kv("Toolbox", name);
         } else {
-            println!("Currently in a toolbox container");
+            Output::kv("Toolbox", "(in container)");
         }
     } else {
-        println!("Not in a toolbox (running on host)");
+        Output::kv("Toolbox", "not in toolbox (running on host)");
     }
-    println!();
+    Output::blank();
 
     // Load and display manifest
     let manifest = ToolboxPackagesManifest::load_user()?;
 
     if manifest.packages.is_empty() && manifest.groups.is_empty() {
-        println!("No packages in toolbox manifest.");
-        println!("\nAdd packages with: bkt dev dnf install <package>");
+        Output::info("No packages in toolbox manifest.");
+        Output::hint("Add packages with: bkt dev dnf install <package>");
         return Ok(());
     }
 
     // Display packages with installed status
     if !manifest.packages.is_empty() {
-        println!("PACKAGES:");
-        println!("{:<40} STATUS", "NAME");
-        println!("{}", "-".repeat(50));
+        Output::subheader("PACKAGES:");
+        println!("{:<40} STATUS", "NAME".cyan());
+        Output::separator();
 
         for pkg in &manifest.packages {
             let installed = if is_package_installed(pkg) {
-                "✓ installed"
+                format!("{} installed", "✓".green())
             } else {
-                "✗ not installed"
+                format!("{} not installed", "✗".red())
             };
             println!("{:<40} {}", pkg, installed);
         }
-        println!();
+        Output::blank();
     }
 
     // Display groups
     if !manifest.groups.is_empty() {
-        println!("GROUPS:");
+        Output::subheader("GROUPS:");
         for group in &manifest.groups {
-            println!("  {}", group);
+            Output::list_item(group);
         }
-        println!();
+        Output::blank();
     }
 
     // Display COPR repos
     if !manifest.copr_repos.is_empty() {
-        println!("COPR REPOSITORIES:");
-        println!("{:<40} ENABLED", "NAME");
-        println!("{}", "-".repeat(50));
+        Output::subheader("COPR REPOSITORIES:");
+        println!("{:<40} ENABLED", "NAME".cyan());
+        Output::separator();
         for copr in &manifest.copr_repos {
-            let status = if copr.enabled { "yes" } else { "no" };
+            let status = if copr.enabled {
+                "yes".green().to_string()
+            } else {
+                "no".red().to_string()
+            };
             println!("{:<40} {}", copr.name, status);
         }
-        println!();
+        Output::blank();
     }
 
     // Summary
@@ -227,15 +231,23 @@ fn handle_status(plan: &ExecutionPlan) -> Result<()> {
         .filter(|p| !is_package_installed(p))
         .collect();
 
-    println!(
-        "{} packages ({} installed, {} missing)",
-        manifest.packages.len(),
-        manifest.packages.len() - missing.len(),
-        missing.len()
-    );
-
-    if !missing.is_empty() && !plan.dry_run {
-        println!("\nTo install missing packages: bkt dev update");
+    let installed_count = manifest.packages.len() - missing.len();
+    if missing.is_empty() {
+        Output::success(format!(
+            "{} packages ({} installed)",
+            manifest.packages.len(),
+            installed_count
+        ));
+    } else {
+        Output::warning(format!(
+            "{} packages ({} installed, {} missing)",
+            manifest.packages.len(),
+            installed_count,
+            missing.len()
+        ));
+        if !plan.dry_run {
+            Output::hint("To install missing packages: bkt dev update");
+        }
     }
 
     Ok(())
@@ -248,8 +260,8 @@ fn handle_status(plan: &ExecutionPlan) -> Result<()> {
 fn handle_update(rebuild: bool, plan: &ExecutionPlan) -> Result<()> {
     if rebuild {
         // Future: implement full rebuild from Containerfile
-        println!("Full rebuild not yet implemented.");
-        println!("Use 'bkt dev dnf sync' to install missing packages.");
+        Output::warning("Full rebuild not yet implemented.");
+        Output::hint("Use 'bkt dev dnf sync' to install missing packages.");
         return Ok(());
     }
 
@@ -257,7 +269,7 @@ fn handle_update(rebuild: bool, plan: &ExecutionPlan) -> Result<()> {
     let manifest = ToolboxPackagesManifest::load_user()?;
 
     if manifest.packages.is_empty() && manifest.groups.is_empty() {
-        println!("Toolbox manifest is empty. Nothing to sync.");
+        Output::info("Toolbox manifest is empty. Nothing to sync.");
         return Ok(());
     }
 
@@ -269,22 +281,26 @@ fn handle_update(rebuild: bool, plan: &ExecutionPlan) -> Result<()> {
         .collect();
 
     if missing.is_empty() {
-        println!("✓ All {} packages are already installed.", manifest.packages.len());
+        Output::success(format!(
+            "All {} packages are already installed.",
+            manifest.packages.len()
+        ));
         return Ok(());
     }
 
-    println!(
+    Output::info(format!(
         "Installing {} missing package(s): {}",
         missing.len(),
         missing.join(", ")
-    );
+    ));
 
     if plan.dry_run {
-        println!("[dry-run] Would run: dnf install -y {}", missing.join(" "));
+        Output::dry_run(format!("Would run: dnf install -y {}", missing.join(" ")));
         return Ok(());
     }
 
     // Install missing packages via dnf
+    let spinner = Output::spinner("Installing packages...");
     let status = Command::new("dnf")
         .arg("install")
         .arg("-y")
@@ -293,10 +309,11 @@ fn handle_update(rebuild: bool, plan: &ExecutionPlan) -> Result<()> {
         .context("Failed to run dnf")?;
 
     if !status.success() {
+        spinner.finish_error("Installation failed");
         bail!("dnf install failed");
     }
 
-    println!("✓ Installed {} package(s)", missing.len());
+    spinner.finish_success(format!("Installed {} package(s)", missing.len()));
     Ok(())
 }
 
@@ -308,7 +325,7 @@ fn handle_diff(plan: &ExecutionPlan) -> Result<()> {
     let manifest = ToolboxPackagesManifest::load_user()?;
 
     if manifest.packages.is_empty() {
-        println!("Toolbox manifest is empty.");
+        Output::info("Toolbox manifest is empty.");
         return Ok(());
     }
 
@@ -323,28 +340,28 @@ fn handle_diff(plan: &ExecutionPlan) -> Result<()> {
         }
     }
 
-    println!("=== Toolbox Package Diff ===\n");
+    Output::header("=== Toolbox Package Diff ===");
 
     if !installed.is_empty() {
-        println!("Installed ({}):", installed.len());
+        Output::subheader(format!("Installed ({}):", installed.len()));
         for pkg in &installed {
-            println!("  ✓ {}", pkg);
+            println!("  {} {}", "✓".green(), pkg);
         }
-        println!();
+        Output::blank();
     }
 
     if !missing.is_empty() {
-        println!("Missing ({}):", missing.len());
+        Output::subheader(format!("Missing ({}):", missing.len()));
         for pkg in &missing {
-            println!("  ✗ {}", pkg);
+            println!("  {} {}", "✗".red(), pkg);
         }
-        println!();
+        Output::blank();
 
         if !plan.dry_run {
-            println!("To install missing packages: bkt dev update");
+            Output::hint("To install missing packages: bkt dev update");
         }
     } else {
-        println!("All packages are installed ✓");
+        Output::success("All packages are installed");
     }
 
     Ok(())
