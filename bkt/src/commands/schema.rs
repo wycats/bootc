@@ -2,7 +2,7 @@
 
 use crate::manifest::{
     FlatpakApp, FlatpakAppsManifest, FlatpakRemote, FlatpakRemotesManifest, GSetting,
-    GSettingsManifest, GnomeExtensionsManifest, Shim, ShimsManifest,
+    GSettingsManifest, GnomeExtensionsManifest, Shim, ShimsManifest, UpstreamManifest,
 };
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -81,6 +81,11 @@ const SCHEMAS: &[SchemaInfo] = &[
         filename: "host-shims.schema.json",
         description: "The host-shims.json manifest",
     },
+    SchemaInfo {
+        name: "UpstreamManifest",
+        filename: "upstream-manifest.schema.json",
+        description: "The upstream/manifest.json manifest for tracking upstream dependencies",
+    },
 ];
 
 /// Generate all schemas and return them as (filename, json) pairs.
@@ -121,6 +126,10 @@ fn generate_all_schemas() -> Vec<(&'static str, String)> {
         (
             "host-shims.schema.json",
             serde_json::to_string_pretty(&schema_for!(ShimsManifest)).unwrap(),
+        ),
+        (
+            "upstream-manifest.schema.json",
+            serde_json::to_string_pretty(&schema_for!(UpstreamManifest)).unwrap(),
         ),
     ]
 }
