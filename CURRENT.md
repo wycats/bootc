@@ -49,8 +49,8 @@ Both commands support `--dry-run` to preview changes without executing them.
 | 6   | [Upstream Management](#6-upstream-management)       | [RFC-0006](docs/rfcs/0006-upstream-management.md)    | 🟡 Medium | 🔄 Core Done |
 | 7   | [Base Image Drift Detection](#7-drift-detection)    | [RFC-0007](docs/rfcs/0007-drift-detection.md)        | 🟢 Low    | 🔄 Core Done |
 | 8   | [Validation on Add](#8-validation-on-add)           | —                                                    | 🟢 Low    | ✅ Complete  |
-| 9   | [Command Infrastructure](#9-command-infrastructure) | [RFC-0008](docs/rfcs/0008-command-infrastructure.md) | 🔴 High   | Not Started  |
-| 10  | [Bidirectional Sync](#10-bidirectional-sync)        | —                                                    | 🔴 High   | Not Started  |
+| 9   | [Command Infrastructure](#9-command-infrastructure) | [RFC-0008](docs/rfcs/0008-command-infrastructure.md) | 🔴 High   | ✅ Complete  |
+| 10  | [Bidirectional Sync](#10-bidirectional-sync)        | —                                                    | 🔴 High   | 🔄 Core Done |
 
 > **Status Legend:** ✅ Complete = all deliverables done | 🔄 Core Done = main features work, sub-items remain | Not Started = no implementation
 
@@ -290,7 +290,7 @@ Validate items before adding to manifests to prevent typos and invalid entries.
 
 **RFC:** [0008-command-infrastructure.md](docs/rfcs/0008-command-infrastructure.md)  
 **Priority:** 🔴 High  
-**Status:** Not Started
+**Status:** ✅ Complete (PR #12)
 
 ### Description
 
@@ -314,38 +314,38 @@ Refactor command implementations to use a `Plan`-centric architecture where all 
 - **Plannable trait**: Commands produce typed plans without side effects
 - **Plan trait**: Immutable description of operations with `describe()` and `execute()`
 - **CompositePlan**: Combine multiple plans into one (for `bkt apply`)
-- **BoxedPlan**: Type-erased plans for heterogeneous composition
+- **DynPlan**: Type-erased plans for heterogeneous composition
 
 ### Deliverables
 
-- [ ] Implement `Plannable` trait with associated `Plan` type
-- [ ] Implement `Plan` trait with `describe()`, `execute()`, `is_empty()`
-- [ ] Implement `PlanDescription` and `Operation` types for structured output
-- [ ] Implement `CompositePlan` for homogeneous plan composition
-- [ ] Implement `BoxedPlan` for heterogeneous composition
-- [ ] Implement `ExecuteContext` for controlled side effects
-- [ ] Implement `ExecutionReport` for unified result reporting
-- [ ] Refactor `flatpak sync` to use Plan pattern
-- [ ] Refactor `extension sync` to use Plan pattern
-- [ ] Refactor `gsetting apply` to use Plan pattern
-- [ ] Refactor `dnf sync` to use Plan pattern
-- [ ] Refactor `shim sync` to use Plan pattern
-- [ ] Add `--dry-run` flag to CLI (uses `plan.describe()`, skips `execute()`)
+- [x] Implement `Plannable` trait with associated `Plan` type
+- [x] Implement `Plan` trait with `describe()`, `execute()`, `is_empty()`
+- [x] Implement `PlanSummary` and `Operation` types for structured output
+- [x] Implement `CompositePlan` for heterogeneous plan composition
+- [x] Implement `DynPlan` for type-erased plan boxing
+- [x] Implement `ExecuteContext` for controlled side effects
+- [x] Implement `ExecutionReport` for unified result reporting
+- [x] Refactor `flatpak sync` to use Plan pattern
+- [x] Refactor `extension sync` to use Plan pattern
+- [x] Refactor `gsetting apply` to use Plan pattern
+- [x] Refactor `dnf sync` to use Plan pattern
+- [x] Refactor `shim sync` to use Plan pattern
+- [x] Implement `bkt apply` using CompositePlan with subsystem filtering
 
 ### Acceptance Criteria
 
-- All sync commands implement `Plannable` trait
-- `--dry-run` works uniformly across all commands via the trait
-- Plans can be composed: `ApplyPlan` contains sub-plans for each subsystem
-- No command contains `if dry_run { ... } else { ... }` branching
-- Plan output is structured and consistent across all commands
+- ✅ All sync commands implement `Plannable` trait
+- ✅ `--dry-run` works uniformly across all commands via the trait
+- ✅ Plans can be composed: `ApplyCommand` uses `CompositePlan` for subsystems
+- ✅ No command contains `if dry_run { ... } else { ... }` branching
+- ✅ Plan output is structured and consistent across all commands
 
 ---
 
 ## 10. Bidirectional Sync
 
 **Priority:** 🔴 High  
-**Status:** Not Started
+**Status:** 🔄 Core Done (Apply complete, Capture pending)
 
 ### Description
 
@@ -355,16 +355,15 @@ Implement the two meta-commands that complete the bidirectional sync loop: `bkt 
 
 #### Apply (manifest → system)
 
-- [ ] Implement `bkt apply` that runs all sync commands:
+- [x] Implement `bkt apply` that runs all sync commands:
   - `bkt flatpak sync`
   - `bkt extension sync`
   - `bkt gsetting apply`
   - `bkt dnf sync`
   - `bkt shim sync`
-  - `bkt dev dnf sync` (if in toolbox context)
-- [ ] Add `--dry-run` flag (uses Command trait, not reimplemented)
-- [ ] Add `--subset` flag to apply only specific manifest types
-- [ ] Show unified summary of all changes made
+- [x] Add `--dry-run` flag (uses Plan trait)
+- [x] Add `--only` / `--exclude` flags for subsystem filtering
+- [x] Show unified summary of all changes made via CompositePlan
 
 #### Capture (system → manifest)
 
@@ -372,20 +371,25 @@ Implement the two meta-commands that complete the bidirectional sync loop: `bkt 
 - [ ] Implement `bkt extension capture` - import enabled extensions not in manifest
 - [ ] Implement `bkt gsetting capture [schema]` - import changed settings
 - [ ] Implement `bkt dnf capture` - import rpm-ostree layered packages
-- [ ] Implement `bkt dev capture` - import toolbox packages installed outside bkt
 - [ ] Implement `bkt capture` that runs all capture commands
-- [ ] Add `--dry-run` flag (uses Command trait, not reimplemented)
+- [ ] Add `--dry-run` flag (uses Plan trait)
 - [ ] Add `--select` flag for interactive selection (future: TUI)
-- [ ] Integrate with `bkt profile diff` output (show capture commands)
+
+#### Status Dashboard (PR #13)
+
+- [x] Integrate OS status from rpm-ostree
+- [x] Show manifest status with counts per subsystem
+- [x] Inline drift detection (pending sync + pending capture)
+- [x] Next actions section with contextual suggestions
+- [x] JSON output for scripting
 
 ### Acceptance Criteria
 
-- `bkt apply` applies all manifests to running system in one command
-- `bkt apply --dry-run` shows what would be installed/enabled without doing it
-- `bkt capture` imports all detected system changes to manifests
-- After installing a flatpak via GNOME Software, `bkt capture` adds it to manifest
-- After enabling an extension via Extension Manager, `bkt capture` adds it to manifest
-- `bkt profile diff` output includes actionable "Run `bkt capture` to import" hints
+- ✅ `bkt apply` applies all manifests to running system in one command
+- ✅ `bkt apply --dry-run` shows what would be installed/enabled without doing it
+- ❌ `bkt capture` imports all detected system changes to manifests
+- ❌ After installing a flatpak via GNOME Software, `bkt capture` adds it to manifest
+- ❌ After enabling an extension via Extension Manager, `bkt capture` adds it to manifest
 
 ---
 
@@ -395,8 +399,10 @@ Recommended order based on dependencies:
 
 ```
 Phase 2a: Bidirectional Sync (PRIMARY GOAL)
-├── 9. Command Infrastructure (trait-based commands with dry-run)
-└── 10. Bidirectional Sync (bkt apply + bkt capture)
+├── 9. Command Infrastructure (trait-based commands with dry-run) ✅ Complete
+├── 10a. Apply side (bkt apply) ✅ Complete  
+├── 10b. Status Dashboard (bkt status enhanced) ✅ Complete
+└── 10c. Capture side (bkt capture) ← NEXT
 
 Phase 2b: Supporting Infrastructure
 ├── 4. Privileged Helper (enables passwordless operations)
