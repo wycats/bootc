@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ChangelogEntry",
+  "description": "A single changelog entry, stored in `.changelog/pending/` or within a version file.",
+  "type": "object",
+  "properties": {
+    "category": {
+      "description": "The category of change",
+      "$ref": "#/$defs/ChangeCategory"
+    },
+    "command": {
+      "description": "The bkt command that triggered this change (if any)",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "draft": {
+      "description": "Whether this is a draft entry (drafts cannot be merged)",
+      "type": "boolean",
+      "default": false
+    },
+    "message": {
+      "description": "Human-readable description of the change",
+      "type": "string"
+    },
+    "pr": {
+      "description": "The PR number this change was merged in (set when PR is created/merged)",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0
+    },
+    "timestamp": {
+      "description": "When this change was made",
+      "type": "string",
+      "format": "date-time"
+    },
+    "type": {
+      "description": "The type of change",
+      "$ref": "#/$defs/ChangeType"
+    }
+  },
+  "required": [
+    "timestamp",
+    "type",
+    "category",
+    "message"
+  ],
+  "$defs": {
+    "ChangeCategory": {
+      "description": "The category of change (which manifest type was affected).",
+      "oneOf": [
+        {
+          "description": "Flatpak application change",
+          "type": "string",
+          "const": "flatpak"
+        },
+        {
+          "description": "Flatpak remote change",
+          "type": "string",
+          "const": "flatpakremote"
+        },
+        {
+          "description": "System RPM package change",
+          "type": "string",
+          "const": "package"
+        },
+        {
+          "description": "Toolbox package change",
+          "type": "string",
+          "const": "toolboxpackage"
+        },
+        {
+          "description": "GNOME extension change",
+          "type": "string",
+          "const": "extension"
+        },
+        {
+          "description": "GSettings change",
+          "type": "string",
+          "const": "gsetting"
+        },
+        {
+          "description": "Host shim change",
+          "type": "string",
+          "const": "shim"
+        },
+        {
+          "description": "Upstream dependency change",
+          "type": "string",
+          "const": "upstream"
+        },
+        {
+          "description": "COPR repository change",
+          "type": "string",
+          "const": "copr"
+        },
+        {
+          "description": "System configuration change",
+          "type": "string",
+          "const": "system"
+        },
+        {
+          "description": "Other/miscellaneous change",
+          "type": "string",
+          "const": "other"
+        }
+      ]
+    },
+    "ChangeType": {
+      "description": "The type of change being recorded.",
+      "oneOf": [
+        {
+          "description": "Something was added",
+          "type": "string",
+          "const": "added"
+        },
+        {
+          "description": "Something was changed/updated",
+          "type": "string",
+          "const": "changed"
+        },
+        {
+          "description": "Something was removed",
+          "type": "string",
+          "const": "removed"
+        },
+        {
+          "description": "Something was fixed",
+          "type": "string",
+          "const": "fixed"
+        },
+        {
+          "description": "Security-related change",
+          "type": "string",
+          "const": "security"
+        },
+        {
+          "description": "Deprecated functionality",
+          "type": "string",
+          "const": "deprecated"
+        }
+      ]
+    }
+  }
+}
