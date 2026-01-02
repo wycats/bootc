@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UpstreamManifest",
+  "description": "The upstream manifest (upstream/manifest.json).",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "upstreams": {
+      "description": "List of upstream dependencies",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Upstream"
+      }
+    }
+  },
+  "$defs": {
+    "InstallConfig": {
+      "description": "How to install an upstream dependency.",
+      "oneOf": [
+        {
+          "description": "Extract an archive",
+          "type": "object",
+          "properties": {
+            "extract_to": {
+              "description": "Target directory for extraction",
+              "type": "string"
+            },
+            "strip_components": {
+              "description": "Number of leading path components to strip",
+              "type": "integer",
+              "format": "uint32",
+              "default": 0,
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "archive"
+            }
+          },
+          "required": [
+            "type",
+            "extract_to"
+          ]
+        },
+        {
+          "description": "Install a binary",
+          "type": "object",
+          "properties": {
+            "install_path": {
+              "description": "Target installation path",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "binary"
+            }
+          },
+          "required": [
+            "type",
+            "install_path"
+          ]
+        },
+        {
+          "description": "Run an install script",
+          "type": "object",
+          "properties": {
+            "command": {
+              "description": "Script command to run",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "script"
+            }
+          },
+          "required": [
+            "type",
+            "command"
+          ]
+        }
+      ]
+    },
+    "PinnedVersion": {
+      "description": "Pinned version information.",
+      "type": "object",
+      "properties": {
+        "commit": {
+          "description": "Git commit SHA (for GitHub sources)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "gpg_verified": {
+          "description": "Whether GPG signature was verified",
+          "type": "boolean",
+          "default": false
+        },
+        "pinned_at": {
+          "description": "When this version was pinned",
+          "type": "string",
+          "format": "date-time"
+        },
+        "sha256": {
+          "description": "SHA256 checksum of the downloaded asset",
+          "type": "string"
+        },
+        "url": {
+          "description": "Resolved download URL",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "description": "Version string (tag, commit SHA, or \"latest\")",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "sha256",
+        "pinned_at"
+      ]
+    },
+    "ReleaseType": {
+      "description": "How to fetch a GitHub dependency.",
+      "oneOf": [
+        {
+          "description": "GitHub Release (default)",
+          "type": "string",
+          "const": "release"
+        },
+        {
+          "description": "Git tag",
+          "type": "string",
+          "const": "tag"
+        },
+        {
+          "description": "Git branch (pinned to commit)",
+          "type": "string",
+          "const": "branch"
+        }
+      ]
+    },
+    "Upstream": {
+      "description": "An upstream dependency entry.",
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "Human-readable description",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "install": {
+          "description": "Installation configuration",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InstallConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "description": "Unique identifier for this upstream",
+          "type": "string"
+        },
+        "pinned": {
+          "description": "Pinned version information",
+          "$ref": "#/$defs/PinnedVersion"
+        },
+        "source": {
+          "description": "Source of the dependency",
+          "$ref": "#/$defs/UpstreamSource"
+        }
+      },
+      "required": [
+        "name",
+        "source",
+        "pinned"
+      ]
+    },
+    "UpstreamSource": {
+      "description": "Source of an upstream dependency.",
+      "oneOf": [
+        {
+          "description": "GitHub repository (release, tag, or branch)",
+          "type": "object",
+          "properties": {
+            "asset_pattern": {
+              "description": "Optional glob pattern to match release asset",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "release_type": {
+              "description": "How to fetch: release, tag, or branch",
+              "$ref": "#/$defs/ReleaseType",
+              "default": "release"
+            },
+            "repo": {
+              "description": "Repository in owner/repo format",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "github"
+            }
+          },
+          "required": [
+            "type",
+            "repo"
+          ]
+        },
+        {
+          "description": "Direct URL download",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "url"
+            },
+            "url": {
+              "description": "Download URL. Use {version} placeholder for version substitution.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "url"
+          ]
+        }
+      ]
+    }
+  }
+}

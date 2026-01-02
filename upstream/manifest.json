@@ -1,0 +1,109 @@
+{
+  "$schema": "../schemas/upstream-manifest.schema.json",
+  "upstreams": [
+    {
+      "name": "bibata-cursor",
+      "description": "Bibata cursor theme - modern style",
+      "source": {
+        "type": "github",
+        "repo": "ful1e5/Bibata_Cursor",
+        "asset_pattern": "Bibata-Modern-Ice.tar.xz"
+      },
+      "pinned": {
+        "version": "v2.0.7",
+        "sha256": "7d3495864e5bbef02f5e77de760b2905903b63c71495a78ef6306d19a3b556d8",
+        "pinned_at": "2025-01-01T14:40:00Z"
+      },
+      "install": {
+        "type": "archive",
+        "extract_to": "/usr/share/icons",
+        "strip_components": 0
+      }
+    },
+    {
+      "name": "getnf",
+      "description": "Nerd Fonts installer script",
+      "source": {
+        "type": "github",
+        "repo": "getnf/getnf",
+        "release_type": "release"
+      },
+      "pinned": {
+        "version": "v0.3.0",
+        "commit": "d58e0e7748783eb84dda959e1fd81bdee6481543",
+        "sha256": "bc803a391056688dbba7ddfffca6b99fcd6a91848eabf3453be28f41f929b9ad",
+        "pinned_at": "2024-12-29T14:08:00Z"
+      }
+    },
+    {
+      "name": "keyd",
+      "description": "Key remapping daemon",
+      "source": {
+        "type": "github",
+        "repo": "rvaiya/keyd",
+        "release_type": "tag"
+      },
+      "pinned": {
+        "version": "v2.6.0",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "pinned_at": "2024-12-28T15:17:00Z"
+      }
+    },
+    {
+      "name": "lazygit",
+      "description": "Simple terminal UI for git commands",
+      "source": {
+        "type": "github",
+        "repo": "jesseduffield/lazygit",
+        "asset_pattern": "lazygit_*_Linux_x86_64.tar.gz"
+      },
+      "pinned": {
+        "version": "v0.57.0",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "pinned_at": "2024-12-28T15:17:00Z"
+      },
+      "install": {
+        "type": "binary",
+        "install_path": "/usr/local/bin/lazygit"
+      }
+    },
+    {
+      "name": "starship",
+      "description": "Cross-shell prompt",
+      "source": {
+        "type": "github",
+        "repo": "starship/starship",
+        "asset_pattern": "starship-x86_64-unknown-linux-gnu.tar.gz"
+      },
+      "pinned": {
+        "version": "v1.24.1",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "pinned_at": "2024-12-28T15:17:00Z"
+      },
+      "install": {
+        "type": "binary",
+        "install_path": "/usr/local/bin/starship"
+      }
+    },
+    {
+      "name": "whitesur-icons",
+      "description": "WhiteSur icon theme (macOS Big Sur style)",
+      "source": {
+        "type": "github",
+        "repo": "vinceliuice/WhiteSur-icon-theme",
+        "release_type": "tag"
+      },
+      "pinned": {
+        "version": "2024-11-18",
+        "commit": "bab5833b5cae200bccb786a2d3d6afa2201e7806",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "pinned_at": "2025-01-01T14:40:00Z"
+      },
+      "install": {
+        "type": "archive",
+        "extract_to": "/usr/share/icons",
+        "strip_components": 0
+      }
+    }
+  ]
+}
