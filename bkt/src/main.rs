@@ -33,6 +33,7 @@ pub mod output;
 pub mod pipeline;
 mod pr;
 mod repo;
+pub mod validation;
 
 pub use context::{CommandDomain, ExecutionContext, PrMode};
 

@@ -4,6 +4,7 @@ use crate::context::CommandDomain;
 use crate::manifest::{FlatpakApp, FlatpakAppsManifest, FlatpakScope};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
+use crate::validation::validate_flatpak_app;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
@@ -27,6 +28,9 @@ pub enum FlatpakAction {
         /// Installation scope (system or user)
         #[arg(short, long, default_value = "system")]
         scope: String,
+        /// Skip validation that app exists on remote
+        #[arg(long)]
+        force: bool,
     },
     /// Remove a Flatpak app from the manifest
     Remove {
@@ -147,9 +151,15 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
             app_id,
             remote,
             scope,
+            force,
         } => {
             // Validate that flatpak operations are allowed in this context
             plan.validate_domain(CommandDomain::Flatpak)?;
+
+            // Validate that the app exists on the remote
+            if !force {
+                validate_flatpak_app(&app_id, &remote)?;
+            }
 
             let scope: FlatpakScope = scope.parse()?;
 

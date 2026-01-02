@@ -388,9 +388,17 @@ fn gsetting_set_adds_to_manifest() {
     let home = temp.path().to_str().unwrap();
 
     // Setting will be added to manifest even if apply fails
+    // Use --force to skip validation in test environment
     bkt()
         .env("HOME", home)
-        .args(["gsetting", "set", "org.test.schema", "key", "value"])
+        .args([
+            "gsetting",
+            "set",
+            "org.test.schema",
+            "key",
+            "value",
+            "--force",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("Added to user manifest"));
@@ -732,4 +740,56 @@ fn base_assume_requires_package() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("<PACKAGE>"));
+}
+
+// ============================================================================
+// Validation tests
+// ============================================================================
+
+#[test]
+fn gsetting_set_rejects_invalid_schema() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    bkt()
+        .env("HOME", home)
+        .args(["gsetting", "set", "nonexistent.schema.xyz", "key", "value"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not found"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn gsetting_set_force_bypasses_validation() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    bkt()
+        .env("HOME", home)
+        .args([
+            "gsetting",
+            "set",
+            "nonexistent.schema.xyz",
+            "key",
+            "value",
+            "--force",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added to user manifest"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn flatpak_add_force_bypasses_validation() {
+    // Note: We just test the help to verify --force flag exists
+    // Actual flatpak commands require host context (not in toolbox)
+    bkt()
+        .args(["flatpak", "add", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--force"));
 }
