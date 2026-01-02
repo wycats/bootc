@@ -755,12 +755,7 @@ fn handle_copr_list() -> Result<()> {
     }
 
     Output::subheader("COPR REPOSITORIES:");
-    println!(
-        "{:<40} {:<8} {:<8} SOURCE",
-        "NAME".cyan(),
-        "ENABLED",
-        "GPG"
-    );
+    println!("{:<40} {:<8} {:<8} SOURCE", "NAME".cyan(), "ENABLED", "GPG");
     Output::separator();
 
     for copr in &merged.copr_repos {
