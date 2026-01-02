@@ -198,8 +198,9 @@ fn handle_list() -> Result<()> {
         println!("  {} {}", "Base Image:".dimmed(), source);
     }
     if let Some(ref digest) = assumptions.base_image.last_verified_digest {
+        // Use char-aware truncation to handle potential multi-byte characters safely
         let truncated: String = digest.chars().take(32).collect();
-        println!("  {} {}", "Digest:".dimmed(), truncated);
+        println!("  {} {}...", "Digest:".dimmed(), truncated);
     }
     if let Some(ref at) = assumptions.base_image.last_verified_at {
         println!("  {} {}", "Verified:".dimmed(), at);
@@ -276,10 +277,7 @@ fn handle_info() -> Result<()> {
     Ok(())
 }
 
-fn handle_snapshot(filter: Option<String>, output: Option<PathBuf>, yes: bool) -> Result<()> {
-    // TODO: Use yes flag to skip confirmation prompt when implemented
-    let _ = yes;
-
+fn handle_snapshot(filter: Option<String>, output: Option<PathBuf>, _yes: bool) -> Result<()> {
     Output::info("Collecting installed packages from base image...");
 
     // Get list of packages that came with the base image
