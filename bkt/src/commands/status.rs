@@ -111,7 +111,8 @@ pub struct ExtensionStatus {
 pub struct GSettingStatus {
     total: usize,
     applied: usize,
-    /// Settings that differ from manifest values
+    /// Settings whose current system value differs from the manifest value
+    /// (need to be synced back to match manifest, not captured)
     drifted: usize,
 }
 
@@ -305,8 +306,9 @@ pub fn run(args: StatusArgs) -> Result<()> {
     // Gather OS status (unless skipped)
     let os_status = if args.skip_os { None } else { get_os_status() };
 
-    // Get installed flatpaks for drift detection
-    let installed_flatpaks = get_installed_flatpaks();
+    // Get installed flatpaks for drift detection (use HashSet for O(1) lookup)
+    let installed_flatpaks: std::collections::HashSet<String> =
+        get_installed_flatpaks().into_iter().collect();
 
     // Gather flatpak status
     let flatpak_status = {
@@ -339,8 +341,9 @@ pub fn run(args: StatusArgs) -> Result<()> {
         }
     };
 
-    // Get enabled extensions for drift detection
-    let enabled_extensions = get_enabled_extensions();
+    // Get enabled extensions for drift detection (use HashSet for O(1) lookup)
+    let enabled_extensions: std::collections::HashSet<String> =
+        get_enabled_extensions().into_iter().collect();
 
     // Gather extension status
     let extension_status = {
@@ -388,12 +391,10 @@ pub fn run(args: StatusArgs) -> Result<()> {
         let mut drifted = 0;
 
         for s in &merged.settings {
-            if let Some(current) = get_gsetting(&s.schema, &s.key) {
-                if current == s.value {
-                    applied += 1;
-                } else {
-                    drifted += 1;
-                }
+            match get_gsetting(&s.schema, &s.key) {
+                Some(current) if current == s.value => applied += 1,
+                Some(_) => drifted += 1, // Value differs from manifest
+                None => drifted += 1,    // Schema/key missing = needs sync
             }
         }
 
@@ -450,15 +451,15 @@ pub fn run(args: StatusArgs) -> Result<()> {
     };
 
     // Calculate drift
+    // pending_sync: items that need to be applied from manifest → system
+    // pending_capture: items on system that aren't in manifest (untracked)
     let pending_sync = manifest_status.flatpaks.pending
         + (manifest_status.extensions.total - manifest_status.extensions.enabled)
-        + (manifest_status.gsettings.total - manifest_status.gsettings.applied)
+        + manifest_status.gsettings.drifted // drifted = needs sync, not capture
         + (manifest_status.shims.total - manifest_status.shims.synced)
         + manifest_status.skel.differs;
 
-    let pending_capture = manifest_status.flatpaks.untracked
-        + manifest_status.extensions.untracked
-        + manifest_status.gsettings.drifted;
+    let pending_capture = manifest_status.flatpaks.untracked + manifest_status.extensions.untracked;
 
     let drift_status = DriftStatus {
         has_drift: pending_sync > 0 || pending_capture > 0,
@@ -529,11 +530,16 @@ fn print_table_output(report: &StatusReport, verbose: bool) {
             println!("    {} {}", "Version:".dimmed(), version);
         }
         if let Some(ref image) = os.image {
-            // Truncate long image refs for display
-            let display_image = if image.len() > 60 {
-                format!("...{}", &image[image.len() - 57..])
-            } else {
-                image.clone()
+            // Truncate long image refs for display (Unicode-safe)
+            let display_image = {
+                let char_count = image.chars().count();
+                if char_count > 60 {
+                    // Keep the last 57 characters
+                    let tail: String = image.chars().skip(char_count - 57).collect();
+                    format!("...{}", tail)
+                } else {
+                    image.clone()
+                }
             };
             println!("    {} {}", "Image:".dimmed(), display_image);
         }
@@ -825,21 +831,19 @@ mod tests {
             },
         };
 
-        // Pending sync = pending flatpaks + (extensions not enabled) + (gsettings not applied) + (shims not synced) + skel differs
+        // Pending sync = pending flatpaks + (extensions not enabled) + drifted gsettings + (shims not synced) + skel differs
         let pending_sync = manifest.flatpaks.pending
             + (manifest.extensions.total - manifest.extensions.enabled)
-            + (manifest.gsettings.total - manifest.gsettings.applied)
+            + manifest.gsettings.drifted // drifted = needs sync, not capture
             + (manifest.shims.total - manifest.shims.synced)
             + manifest.skel.differs;
 
         assert_eq!(pending_sync, 2 + 2 + 2 + 0 + 0); // 6
 
-        // Pending capture = untracked flatpaks + untracked extensions + drifted gsettings
-        let pending_capture = manifest.flatpaks.untracked
-            + manifest.extensions.untracked
-            + manifest.gsettings.drifted;
+        // Pending capture = untracked flatpaks + untracked extensions (NOT drifted gsettings)
+        let pending_capture = manifest.flatpaks.untracked + manifest.extensions.untracked;
 
-        assert_eq!(pending_capture, 3 + 1 + 2); // 6
+        assert_eq!(pending_capture, 3 + 1); // 4
     }
 
     #[test]
