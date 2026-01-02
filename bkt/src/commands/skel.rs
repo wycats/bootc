@@ -344,7 +344,10 @@ pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
                     copied, skipped
                 ));
             } else {
-                Output::info(format!("Sync complete: {} copied, {} skipped", copied, skipped));
+                Output::info(format!(
+                    "Sync complete: {} copied, {} skipped",
+                    copied, skipped
+                ));
             }
         }
     }

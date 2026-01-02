@@ -267,7 +267,10 @@ fn handle_install(packages: Vec<String>, now: bool, plan: &ExecutionPlan) -> Res
             user.add_package(pkg.clone());
         }
         user.save_user()?;
-        Output::success(format!("Added {} package(s) to user manifest", new_packages.len()));
+        Output::success(format!(
+            "Added {} package(s) to user manifest",
+            new_packages.len()
+        ));
     } else if plan.dry_run {
         for pkg in &new_packages {
             Output::dry_run(format!("Would add to manifest: {}", pkg));
@@ -752,7 +755,13 @@ fn handle_copr_list() -> Result<()> {
     }
 
     Output::subheader("COPR REPOSITORIES:");
-    println!("{:<40} {:<8} {:<8} {}", "NAME".cyan(), "ENABLED", "GPG", "SOURCE");
+    println!(
+        "{:<40} {:<8} {:<8} {}",
+        "NAME".cyan(),
+        "ENABLED",
+        "GPG",
+        "SOURCE"
+    );
     Output::separator();
 
     for copr in &merged.copr_repos {

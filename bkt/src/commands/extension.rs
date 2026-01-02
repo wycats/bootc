@@ -266,7 +266,12 @@ pub fn run(args: ExtensionArgs, _plan: &ExecutionPlan) -> Result<()> {
                 }
 
                 Output::subheader("GNOME EXTENSIONS:");
-                println!("{:<50} {:<10} {}", "UUID".cyan(), "SOURCE".cyan(), "STATUS".cyan());
+                println!(
+                    "{:<50} {:<10} {}",
+                    "UUID".cyan(),
+                    "SOURCE".cyan(),
+                    "STATUS".cyan()
+                );
                 Output::separator();
 
                 for uuid in &merged.extensions {

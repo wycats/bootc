@@ -89,7 +89,11 @@ impl Output {
     ///
     /// Example: `  Source:        user`
     pub fn kv(key: impl AsRef<str>, value: impl AsRef<str>) {
-        println!("  {:<14} {}", format!("{}:", key.as_ref()).cyan(), value.as_ref());
+        println!(
+            "  {:<14} {}",
+            format!("{}:", key.as_ref()).cyan(),
+            value.as_ref()
+        );
     }
 
     /// Print a hint/suggestion message (indented with arrow).

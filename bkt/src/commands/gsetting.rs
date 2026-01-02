@@ -163,7 +163,10 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
 
             if let Some(e) = existing {
                 if e.value == value {
-                    Output::info(format!("Already in manifest: {}.{} = {}", schema, key, value));
+                    Output::info(format!(
+                        "Already in manifest: {}.{} = {}",
+                        schema, key, value
+                    ));
                 } else {
                     // Update in user manifest
                     let setting = GSetting {
@@ -174,7 +177,10 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
                     };
                     user.upsert(setting);
                     user.save_user()?;
-                    Output::success(format!("Updated in user manifest: {}.{} = {}", schema, key, value));
+                    Output::success(format!(
+                        "Updated in user manifest: {}.{} = {}",
+                        schema, key, value
+                    ));
                 }
             } else {
                 let setting = GSetting {
@@ -185,7 +191,10 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
                 };
                 user.upsert(setting);
                 user.save_user()?;
-                Output::success(format!("Added to user manifest: {}.{} = {}", schema, key, value));
+                Output::success(format!(
+                    "Added to user manifest: {}.{} = {}",
+                    schema, key, value
+                ));
             }
 
             // Apply immediately
