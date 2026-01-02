@@ -130,7 +130,10 @@ impl ChangelogEntry {
         message: impl Into<String>,
     ) -> Self {
         let message = message.into();
-        assert!(!message.is_empty(), "Changelog entry message cannot be empty");
+        assert!(
+            !message.is_empty(),
+            "Changelog entry message cannot be empty"
+        );
         Self {
             timestamp: Utc::now(),
             change_type,
