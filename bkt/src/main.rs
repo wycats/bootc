@@ -119,6 +119,9 @@ pub enum Commands {
 
     /// Show status of all manifest types
     Status(commands::status::StatusArgs),
+
+    /// Manage upstream dependencies (themes, icons, fonts, tools)
+    Upstream(commands::upstream::UpstreamArgs),
 }
 
 fn main() -> Result<()> {
@@ -155,5 +158,6 @@ fn main() -> Result<()> {
         Commands::Completions(args) => commands::completions::run(args),
         Commands::Doctor(args) => commands::doctor::run(args),
         Commands::Status(args) => commands::status::run(args),
+        Commands::Upstream(args) => commands::upstream::run(args),
     }
 }

@@ -1,0 +1,147 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/wycats/bootc/schemas/upstream-manifest.schema.json",
+  "title": "Upstream Manifest",
+  "description": "Manages upstream dependencies (themes, icons, fonts, tools) with version pinning and cryptographic verification",
+  "type": "object",
+  "required": ["upstreams"],
+  "properties": {
+    "upstreams": {
+      "type": "array",
+      "description": "List of upstream dependencies",
+      "items": {
+        "$ref": "#/$defs/upstream"
+      }
+    }
+  },
+  "$defs": {
+    "upstream": {
+      "type": "object",
+      "required": ["name", "source", "pinned"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique identifier for this upstream (e.g., 'Colloid-gtk-theme', 'bibata-cursor')",
+          "pattern": "^[a-zA-Z0-9_-]+$"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the upstream"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "pinned": {
+          "$ref": "#/$defs/pinned"
+        },
+        "install": {
+          "$ref": "#/$defs/installConfig"
+        }
+      }
+    },
+    "source": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "repo"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "github"
+            },
+            "repo": {
+              "type": "string",
+              "description": "GitHub repository in owner/repo format",
+              "pattern": "^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$"
+            },
+            "asset_pattern": {
+              "type": "string",
+              "description": "Glob pattern to match release asset (e.g., 'Bibata-Modern-Ice.tar.xz')"
+            },
+            "release_type": {
+              "type": "string",
+              "enum": ["release", "tag", "branch"],
+              "default": "release",
+              "description": "How to fetch: release (GitHub Release), tag, or branch"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "url"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "url"
+            },
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "description": "Direct URL to download. Use {version} placeholder for version substitution."
+            }
+          }
+        }
+      ]
+    },
+    "pinned": {
+      "type": "object",
+      "required": ["version", "sha256", "pinned_at"],
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "Pinned version (tag, commit SHA, or 'latest')"
+        },
+        "commit": {
+          "type": "string",
+          "description": "Git commit SHA (for GitHub sources)",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Resolved download URL"
+        },
+        "sha256": {
+          "type": "string",
+          "description": "SHA256 checksum of the downloaded asset",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "gpg_verified": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether GPG signature was verified"
+        },
+        "pinned_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp when version was pinned"
+        }
+      }
+    },
+    "installConfig": {
+      "type": "object",
+      "description": "Optional installation configuration",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["archive", "binary", "script"],
+          "description": "How to handle the downloaded asset"
+        },
+        "extract_to": {
+          "type": "string",
+          "description": "Target directory for extraction (e.g., '/usr/share/themes')"
+        },
+        "strip_components": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Number of leading path components to strip during extraction"
+        },
+        "install_path": {
+          "type": "string",
+          "description": "For binaries: target installation path"
+        }
+      }
+    }
+  }
+}
