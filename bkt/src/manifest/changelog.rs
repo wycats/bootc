@@ -201,10 +201,30 @@ impl VersionMetadata {
     }
 
     /// Generate the next version number for today.
+    ///
+    /// This checks existing versions in `.changelog/versions/` and increments N.
     pub fn next_version_for_today() -> String {
-        let today = Utc::now().format("%Y.%m.%d");
-        // In a real implementation, we'd check existing versions and increment N
-        format!("{}.1", today)
+        let today = Utc::now().format("%Y.%m.%d").to_string();
+
+        // Look for existing version files for today
+        let mut max_revision: u32 = 0;
+        if let Ok(entries) = fs::read_dir(".changelog/versions") {
+            for entry in entries.flatten() {
+                if let Some(stem) = entry.path().file_stem().and_then(|s| s.to_str())
+                    && stem.starts_with(&today)
+                {
+                    // Parse the revision number from YYYY.MM.DD.N
+                    let parts: Vec<&str> = stem.split('.').collect();
+                    if parts.len() == 4
+                        && let Ok(rev) = parts[3].parse::<u32>()
+                    {
+                        max_revision = max_revision.max(rev);
+                    }
+                }
+            }
+        }
+
+        format!("{}.{}", today, max_revision + 1)
     }
 
     /// Format for CHANGELOG.md output.
@@ -298,9 +318,12 @@ impl ChangelogManager {
     pub fn add_pending(&self, entry: &ChangelogEntry) -> Result<PathBuf> {
         self.ensure_dirs()?;
 
-        // Generate a unique filename
-        let timestamp = entry.timestamp.format("%Y%m%d%H%M%S");
-        let category = format!("{:?}", entry.category).to_lowercase();
+        // Generate a unique filename using nanoseconds for uniqueness
+        let timestamp = entry.timestamp.format("%Y%m%d%H%M%S%f");
+        let category = serde_json::to_string(&entry.category)
+            .unwrap_or_else(|_| "other".to_string())
+            .trim_matches('"')
+            .to_string();
         let filename = format!("{}-{}.yaml", timestamp, category);
         let path = self.pending_dir().join(&filename);
 
@@ -379,13 +402,21 @@ impl ChangelogManager {
 
     /// Create a new version from pending entries.
     pub fn create_version(&self, version: &str) -> Result<VersionMetadata> {
+        // Check if version already exists
+        let path = self.versions_dir().join(format!("{}.yaml", version));
+        if path.exists() {
+            anyhow::bail!(
+                "Version {} already exists. Use a different version string.",
+                version
+            );
+        }
+
         let entries = self.load_pending()?;
 
         let mut metadata = VersionMetadata::new(version);
         metadata.changes = entries;
 
-        // Save version metadata
-        let path = self.versions_dir().join(format!("{}.yaml", version));
+        // Save version metadata (path already defined above)
         let content =
             serde_yaml::to_string(&metadata).context("Failed to serialize version metadata")?;
         fs::write(&path, content).with_context(|| format!("Failed to write {}", path.display()))?;

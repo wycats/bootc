@@ -129,7 +129,9 @@ fn parse_category(s: &str) -> Result<ChangeCategory, String> {
         "system" => Ok(ChangeCategory::System),
         "other" => Ok(ChangeCategory::Other),
         _ => Err(format!(
-            "Invalid category '{}'. Valid: flatpak, package, toolbox, extension, gsetting, shim, upstream, copr, system, other",
+            "Invalid category '{}'. Valid: flatpak; flatpak-remote (flatpakremote, remote); \
+             package (pkg, dnf, rpm); toolbox (toolbox-package, dev); extension (ext); \
+             gsetting (gsettings, setting); shim; upstream; copr; system; other",
             s
         )),
     }

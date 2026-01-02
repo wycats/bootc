@@ -574,3 +574,84 @@ fn dev_update_shows_empty_manifest() {
 
     temp.close().unwrap();
 }
+
+// ============================================================================
+// Changelog command tests
+// ============================================================================
+
+#[test]
+fn changelog_help_shows_subcommands() {
+    bkt()
+        .args(["changelog", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("show"))
+        .stdout(predicate::str::contains("pending"))
+        .stdout(predicate::str::contains("add"))
+        .stdout(predicate::str::contains("validate"))
+        .stdout(predicate::str::contains("release"));
+}
+
+#[test]
+fn changelog_pending_outside_repo_fails() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    bkt()
+        .current_dir(temp.path())
+        .args(["changelog", "pending"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Not in a git repository"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn changelog_validate_outside_repo_fails() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    bkt()
+        .current_dir(temp.path())
+        .args(["changelog", "validate"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Not in a git repository"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn changelog_list_outside_repo_fails() {
+    let temp = assert_fs::TempDir::new().unwrap();
+
+    bkt()
+        .current_dir(temp.path())
+        .args(["changelog", "list"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Not in a git repository"));
+
+    temp.close().unwrap();
+}
+
+#[test]
+fn changelog_add_requires_args() {
+    bkt()
+        .args(["changelog", "add"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--type"))
+        .stderr(predicate::str::contains("--category"))
+        .stderr(predicate::str::contains("<MESSAGE>"));
+}
+
+#[test]
+fn changelog_generate_requires_args() {
+    bkt()
+        .args(["changelog", "generate"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--type"))
+        .stderr(predicate::str::contains("--category"))
+        .stderr(predicate::str::contains("<MESSAGE>"));
+}
