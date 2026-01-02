@@ -5,10 +5,14 @@ use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 
 use crate::manifest::{Shim, ShimsManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
+use crate::plan::{
+    ExecuteContext, ExecutionReport, Operation, Plan, PlanContext, PlanSummary, Plannable, Verb,
+};
 use crate::pr::{PrChange, run_pr_workflow};
 
 #[derive(Debug, Args)]
@@ -297,8 +301,171 @@ pub fn run(args: ShimArgs, _plan: &ExecutionPlan) -> Result<()> {
             }
         }
         ShimAction::Sync { dry_run } => {
-            sync_shims(dry_run)?;
+            // Use the new Plan-based implementation
+            let cwd = std::env::current_dir()?;
+            let plan_ctx = PlanContext::new(
+                cwd,
+                ExecutionPlan {
+                    dry_run,
+                    ..Default::default()
+                },
+            );
+
+            let plan = ShimSyncCommand.plan(&plan_ctx)?;
+
+            if plan.is_empty() {
+                Output::info("No shims to generate.");
+                return Ok(());
+            }
+
+            // Always show the plan
+            print!("{}", plan.describe());
+
+            if dry_run {
+                return Ok(());
+            }
+
+            // Execute the plan
+            let mut exec_ctx = ExecuteContext::new(ExecutionPlan {
+                dry_run: false,
+                ..Default::default()
+            });
+            let report = plan.execute(&mut exec_ctx)?;
+            print!("{}", report);
         }
     }
     Ok(())
+}
+
+// ============================================================================
+// Plan-based Shim Sync Implementation
+// ============================================================================
+
+/// Command to sync shims from manifests to disk.
+pub struct ShimSyncCommand;
+
+/// Plan for syncing shims.
+pub struct ShimSyncPlan {
+    /// Directory where shims will be written.
+    shims_dir: PathBuf,
+    /// Shims to create.
+    to_create: Vec<Shim>,
+}
+
+impl Plannable for ShimSyncCommand {
+    type Plan = ShimSyncPlan;
+
+    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+        // Load and merge manifests (read-only, no side effects)
+        let system = ShimsManifest::load_system()?;
+        let user = ShimsManifest::load_user()?;
+        let merged = ShimsManifest::merged(&system, &user);
+
+        Ok(ShimSyncPlan {
+            shims_dir: ShimsManifest::shims_dir(),
+            to_create: merged.shims,
+        })
+    }
+}
+
+impl Plan for ShimSyncPlan {
+    fn describe(&self) -> PlanSummary {
+        let mut summary = PlanSummary::new(format!(
+            "Shim Sync: {} shim(s) in {}",
+            self.to_create.len(),
+            self.shims_dir.display()
+        ));
+
+        for shim in &self.to_create {
+            let details = if shim.name == shim.host_cmd() {
+                None
+            } else {
+                Some(format!("-> {}", shim.host_cmd()))
+            };
+
+            if let Some(d) = details {
+                summary.add_operation(Operation::with_details(
+                    Verb::Create,
+                    format!("shim:{}", shim.name),
+                    d,
+                ));
+            } else {
+                summary.add_operation(Operation::new(Verb::Create, format!("shim:{}", shim.name)));
+            }
+        }
+
+        summary
+    }
+
+    fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
+        let mut report = ExecutionReport::new();
+
+        // Create shims directory
+        fs::create_dir_all(&self.shims_dir).with_context(|| {
+            format!(
+                "Failed to create shims directory: {}",
+                self.shims_dir.display()
+            )
+        })?;
+
+        // Remove all existing shims in the managed directory.
+        // This directory is exclusively managed by bkt; any files here
+        // are assumed to be bkt-generated shims that should be regenerated.
+        if self.shims_dir.exists() {
+            for entry in fs::read_dir(&self.shims_dir)? {
+                let entry = entry?;
+                if entry.file_type()?.is_file() {
+                    fs::remove_file(entry.path())?;
+                }
+            }
+        }
+
+        // Generate shims
+        for shim in &self.to_create {
+            let shim_path = self.shims_dir.join(&shim.name);
+
+            match generate_shim_script(shim.host_cmd()) {
+                Ok(content) => {
+                    if let Err(e) = fs::write(&shim_path, &content) {
+                        report.record_failure(
+                            Verb::Create,
+                            format!("shim:{}", shim.name),
+                            e.to_string(),
+                        );
+                        continue;
+                    }
+
+                    // Make executable
+                    if let Err(e) = (|| -> Result<()> {
+                        let mut perms = fs::metadata(&shim_path)?.permissions();
+                        perms.set_mode(0o755);
+                        fs::set_permissions(&shim_path, perms)?;
+                        Ok(())
+                    })() {
+                        report.record_failure(
+                            Verb::Create,
+                            format!("shim:{}", shim.name),
+                            format!("chmod failed: {}", e),
+                        );
+                        continue;
+                    }
+
+                    report.record_success(Verb::Create, format!("shim:{}", shim.name));
+                }
+                Err(e) => {
+                    report.record_failure(
+                        Verb::Create,
+                        format!("shim:{}", shim.name),
+                        e.to_string(),
+                    );
+                }
+            }
+        }
+
+        Ok(report)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.to_create.is_empty()
+    }
 }

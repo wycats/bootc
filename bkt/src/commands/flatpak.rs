@@ -4,6 +4,9 @@ use crate::context::CommandDomain;
 use crate::manifest::{FlatpakApp, FlatpakAppsManifest, FlatpakScope};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
+use crate::plan::{
+    ExecuteContext, ExecutionReport, Operation, Plan, PlanContext, PlanSummary, Plannable, Verb,
+};
 use crate::validation::validate_flatpak_app;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -92,57 +95,6 @@ fn is_installed(app_id: &str) -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
-}
-
-/// Sync flatpak apps from manifest to installed state.
-fn sync_flatpaks(plan: &ExecutionPlan) -> Result<()> {
-    let system = FlatpakAppsManifest::load_system()?;
-    let user = FlatpakAppsManifest::load_user()?;
-    let merged = FlatpakAppsManifest::merged(&system, &user);
-
-    let mut installed = 0;
-    let mut skipped = 0;
-    let mut failed = 0;
-
-    for app in &merged.apps {
-        if is_installed(&app.id) {
-            skipped += 1;
-            continue;
-        }
-
-        if plan.dry_run {
-            Output::dry_run(format!(
-                "Would install: {} from {} ({})",
-                app.id, app.remote, app.scope
-            ));
-        } else if plan.should_execute_locally() {
-            let spinner = Output::spinner(format!("Installing {} ({})...", app.id, app.scope));
-            if install_flatpak(app)? {
-                spinner.finish_success(format!("Installed {}", app.id));
-                installed += 1;
-            } else {
-                spinner.finish_error(format!("Failed to install {}", app.id));
-                failed += 1;
-            }
-        }
-    }
-
-    if plan.dry_run {
-        Output::blank();
-        Output::info(format!(
-            "Dry run: {} already installed, {} would be installed",
-            skipped,
-            merged.apps.len() - skipped
-        ));
-    } else {
-        Output::blank();
-        Output::info(format!(
-            "Sync complete: {} installed, {} already present, {} failed",
-            installed, skipped, failed
-        ));
-    }
-
-    Ok(())
 }
 
 pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
@@ -347,8 +299,130 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
             // Validate that flatpak operations are allowed in this context
             plan.validate_domain(CommandDomain::Flatpak)?;
 
-            sync_flatpaks(plan)?;
+            // Use the new Plan-based implementation
+            let plan_ctx =
+                PlanContext::new(std::env::current_dir().unwrap_or_default(), plan.clone());
+
+            let sync_plan = FlatpakSyncCommand.plan(&plan_ctx)?;
+
+            if sync_plan.is_empty() {
+                Output::success("All flatpaks are already installed.");
+                return Ok(());
+            }
+
+            // Always show the plan
+            print!("{}", sync_plan.describe());
+
+            if plan.dry_run {
+                return Ok(());
+            }
+
+            // Execute the plan
+            let mut exec_ctx = ExecuteContext::new(plan.clone());
+            let report = sync_plan.execute(&mut exec_ctx)?;
+            print!("{}", report);
         }
     }
     Ok(())
+}
+
+// ============================================================================
+// Plan-based Flatpak Sync Implementation
+// ============================================================================
+
+/// A flatpak that needs to be installed.
+#[derive(Debug, Clone)]
+pub struct FlatpakToInstall {
+    /// The flatpak app.
+    pub app: FlatpakApp,
+}
+
+/// Command to sync flatpaks from manifests.
+pub struct FlatpakSyncCommand;
+
+/// Plan for syncing flatpaks.
+pub struct FlatpakSyncPlan {
+    /// Flatpaks to install.
+    pub to_install: Vec<FlatpakToInstall>,
+    /// Flatpaks already installed.
+    pub already_installed: usize,
+}
+
+impl Plannable for FlatpakSyncCommand {
+    type Plan = FlatpakSyncPlan;
+
+    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+        // Load and merge manifests (read-only, no side effects)
+        let system = FlatpakAppsManifest::load_system()?;
+        let user = FlatpakAppsManifest::load_user()?;
+        let merged = FlatpakAppsManifest::merged(&system, &user);
+
+        let mut to_install = Vec::new();
+        let mut already_installed = 0;
+
+        for app in merged.apps {
+            if is_installed(&app.id) {
+                already_installed += 1;
+            } else {
+                to_install.push(FlatpakToInstall { app });
+            }
+        }
+
+        Ok(FlatpakSyncPlan {
+            to_install,
+            already_installed,
+        })
+    }
+}
+
+impl Plan for FlatpakSyncPlan {
+    fn describe(&self) -> PlanSummary {
+        let mut summary = PlanSummary::new(format!(
+            "Flatpak Sync: {} to install, {} already installed",
+            self.to_install.len(),
+            self.already_installed
+        ));
+
+        for item in &self.to_install {
+            summary.add_operation(Operation::with_details(
+                Verb::Install,
+                format!("flatpak:{}", item.app.id),
+                format!("{} ({})", item.app.remote, item.app.scope),
+            ));
+        }
+
+        summary
+    }
+
+    fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
+        let mut report = ExecutionReport::new();
+
+        for item in self.to_install {
+            match install_flatpak(&item.app) {
+                Ok(true) => {
+                    report.record_success(Verb::Install, format!("flatpak:{}", item.app.id));
+                }
+                Ok(false) => {
+                    report.record_failure(
+                        Verb::Install,
+                        format!("flatpak:{}", item.app.id),
+                        "flatpak install failed",
+                    );
+                }
+                Err(e) => {
+                    report.record_failure(
+                        Verb::Install,
+                        format!("flatpak:{}", item.app.id),
+                        e.to_string(),
+                    );
+                }
+            }
+        }
+
+        Ok(report)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.to_install.is_empty()
+    }
 }

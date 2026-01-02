@@ -1,5 +1,6 @@
 //! CLI command implementations.
 
+pub mod apply;
 pub mod base;
 pub mod changelog;
 pub mod completions;
