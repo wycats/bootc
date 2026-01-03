@@ -66,6 +66,8 @@ pub enum ChangeCategory {
     Upstream,
     /// COPR repository change
     Copr,
+    /// Base image assumption change
+    BaseAssumption,
     /// System configuration change
     System,
     /// Other/miscellaneous change
@@ -84,6 +86,7 @@ impl fmt::Display for ChangeCategory {
             ChangeCategory::Shim => write!(f, "Shim"),
             ChangeCategory::Upstream => write!(f, "Upstream"),
             ChangeCategory::Copr => write!(f, "COPR"),
+            ChangeCategory::BaseAssumption => write!(f, "Base Image"),
             ChangeCategory::System => write!(f, "System"),
             ChangeCategory::Other => write!(f, "Other"),
         }

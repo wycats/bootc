@@ -1,10 +1,15 @@
 //! Base image assumptions manifest type.
 //!
-//! This module provides types for tracking what the base image (Bazzite) provides.
-//! By tracking assumptions, we can:
-//! - Detect when the base image no longer provides expected packages
-//! - Distinguish between "our additions" and "base image content"
-//! - Get early warning of breaking changes in upstream
+//! This module provides types for tracking **what the upstream Bazzite base image provides**.
+//! This is a reference/documentation manifest, NOT a list of what `bkt` needs at runtime.
+//!
+//! By tracking what Bazzite provides, we can:
+//! - Detect when Bazzite no longer provides packages we depend on (breaking changes)
+//! - Distinguish between "our additions" (system-packages.json) and "base image content"
+//! - Get early warning of upstream changes that might break our distribution
+//!
+//! **Important**: This manifest does NOT control what gets installed. It documents
+//! what we expect the base image to already have.
 
 use anyhow::{Context, Result};
 use schemars::JsonSchema;
@@ -44,22 +49,26 @@ pub struct PackageAssumption {
 
 /// Base image assumptions manifest.
 ///
+/// Tracks what the upstream Bazzite base image provides (packages, services, paths).
+/// This is a reference manifest for drift detection and CI verification, NOT a list
+/// of runtime dependencies. Used to detect when upstream changes break our assumptions.
+///
 /// Stored at `manifests/base-image-assumptions.json`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct BaseImageAssumptions {
-    /// Information about the base image
+    /// Information about the upstream base image being tracked
     #[serde(default)]
     pub base_image: BaseImageInfo,
 
-    /// Packages assumed to be provided by the base image
+    /// Packages that the upstream Bazzite image provides (what's already in the base image)
     #[serde(default)]
     pub packages: Vec<PackageAssumption>,
 
-    /// Systemd services assumed to be provided
+    /// Systemd services that the upstream Bazzite image provides
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub services: Vec<String>,
 
-    /// Paths assumed to exist
+    /// Filesystem paths that the upstream Bazzite image provides
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<String>,
 }

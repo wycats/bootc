@@ -1,0 +1,50 @@
+{
+  "base_image": {
+    "source": "ghcr.io/ublue-os/bazzite-gnome:stable",
+    "last_verified_at": "2026-01-03T00:00:00Z"
+  },
+  "packages": [
+    {
+      "name": "bootc",
+      "reason": "Core to bkt admin bootc commands and system upgrades"
+    },
+    {
+      "name": "dbus-daemon",
+      "reason": "Required for D-Bus operations (systemd, polkit)"
+    },
+    {
+      "name": "flatpak",
+      "reason": "Core to bkt flatpak commands"
+    },
+    {
+      "name": "gnome-shell",
+      "reason": "Required for extension management"
+    },
+    {
+      "name": "polkit",
+      "reason": "Required for passwordless privileged operations via pkexec"
+    },
+    {
+      "name": "podman",
+      "reason": "Required for toolbox containers"
+    },
+    {
+      "name": "rpm-ostree",
+      "reason": "Core to bkt dnf commands on host"
+    },
+    {
+      "name": "systemd",
+      "reason": "Required for D-Bus systemd operations"
+    }
+  ],
+  "services": ["dbus.service", "polkit.service"],
+  "paths": [
+    "/usr/bin/bootc",
+    "/usr/bin/flatpak",
+    "/usr/bin/gnome-shell",
+    "/usr/bin/pkexec",
+    "/usr/bin/podman",
+    "/usr/bin/rpm-ostree",
+    "/usr/bin/systemctl"
+  ]
+}

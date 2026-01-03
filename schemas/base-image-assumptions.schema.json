@@ -1,16 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "BaseImageAssumptions",
-  "description": "Base image assumptions manifest.\n\nStored at `manifests/base-image-assumptions.json`.",
+  "description": "Base image assumptions manifest.\n\nTracks what the upstream Bazzite base image provides (packages, services, paths).\nThis is a reference manifest for drift detection and CI verification, NOT a list\nof runtime dependencies. Used to detect when upstream changes break our assumptions.\n\nStored at `manifests/base-image-assumptions.json`.",
   "type": "object",
   "properties": {
     "base_image": {
-      "description": "Information about the base image",
+      "description": "Information about the upstream base image being tracked",
       "$ref": "#/$defs/BaseImageInfo",
       "default": {}
     },
     "packages": {
-      "description": "Packages assumed to be provided by the base image",
+      "description": "Packages that the upstream Bazzite image provides (what's already in the base image)",
       "type": "array",
       "default": [],
       "items": {
@@ -18,14 +18,14 @@
       }
     },
     "paths": {
-      "description": "Paths assumed to exist",
+      "description": "Filesystem paths that the upstream Bazzite image provides",
       "type": "array",
       "items": {
         "type": "string"
       }
     },
     "services": {
-      "description": "Systemd services assumed to be provided",
+      "description": "Systemd services that the upstream Bazzite image provides",
       "type": "array",
       "items": {
         "type": "string"

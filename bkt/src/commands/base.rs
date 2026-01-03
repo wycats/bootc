@@ -1,12 +1,16 @@
 //! Base image assumption management command implementation.
 //!
-//! This module provides commands for managing base image assumptions - the
-//! packages, services, and paths that the base image (Bazzite) provides.
+//! This module provides commands for managing base image assumptions - tracking
+//! what packages, services, and paths the upstream Bazzite image provides.
 //!
-//! By tracking assumptions, we can:
-//! - Detect when the base image no longer provides expected packages
+//! **Design Intent**: `base-image-assumptions.json` documents what Bazzite provides,
+//! NOT what bkt needs. This is a reference manifest for drift detection and CI verification.
+//!
+//! By tracking what Bazzite provides, we can:
+//! - Detect when Bazzite no longer provides packages we depend on (breaking changes)
 //! - Distinguish between "our additions" and "base image content"
 //! - Get early warning of breaking changes in upstream
+//! - Document our dependencies on the base image
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
@@ -15,7 +19,10 @@ use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::manifest::{BaseImageAssumptions, find_repo_root};
+use crate::manifest::{
+    BaseImageAssumptions, ChangeCategory, ChangeType, ChangelogEntry, ChangelogManager,
+    find_repo_root,
+};
 use crate::output::Output;
 
 #[derive(Debug, Args)]
@@ -26,32 +33,32 @@ pub struct BaseArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum BaseAction {
-    /// Verify current system against base image assumptions
+    /// Verify that Bazzite still provides expected packages
     Verify,
 
-    /// Add a package to base image assumptions
+    /// Record that a package is provided by the Bazzite base image
     Assume {
-        /// Package name to add as assumption
+        /// Package name that Bazzite provides
         package: String,
 
-        /// Description/reason for the assumption
+        /// Why we depend on Bazzite providing this package
         #[arg(short, long)]
         reason: Option<String>,
     },
 
-    /// Remove a package from base image assumptions
+    /// Remove a package from the list of what Bazzite provides
     Unassume {
-        /// Package name to remove
+        /// Package name to stop tracking
         package: String,
     },
 
-    /// List current base image assumptions
+    /// List packages we expect Bazzite to provide
     List,
 
     /// Show current base image info
     Info,
 
-    /// Snapshot current base image packages (generates assumptions from system)
+    /// Generate assumptions from currently installed packages
     Snapshot {
         /// Only include packages matching this pattern
         #[arg(short, long)]
@@ -161,6 +168,21 @@ fn handle_assume(package: String, reason: Option<String>) -> Result<()> {
     assumptions.add_package(&package, reason.as_deref());
     assumptions.save_to_repo()?;
 
+    // Generate changelog entry
+    let message = match &reason {
+        Some(r) => format!("Added base image assumption: {} ({})", package, r),
+        None => format!("Added base image assumption: {}", package),
+    };
+    let entry = ChangelogEntry::new(ChangeType::Added, ChangeCategory::BaseAssumption, &message)
+        .with_command(format!("bkt base assume {}", package));
+
+    if let Ok(repo_root) = get_repo_root() {
+        let manager = ChangelogManager::new(repo_root);
+        if let Err(e) = manager.add_pending(&entry) {
+            Output::warning(format!("Failed to add changelog entry: {}", e));
+        }
+    }
+
     Output::success(format!("Added '{}' to base image assumptions.", package));
     Ok(())
 }
@@ -174,6 +196,23 @@ fn handle_unassume(package: String) -> Result<()> {
     }
 
     assumptions.save_to_repo()?;
+
+    // Generate changelog entry
+    let message = format!("Removed base image assumption: {}", package);
+    let entry = ChangelogEntry::new(
+        ChangeType::Removed,
+        ChangeCategory::BaseAssumption,
+        &message,
+    )
+    .with_command(format!("bkt base unassume {}", package));
+
+    if let Ok(repo_root) = get_repo_root() {
+        let manager = ChangelogManager::new(repo_root);
+        if let Err(e) = manager.add_pending(&entry) {
+            Output::warning(format!("Failed to add changelog entry: {}", e));
+        }
+    }
+
     Output::success(format!(
         "Removed '{}' from base image assumptions.",
         package
