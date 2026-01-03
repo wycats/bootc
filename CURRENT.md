@@ -345,7 +345,7 @@ Refactor command implementations to use a `Plan`-centric architecture where all 
 ## 10. Bidirectional Sync
 
 **Priority:** 🔴 High  
-**Status:** 🔄 Core Done (Apply complete, Capture pending)
+**Status:** 🔄 Core Done (Apply ✅, Capture core ✅, dnf capture pending)
 
 ### Description
 
@@ -367,12 +367,12 @@ Implement the two meta-commands that complete the bidirectional sync loop: `bkt 
 
 #### Capture (system → manifest)
 
-- [ ] Implement `bkt flatpak capture` - import installed flatpaks not in manifest
-- [ ] Implement `bkt extension capture` - import enabled extensions not in manifest
-- [ ] Implement `bkt gsetting capture [schema]` - import changed settings
+- [x] Implement `bkt flatpak capture` - import installed flatpaks not in manifest
+- [x] Implement `bkt extension capture` - import enabled extensions not in manifest
+- [x] Implement `bkt gsetting capture [schema]` - import changed settings
 - [ ] Implement `bkt dnf capture` - import rpm-ostree layered packages
-- [ ] Implement `bkt capture` that runs all capture commands
-- [ ] Add `--dry-run` flag (uses Plan trait)
+- [x] Implement `bkt capture` that runs all capture commands
+- [x] Add `--dry-run` flag (uses Plan trait)
 - [ ] Add `--select` flag for interactive selection (future: TUI)
 
 #### Status Dashboard (PR #13)
@@ -387,9 +387,9 @@ Implement the two meta-commands that complete the bidirectional sync loop: `bkt 
 
 - ✅ `bkt apply` applies all manifests to running system in one command
 - ✅ `bkt apply --dry-run` shows what would be installed/enabled without doing it
-- ❌ `bkt capture` imports all detected system changes to manifests
-- ❌ After installing a flatpak via GNOME Software, `bkt capture` adds it to manifest
-- ❌ After enabling an extension via Extension Manager, `bkt capture` adds it to manifest
+- ✅ `bkt capture` imports all detected system changes to manifests
+- ✅ After installing a flatpak via GNOME Software, `bkt capture` adds it to manifest
+- ✅ After enabling an extension via Extension Manager, `bkt capture` adds it to manifest
 
 ---
 
@@ -402,7 +402,8 @@ Phase 2a: Bidirectional Sync (PRIMARY GOAL)
 ├── 9. Command Infrastructure (trait-based commands with dry-run) ✅ Complete
 ├── 10a. Apply side (bkt apply) ✅ Complete
 ├── 10b. Status Dashboard (bkt status enhanced) ✅ Complete
-└── 10c. Capture side (bkt capture) ← NEXT
+├── 10c. Capture side (bkt capture) ✅ Complete (PR #14)
+└── 10d. DNF capture (bkt dnf capture) ← NEXT
 
 Phase 2b: Supporting Infrastructure
 ├── 4. Privileged Helper (enables passwordless operations)
