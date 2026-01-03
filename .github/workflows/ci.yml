@@ -8,9 +8,9 @@ on:
       - ".github/workflows/ci.yml"
   pull_request:
     branches: [main]
-    paths:
-      - "bkt/**"
-      - ".github/workflows/ci.yml"
+    # Note: No paths filter for PRs - always run to satisfy required checks
+    # For docs-only PRs, jobs will complete quickly with cached deps
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
