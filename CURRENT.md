@@ -50,7 +50,7 @@ Both commands support `--dry-run` to preview changes without executing them.
 | 7   | [Base Image Drift Detection](#7-drift-detection)    | [RFC-0007](docs/rfcs/0007-drift-detection.md)        | 🟢 Low    | 🔄 Core Done |
 | 8   | [Validation on Add](#8-validation-on-add)           | —                                                    | 🟢 Low    | ✅ Complete  |
 | 9   | [Command Infrastructure](#9-command-infrastructure) | [RFC-0008](docs/rfcs/0008-command-infrastructure.md) | 🔴 High   | ✅ Complete  |
-| 10  | [Bidirectional Sync](#10-bidirectional-sync)        | —                                                    | 🔴 High   | 🔄 Core Done |
+| 10  | [Bidirectional Sync](#10-bidirectional-sync)        | —                                                    | 🔴 High   | ✅ Complete  |
 
 > **Status Legend:** ✅ Complete = all deliverables done | 🔄 Core Done = main features work, sub-items remain | Not Started = no implementation
 
@@ -345,7 +345,7 @@ Refactor command implementations to use a `Plan`-centric architecture where all 
 ## 10. Bidirectional Sync
 
 **Priority:** 🔴 High  
-**Status:** 🔄 Core Done (Apply complete, Capture pending)
+**Status:** ✅ Complete (Apply ✅, Capture ✅, dnf capture ✅)
 
 ### Description
 
@@ -367,12 +367,12 @@ Implement the two meta-commands that complete the bidirectional sync loop: `bkt 
 
 #### Capture (system → manifest)
 
-- [ ] Implement `bkt flatpak capture` - import installed flatpaks not in manifest
-- [ ] Implement `bkt extension capture` - import enabled extensions not in manifest
-- [ ] Implement `bkt gsetting capture [schema]` - import changed settings
-- [ ] Implement `bkt dnf capture` - import rpm-ostree layered packages
-- [ ] Implement `bkt capture` that runs all capture commands
-- [ ] Add `--dry-run` flag (uses Plan trait)
+- [x] Implement `bkt flatpak capture` - import installed flatpaks not in manifest
+- [x] Implement `bkt extension capture` - import enabled extensions not in manifest
+- [x] Implement `bkt gsetting capture [schema]` - import changed settings
+- [x] Implement `bkt dnf capture` - import rpm-ostree layered packages (PR #15)
+- [x] Implement `bkt capture` that runs all capture commands
+- [x] Add `--dry-run` flag (uses Plan trait)
 - [ ] Add `--select` flag for interactive selection (future: TUI)
 
 #### Status Dashboard (PR #13)
@@ -387,9 +387,9 @@ Implement the two meta-commands that complete the bidirectional sync loop: `bkt 
 
 - ✅ `bkt apply` applies all manifests to running system in one command
 - ✅ `bkt apply --dry-run` shows what would be installed/enabled without doing it
-- ❌ `bkt capture` imports all detected system changes to manifests
-- ❌ After installing a flatpak via GNOME Software, `bkt capture` adds it to manifest
-- ❌ After enabling an extension via Extension Manager, `bkt capture` adds it to manifest
+- ✅ `bkt capture` imports all detected system changes to manifests
+- ✅ After installing a flatpak via GNOME Software, `bkt capture` adds it to manifest
+- ✅ After enabling an extension via Extension Manager, `bkt capture` adds it to manifest
 
 ---
 
@@ -402,9 +402,10 @@ Phase 2a: Bidirectional Sync (PRIMARY GOAL)
 ├── 9. Command Infrastructure (trait-based commands with dry-run) ✅ Complete
 ├── 10a. Apply side (bkt apply) ✅ Complete
 ├── 10b. Status Dashboard (bkt status enhanced) ✅ Complete
-└── 10c. Capture side (bkt capture) ← NEXT
+├── 10c. Capture side (bkt capture) ✅ Complete (PR #14)
+└── 10d. DNF capture (bkt dnf capture) ✅ Complete (PR #15)
 
-Phase 2b: Supporting Infrastructure
+Phase 2b: Supporting Infrastructure ← NEXT
 ├── 4. Privileged Helper (enables passwordless operations)
 └── 7. Drift Detection sub-items (CI workflows, scheduled checks)
 

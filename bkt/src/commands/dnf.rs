@@ -72,6 +72,12 @@ pub enum DnfAction {
         #[arg(long)]
         now: bool,
     },
+    /// Capture layered packages not in manifest
+    Capture {
+        /// Apply immediately (add packages to manifest)
+        #[arg(long)]
+        apply: bool,
+    },
     /// Manage COPR repositories
     Copr {
         #[command(subcommand)]
@@ -136,6 +142,35 @@ pub fn run(args: DnfArgs, plan: &ExecutionPlan) -> Result<()> {
             // Execute the plan
             let mut exec_ctx = ExecuteContext::new(plan.clone());
             let report = sync_plan.execute(&mut exec_ctx)?;
+            print!("{}", report);
+
+            Ok(())
+        }
+        DnfAction::Capture { apply } => {
+            // Use the new Plan-based implementation
+            let plan_ctx =
+                PlanContext::new(std::env::current_dir().unwrap_or_default(), plan.clone());
+
+            let capture_plan = DnfCaptureCommand.plan(&plan_ctx)?;
+
+            if capture_plan.is_empty() {
+                Output::success("All layered packages are already in the manifest.");
+                return Ok(());
+            }
+
+            // Always show the plan
+            print!("{}", capture_plan.describe());
+
+            if plan.dry_run || !apply {
+                if !apply {
+                    Output::hint("Use --apply to execute this plan.");
+                }
+                return Ok(());
+            }
+
+            // Execute the plan
+            let mut exec_ctx = ExecuteContext::new(plan.clone());
+            let report = capture_plan.execute(&mut exec_ctx)?;
             print!("{}", report);
 
             Ok(())
@@ -920,4 +955,139 @@ impl Plan for DnfSyncPlan {
     fn is_empty(&self) -> bool {
         self.to_install.is_empty()
     }
+}
+// ============================================================================
+// Plan-based DNF Capture Implementation
+// ============================================================================
+
+/// Command to capture layered packages not in manifest.
+pub struct DnfCaptureCommand;
+
+/// Plan for capturing layered packages.
+pub struct DnfCapturePlan {
+    /// Packages to add to manifest.
+    pub to_capture: Vec<String>,
+    /// Packages already in manifest.
+    pub already_in_manifest: usize,
+}
+
+impl Plannable for DnfCaptureCommand {
+    type Plan = DnfCapturePlan;
+
+    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+        // Get layered packages from rpm-ostree
+        let layered = get_layered_packages();
+
+        // Load manifest to check what's already tracked
+        let system = SystemPackagesManifest::load_system()?;
+        let user = SystemPackagesManifest::load_user()?;
+        let merged = SystemPackagesManifest::merged(&system, &user);
+
+        let mut to_capture = Vec::new();
+        let mut already_in_manifest = 0;
+
+        for pkg in layered {
+            if merged.packages.contains(&pkg) {
+                already_in_manifest += 1;
+            } else {
+                to_capture.push(pkg);
+            }
+        }
+
+        // Sort for consistent output
+        to_capture.sort();
+
+        Ok(DnfCapturePlan {
+            to_capture,
+            already_in_manifest,
+        })
+    }
+}
+
+impl Plan for DnfCapturePlan {
+    fn describe(&self) -> PlanSummary {
+        let mut summary = PlanSummary::new(format!(
+            "DNF Capture: {} to add, {} already in manifest",
+            self.to_capture.len(),
+            self.already_in_manifest
+        ));
+
+        for pkg in &self.to_capture {
+            summary.add_operation(Operation::new(Verb::Capture, format!("package:{}", pkg)));
+        }
+
+        summary
+    }
+
+    fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
+        let mut report = ExecutionReport::new();
+
+        if self.to_capture.is_empty() {
+            return Ok(report);
+        }
+
+        // Load user manifest and add packages
+        let mut user = SystemPackagesManifest::load_user()?;
+
+        for pkg in &self.to_capture {
+            if user.add_package(pkg.clone()) {
+                report.record_success(Verb::Capture, format!("package:{}", pkg));
+            } else {
+                // Already exists (shouldn't happen, but handle gracefully)
+                report.record_success(Verb::Skip, format!("package:{} (already in manifest)", pkg));
+            }
+        }
+
+        // Save the updated manifest
+        user.save_user()?;
+
+        Ok(report)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.to_capture.is_empty()
+    }
+}
+
+/// Get layered packages from rpm-ostree status.
+fn get_layered_packages() -> Vec<String> {
+    let output = Command::new("rpm-ostree")
+        .args(["status", "--json"])
+        .output();
+
+    let output = match output {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+
+    let json: serde_json::Value = match serde_json::from_slice(&output.stdout) {
+        Ok(j) => j,
+        Err(_) => return Vec::new(),
+    };
+
+    let deployments = match json.get("deployments").and_then(|d| d.as_array()) {
+        Some(d) => d,
+        None => return Vec::new(),
+    };
+
+    // Find booted deployment
+    let booted = match deployments
+        .iter()
+        .find(|d| d.get("booted").and_then(|b| b.as_bool()).unwrap_or(false))
+    {
+        Some(b) => b,
+        None => return Vec::new(),
+    };
+
+    // Get requested-packages (the packages the user explicitly layered)
+    booted
+        .get("requested-packages")
+        .or_else(|| booted.get("requested_packages"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
 }
