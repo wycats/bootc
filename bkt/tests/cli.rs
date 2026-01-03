@@ -497,7 +497,24 @@ fn dnf_help_shows_subcommands() {
         .stdout(predicate::str::contains("provides"))
         .stdout(predicate::str::contains("diff"))
         .stdout(predicate::str::contains("sync"))
+        .stdout(predicate::str::contains("capture"))
         .stdout(predicate::str::contains("copr"));
+}
+
+#[test]
+fn dnf_capture_dry_run_succeeds() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    // Capture should succeed even without rpm-ostree (returns empty plan)
+    bkt()
+        .env("HOME", home)
+        .env("BKT_FORCE_HOST", "1")
+        .args(["dnf", "capture", "--dry-run"])
+        .assert()
+        .success();
+
+    temp.close().unwrap();
 }
 
 #[test]

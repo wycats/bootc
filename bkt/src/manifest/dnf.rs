@@ -166,10 +166,14 @@ impl SystemPackagesManifest {
     }
 
     /// Add a package to the manifest.
-    pub fn add_package(&mut self, pkg: String) {
+    /// Returns true if the package was added, false if it already existed.
+    pub fn add_package(&mut self, pkg: String) -> bool {
         if !self.packages.contains(&pkg) {
             self.packages.push(pkg);
             self.packages.sort();
+            true
+        } else {
+            false
         }
     }
 

@@ -10,6 +10,7 @@ use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::plan::{CompositePlan, ExecuteContext, Plan, PlanContext, Plannable};
 
+use super::dnf::{DnfCaptureCommand, DnfCapturePlan};
 use super::extension::{ExtensionCaptureCommand, ExtensionCapturePlan};
 use super::flatpak::{FlatpakCaptureCommand, FlatpakCapturePlan};
 
@@ -21,6 +22,8 @@ pub enum CaptureSubsystem {
     Extension,
     /// Flatpak applications
     Flatpak,
+    /// DNF/RPM packages (rpm-ostree layered)
+    Dnf,
 }
 
 impl std::fmt::Display for CaptureSubsystem {
@@ -28,6 +31,7 @@ impl std::fmt::Display for CaptureSubsystem {
         match self {
             CaptureSubsystem::Extension => write!(f, "extension"),
             CaptureSubsystem::Flatpak => write!(f, "flatpak"),
+            CaptureSubsystem::Dnf => write!(f, "dnf"),
         }
     }
 }
@@ -97,6 +101,12 @@ impl Plannable for CaptureCommand {
             composite.add(flatpak_plan);
         }
 
+        // DNF capture (rpm-ostree layered packages)
+        if self.should_include(CaptureSubsystem::Dnf) {
+            let dnf_plan: DnfCapturePlan = DnfCaptureCommand.plan(ctx)?;
+            composite.add(dnf_plan);
+        }
+
         Ok(composite)
     }
 }
@@ -146,6 +156,7 @@ mod tests {
 
         assert!(cmd.should_include(CaptureSubsystem::Extension));
         assert!(cmd.should_include(CaptureSubsystem::Flatpak));
+        assert!(cmd.should_include(CaptureSubsystem::Dnf));
     }
 
     #[test]
@@ -157,6 +168,7 @@ mod tests {
 
         assert!(cmd.should_include(CaptureSubsystem::Extension));
         assert!(!cmd.should_include(CaptureSubsystem::Flatpak));
+        assert!(!cmd.should_include(CaptureSubsystem::Dnf));
     }
 
     #[test]
@@ -168,6 +180,7 @@ mod tests {
 
         assert!(!cmd.should_include(CaptureSubsystem::Extension));
         assert!(cmd.should_include(CaptureSubsystem::Flatpak));
+        assert!(cmd.should_include(CaptureSubsystem::Dnf));
     }
 
     #[test]
@@ -185,6 +198,7 @@ mod tests {
     fn test_capture_subsystem_display() {
         assert_eq!(format!("{}", CaptureSubsystem::Extension), "extension");
         assert_eq!(format!("{}", CaptureSubsystem::Flatpak), "flatpak");
+        assert_eq!(format!("{}", CaptureSubsystem::Dnf), "dnf");
     }
 
     #[test]
