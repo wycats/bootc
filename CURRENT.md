@@ -148,44 +148,67 @@ Implement `bkt dev` prefix for commands that target the development toolbox.
 
 ### Description
 
-Create `bkt-admin`, a setuid helper for passwordless privileged operations.
+Implement `bkt admin` for passwordless privileged operations using **polkit + pkexec** (replaces original setuid approach).
 
-### ⚠️ Security Considerations
+### Approach (Approved)
 
-Setuid binaries require extreme security care. Consider alternatives:
-- **Alternative A**: Passwordless sudo rules for specific commands
-- **Alternative B**: polkit policies for D-Bus operations
-- **Alternative C**: systemd user services
+**For bootc/rpm-ostree** (no D-Bus interface):
+- Use `pkexec bootc <cmd>` via `flatpak-spawn --host`
+- Polkit rules grant passwordless access to wheel group
+
+**For systemctl** (has D-Bus + polkit):
+- Use systemd's D-Bus API with `zbus` crate
+- Polkit automatically handles authorization
 
 ### Deliverables
 
-- [ ] Implement `bkt-admin` binary in Rust
-- [ ] Implement bootc operations: `status`, `upgrade`, `rollback`, `switch`
-- [ ] Implement systemctl operations with service allowlist
-- [ ] Create `/usr/share/bootc/allowed-services.txt`
-- [ ] Update Containerfile to install `bkt-admin` with setuid
-- [ ] Integrate with `bkt` CLI (auto-use helper when available)
+- [ ] Create polkit rules file (`system/polkit-1/rules.d/50-bkt-admin.rules`)
+- [ ] Implement `bkt admin bootc` commands (status, upgrade, rollback, switch)
+- [ ] Implement `bkt admin systemctl` commands via D-Bus (start, stop, restart, status)
+- [ ] Add `zbus` dependency for D-Bus integration
+- [ ] Update Containerfile to install polkit rules
+- [ ] Update RFC-0004 to document polkit approach
 
-### Implementation Plan (Deferred)
+### Implementation Plan (Next Sprint)
 
-**Pre-work: Security Design Review**
-- Evaluate setuid vs polkit vs sudo alternatives
-- Define minimal attack surface
-- Document security requirements
-- Get external review if proceeding with setuid
+**Day 1: Polkit rules + pkexec wrapper** (~6-8 hours)
+- Create `system/polkit-1/rules.d/50-bkt-admin.rules`
+- Create `bkt/src/commands/admin.rs`
+- Implement `bkt admin bootc status/upgrade/rollback/switch` via pkexec
+- Update Containerfile to copy polkit rules
 
-**If Proceeding with Setuid:**
-- Create new `bkt/admin/` crate (workspace member)
-- Minimal binary: only expose specific operations
-- Input validation: sanitize ALL inputs
-- Audit logging: log all privileged operations
-- Estimated: 5-7 days including security review
+**Day 2-3: D-Bus systemd integration** (~12-16 hours)
+- Add `zbus` dependency to Cargo.toml
+- Create `bkt/src/dbus/mod.rs` and `bkt/src/dbus/systemd.rs`
+- Implement `bkt admin systemctl start/stop/restart/enable/disable/status`
+- Test from toolbox context
+
+**Day 4: Polish + RFC update** (~4 hours)
+- Update RFC-0004 for polkit approach
+- Add CLI tests
+- Document security model
+
+### Polkit Rules (Preview)
+
+```javascript
+// 50-bkt-admin.rules
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.policykit.exec" &&
+        subject.isInGroup("wheel")) {
+        var program = action.lookup("program");
+        if (program == "/usr/bin/bootc" || program == "/usr/bin/rpm-ostree") {
+            return polkit.Result.YES;
+        }
+    }
+});
+```
 
 ### Acceptance Criteria
 
-- `bkt status` works without password from toolbox
-- `bkt upgrade` works with `--confirm` flag
-- Attempting to manage unlisted services fails with clear error
+- `bkt admin bootc status` works without password from toolbox
+- `bkt admin bootc upgrade` works with `--confirm` flag
+- `bkt admin systemctl restart docker.service` works via D-Bus
+- Non-wheel users are denied by polkit
 
 ---
 
@@ -463,12 +486,18 @@ Phase 2a: Bidirectional Sync ✅ COMPLETE
 ├── 10c. Capture side (bkt capture) ✅ Complete (PR #14)
 └── 10d. DNF capture (bkt dnf capture) ✅ Complete (PR #15)
 
-Phase 2b: Supporting Infrastructure ← CURRENT
-├── 7a. Document base image assumptions ← NEXT
-├── 7b. CI workflow (verify-assumptions.yml)
-├── 7c. Scheduled drift check workflow
-├── 7d. Changelog integration for assumptions
-└── 4. Privileged Helper (deferred - requires security review)
+Phase 2b: Supporting Infrastructure ← CURRENT SPRINT
+│
+├── Week 1: Drift Detection (Item 7)
+│   ├── 7a. Document base image assumptions ← NEXT
+│   ├── 7b. CI workflow (verify-assumptions.yml)
+│   ├── 7c. Scheduled drift check workflow
+│   └── 7d. Changelog integration for assumptions
+│
+└── Week 2: Privileged Helper (Item 4) - Polkit Approach
+    ├── 4a. Polkit rules + pkexec for bootc/rpm-ostree
+    ├── 4b. D-Bus systemd integration (zbus)
+    └── 4c. RFC-0004 update + tests
 
 Phase 2c: Polish
 ├── 5. Changelog sub-items (CI integration, MOTD)
