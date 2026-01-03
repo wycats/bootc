@@ -153,7 +153,6 @@ Create `bkt-admin`, a setuid helper for passwordless privileged operations.
 ### ⚠️ Security Considerations
 
 Setuid binaries require extreme security care. Consider alternatives:
-
 - **Alternative A**: Passwordless sudo rules for specific commands
 - **Alternative B**: polkit policies for D-Bus operations
 - **Alternative C**: systemd user services
@@ -170,14 +169,12 @@ Setuid binaries require extreme security care. Consider alternatives:
 ### Implementation Plan (Deferred)
 
 **Pre-work: Security Design Review**
-
 - Evaluate setuid vs polkit vs sudo alternatives
 - Define minimal attack surface
 - Document security requirements
 - Get external review if proceeding with setuid
 
 **If Proceeding with Setuid:**
-
 - Create new `bkt/admin/` crate (workspace member)
 - Minimal binary: only expose specific operations
 - Input validation: sanitize ALL inputs
@@ -286,12 +283,33 @@ Explicitly declare and verify assumptions about the base image.
 - Created `.github/workflows/verify-assumptions.yml`:
   - Runs `bkt base verify` on every PR/push.
   - Uses `ghcr.io/ublue-os/bazzite-gnome:stable` container.
+  - Verifies assumptions BEFORE installing build deps (pristine check).
 - Created `.github/workflows/check-upstream-drift.yml`:
   - Weekly scheduled check against `:stable` and `:latest`.
   - Uploads drift reports as artifacts.
   - Opens issues on detected breaking changes.
-- Implemented auto-generation of changelog entries when assumptions are added or removed.
-- Hooked into `bkt base assume` and `bkt base unassume`.
+- Changelog integration via `bkt base assume` / `bkt base unassume`.
+- Clarified manifest separation philosophy in RFC 0007 and manifests/README.md.
+
+### Implementation Plan (Completed)
+
+**Day 1: Document Assumptions**
+- Run `bkt base snapshot` to capture current system assumptions
+- Review and filter to ~20-30 critical packages (flatpak, rpm-ostree, gnome-shell, etc.)
+- Commit `manifests/base-image-assumptions.json`
+
+**Day 2-3: CI Workflows**
+- Create `.github/workflows/verify-assumptions.yml`
+  - Runs `bkt base verify` on every PR/push
+  - Uses `ghcr.io/ublue-os/bazzite-gnome:stable` container
+- Create `.github/workflows/check-upstream-drift.yml`
+  - Weekly scheduled check against `:stable` and `:latest`
+  - Uploads drift reports as artifacts
+  - Opens issues on detected breaking changes
+
+**Day 4: Changelog Integration**
+- Auto-generate changelog entry when assumptions added/removed
+- Hook into `bkt base assume` and `bkt base unassume`
 
 ### Acceptance Criteria
 
