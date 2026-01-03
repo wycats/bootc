@@ -150,6 +150,13 @@ Implement `bkt dev` prefix for commands that target the development toolbox.
 
 Create `bkt-admin`, a setuid helper for passwordless privileged operations.
 
+### ⚠️ Security Considerations
+
+Setuid binaries require extreme security care. Consider alternatives:
+- **Alternative A**: Passwordless sudo rules for specific commands
+- **Alternative B**: polkit policies for D-Bus operations
+- **Alternative C**: systemd user services
+
 ### Deliverables
 
 - [ ] Implement `bkt-admin` binary in Rust
@@ -158,6 +165,21 @@ Create `bkt-admin`, a setuid helper for passwordless privileged operations.
 - [ ] Create `/usr/share/bootc/allowed-services.txt`
 - [ ] Update Containerfile to install `bkt-admin` with setuid
 - [ ] Integrate with `bkt` CLI (auto-use helper when available)
+
+### Implementation Plan (Deferred)
+
+**Pre-work: Security Design Review**
+- Evaluate setuid vs polkit vs sudo alternatives
+- Define minimal attack surface
+- Document security requirements
+- Get external review if proceeding with setuid
+
+**If Proceeding with Setuid:**
+- Create new `bkt/admin/` crate (workspace member)
+- Minimal binary: only expose specific operations
+- Input validation: sanitize ALL inputs
+- Audit logging: log all privileged operations
+- Estimated: 5-7 days including security review
 
 ### Acceptance Criteria
 
@@ -236,7 +258,7 @@ Consolidate scattered version pins into unified upstream manifest with semver po
 ## 7. Base Image Drift Detection
 
 **RFC:** [0007-drift-detection.md](docs/rfcs/0007-drift-detection.md)  
-**Priority:** 🟢 Low  
+**Priority:** 🟢 Low → 🟡 Medium (next sprint)  
 **Status:** 🔄 Core Done (PR #10)
 
 ### Description
@@ -252,6 +274,26 @@ Explicitly declare and verify assumptions about the base image.
 - [ ] Add CI workflow to verify assumptions
 - [ ] Add scheduled check against `:stable` and `:latest`
 - [ ] Integrate with changelog when assumptions change
+
+### Implementation Plan (Next Sprint)
+
+**Day 1: Document Assumptions**
+- Run `bkt base snapshot` to capture current system assumptions
+- Review and filter to ~20-30 critical packages (flatpak, rpm-ostree, gnome-shell, etc.)
+- Commit `manifests/base-image-assumptions.json`
+
+**Day 2-3: CI Workflows**
+- Create `.github/workflows/verify-assumptions.yml`
+  - Runs `bkt base verify` on every PR/push
+  - Uses `ghcr.io/ublue-os/bazzite-gnome:stable` container
+- Create `.github/workflows/check-upstream-drift.yml`
+  - Weekly scheduled check against `:stable` and `:latest`
+  - Uploads drift reports as artifacts
+  - Opens issues on detected breaking changes
+
+**Day 4: Changelog Integration**
+- Auto-generate changelog entry when assumptions added/removed
+- Hook into `bkt base assume` and `bkt base unassume`
 
 ### Acceptance Criteria
 
@@ -398,19 +440,23 @@ Implement the two meta-commands that complete the bidirectional sync loop: `bkt 
 Recommended order based on dependencies:
 
 ```
-Phase 2a: Bidirectional Sync (PRIMARY GOAL)
-├── 9. Command Infrastructure (trait-based commands with dry-run) ✅ Complete
+Phase 2a: Bidirectional Sync ✅ COMPLETE
+├── 9. Command Infrastructure ✅ Complete
 ├── 10a. Apply side (bkt apply) ✅ Complete
-├── 10b. Status Dashboard (bkt status enhanced) ✅ Complete
+├── 10b. Status Dashboard (bkt status) ✅ Complete
 ├── 10c. Capture side (bkt capture) ✅ Complete (PR #14)
 └── 10d. DNF capture (bkt dnf capture) ✅ Complete (PR #15)
 
-Phase 2b: Supporting Infrastructure ← NEXT
-├── 4. Privileged Helper (enables passwordless operations)
-└── 7. Drift Detection sub-items (CI workflows, scheduled checks)
+Phase 2b: Supporting Infrastructure ← CURRENT
+├── 7a. Document base image assumptions ← NEXT
+├── 7b. CI workflow (verify-assumptions.yml)
+├── 7c. Scheduled drift check workflow
+├── 7d. Changelog integration for assumptions
+└── 4. Privileged Helper (deferred - requires security review)
 
 Phase 2c: Polish
 ├── 5. Changelog sub-items (CI integration, MOTD)
+├── 6. Upstream sub-items (Containerfile, semver policies)
 └── Future considerations (TUI, multi-machine, etc.)
 ```
 
