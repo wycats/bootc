@@ -278,10 +278,10 @@ Explicitly declare and verify assumptions about the base image.
 - [x] Add scheduled check against `:stable` and `:latest`
 - [x] Integrate with changelog when assumptions change
 
-### Completed Implementation
+### Implementation Summary
 
 - Captured current system assumptions with `bkt base snapshot`.
-- Reviewed and filtered to ~20–30 critical packages (flatpak, rpm-ostree, gnome-shell, etc.).
+- Reviewed and filtered to critical packages (flatpak, rpm-ostree, gnome-shell, polkit, etc.).
 - Committed `manifests/base-image-assumptions.json`.
 - Created `.github/workflows/verify-assumptions.yml`:
   - Runs `bkt base verify` on every PR/push.

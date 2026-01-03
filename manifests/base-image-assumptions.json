@@ -17,10 +17,6 @@
       "reason": "Core to bkt flatpak commands"
     },
     {
-      "name": "gnome-extensions-app",
-      "reason": "Extension manager integration"
-    },
-    {
       "name": "gnome-shell",
       "reason": "Required for extension management"
     },
@@ -39,10 +35,6 @@
     {
       "name": "systemd",
       "reason": "Required for D-Bus systemd operations"
-    },
-    {
-      "name": "toolbox",
-      "reason": "Required for bkt dev commands"
     }
   ],
   "services": ["dbus.service", "polkit.service"],
@@ -53,7 +45,6 @@
     "/usr/bin/pkexec",
     "/usr/bin/podman",
     "/usr/bin/rpm-ostree",
-    "/usr/bin/systemctl",
-    "/usr/bin/toolbox"
+    "/usr/bin/systemctl"
   ]
 }

@@ -5,6 +5,7 @@ on:
     # Run weekly on Sunday at midnight UTC
     - cron: "0 0 * * 0"
   workflow_dispatch:
+    # Manual trigger for ad-hoc drift checks
 
 env:
   CARGO_TERM_COLOR: always
