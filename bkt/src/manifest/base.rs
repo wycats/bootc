@@ -1,10 +1,15 @@
 //! Base image assumptions manifest type.
 //!
-//! This module provides types for tracking what the base image (Bazzite) provides.
-//! By tracking assumptions, we can:
-//! - Detect when the base image no longer provides expected packages
-//! - Distinguish between "our additions" and "base image content"
-//! - Get early warning of breaking changes in upstream
+//! This module provides types for tracking **what the upstream Bazzite base image provides**.
+//! This is a reference/documentation manifest, NOT a list of what `bkt` needs at runtime.
+//!
+//! By tracking what Bazzite provides, we can:
+//! - Detect when Bazzite no longer provides packages we depend on (breaking changes)
+//! - Distinguish between "our additions" (system-packages.json) and "base image content"
+//! - Get early warning of upstream changes that might break our distribution
+//!
+//! **Important**: This manifest does NOT control what gets installed. It documents
+//! what we expect the base image to already have.
 
 use anyhow::{Context, Result};
 use schemars::JsonSchema;
@@ -43,6 +48,9 @@ pub struct PackageAssumption {
 }
 
 /// Base image assumptions manifest.
+///
+/// Tracks what packages, services, and paths the upstream Bazzite image provides.
+/// This is used for verification and drift detection, NOT for package installation.
 ///
 /// Stored at `manifests/base-image-assumptions.json`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]

@@ -137,7 +137,7 @@ pub enum Commands {
     /// Check for configuration drift between manifests and system
     Drift(commands::drift::DriftArgs),
 
-    /// Manage base image assumptions
+    /// Track what the upstream Bazzite image provides (for drift detection)
     Base(commands::base::BaseArgs),
 }
 

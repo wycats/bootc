@@ -104,25 +104,28 @@ bkt drift monitor status
 
 Monitoring creates periodic drift reports and can notify via desktop notification.
 
-### Separating Manifest from System Packages
+### Separating User Packages from Base Image Tracking
 
-The drift detection system maintains a clear separation:
+The system maintains a clear separation between what YOU install and what Bazzite provides:
 
-- **manifest.json**: Packages explicitly requested by the user
-- **system-packages.json**: Packages installed by base image (Bazzite)
+- **system-packages.json**: Packages explicitly installed by the user on the host
+- **toolbox-packages.json**: Packages explicitly installed by the user in toolbox
+- **base-image-assumptions.json**: What the upstream Bazzite image provides (reference only)
 
 ```bash
-# See what packages came from the base image
-bkt packages base
+# See what packages we expect Bazzite to provide
+bkt base list
 
-# See what packages you explicitly added
-bkt packages user
+# Verify Bazzite still provides them
+bkt base verify
 
-# Compare
-bkt packages diff
+# See packages you explicitly added to host
+bkt packages list
 ```
 
-This ensures drift detection only flags changes to **user-managed** packages, not base image contents.
+**Important**: `base-image-assumptions.json` is a **reference document** that tracks what upstream provides. It is NOT used to install packages—it's used to detect when upstream changes break our assumptions.
+
+This ensures drift detection only flags changes to **user-managed** packages, not changes in upstream.
 
 ### Hybrid Tracking for Upstream Issues
 
@@ -223,22 +226,29 @@ fn detect_drift(manifest: &Manifest, system: &SystemState) -> DriftReport {
 
 ### Manifest Separation
 
-Two distinct manifest files prevent confusion:
+Three manifest types serve distinct purposes:
 
 ```
 manifests/
-├── system-packages.json    # Base image packages (read-only reference)
-└── user-packages.json      # User-added packages (managed by bkt)
+├── base-image-assumptions.json  # What Bazzite provides (upstream reference)
+├── system-packages.json         # Host packages YOU added (managed by bkt)
+└── toolbox-packages.json        # Toolbox packages YOU added (managed by bkt)
 ```
 
-The Containerfile references only `user-packages.json` for the `RUN dnf install` command.
+The **base-image-assumptions.json** file is a **reference document** that tracks what the upstream Bazzite image provides. It is NOT used to install packages—it's used for:
+- CI verification that Bazzite still provides expected packages
+- Drift detection to catch upstream breaking changes
+- Documentation of our dependencies on the base image
+
+The Containerfile references only `system-packages.json` for the `RUN dnf install` command—these are packages YOU add beyond what Bazzite provides.
 
 ```dockerfile
 # === BASE IMAGE ===
 FROM ghcr.io/ublue-os/bazzite-gnome:stable
+# ↑ This provides everything in base-image-assumptions.json
 
 # === USER PACKAGES (managed by bkt) ===
-# Only packages YOU added, not everything in bazzite
+# Only packages YOU added beyond what Bazzite provides
 RUN dnf install -y \
     htop \
     neovim
@@ -357,7 +367,7 @@ Reboot to apply all changes. Too disruptive for development workflow.
 
 ### Q1: Manifest Separation
 
-**Resolution**: Separate `system-packages.json` (base image reference) from `user-packages.json` (user managed). Drift detection only applies to user-managed packages.
+**Resolution**: Three separate manifests: `base-image-assumptions.json` (what Bazzite provides—upstream reference), `system-packages.json` (user-added host packages), and `toolbox-packages.json` (user-added toolbox packages). Drift detection only applies to user-managed packages. Base image assumptions are verified separately via `bkt base verify`.
 
 ### Q2: GSettings Scope
 

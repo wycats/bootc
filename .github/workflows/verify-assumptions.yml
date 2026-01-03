@@ -1,3 +1,10 @@
+# Verifies that the upstream Bazzite image still provides the packages,
+# services, and paths documented in base-image-assumptions.json.
+# This catches breaking changes in upstream before they break our distribution.
+#
+# IMPORTANT: The "pristine check" runs BEFORE installing build deps to ensure
+# we're testing what Bazzite actually provides, not what we install for building.
+
 name: Verify Base Image Assumptions
 
 on:
@@ -29,12 +36,52 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Verify assumptions BEFORE installing build deps to catch false positives
+      - name: Verify base image assumptions (pristine)
+        run: |
+          echo "Verifying base image assumptions BEFORE installing build deps..."
+          echo "This ensures we test what Bazzite actually provides."
+          echo ""
+          
+          # Parse packages from JSON and verify each one
+          failed=0
+          total=0
+          missing=""
+          
+          # Extract package names using grep/sed (jq may not be available)
+          packages=$(grep -oP '"name":\s*"\K[^"]+' manifests/base-image-assumptions.json)
+          
+          for pkg in $packages; do
+            total=$((total + 1))
+            if rpm -q "$pkg" >/dev/null 2>&1; then
+              echo "✓ $pkg"
+            else
+              echo "✗ $pkg (MISSING)"
+              failed=$((failed + 1))
+              missing="$missing $pkg"
+            fi
+          done
+          
+          echo ""
+          echo "Checked $total packages, $failed missing"
+          
+          if [ $failed -gt 0 ]; then
+            echo ""
+            echo "ERROR: The following packages are assumed to be in Bazzite but are missing:"
+            echo "$missing"
+            echo ""
+            echo "Either:"
+            echo "  1. These packages were removed from upstream Bazzite (breaking change)"
+            echo "  2. These packages were incorrectly added to base-image-assumptions.json"
+            exit 1
+          fi
+
       - name: Install build dependencies
         run: |
           dnf install -y rust cargo git
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
@@ -45,16 +92,16 @@ jobs:
         working-directory: bkt
         run: cargo build --release
 
-      - name: Verify base image assumptions
+      - name: Verify with bkt (full verification)
         run: |
-          echo "Verifying base image assumptions..."
+          echo "Running full verification with bkt base verify..."
           ./bkt/target/release/bkt base verify
 
       - name: Show assumption details on failure
         if: failure()
         run: |
           echo "=== Base Image Assumptions ==="
-          ./bkt/target/release/bkt base list
+          cat manifests/base-image-assumptions.json
           echo ""
-          echo "=== Installed Packages ==="
+          echo "=== Installed Packages (first 100) ==="
           rpm -qa | sort | head -100
