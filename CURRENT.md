@@ -164,7 +164,7 @@ Implement `bkt admin` for passwordless privileged operations using **polkit + pk
 
 - [ ] Create polkit rules file (`system/polkit-1/rules.d/50-bkt-admin.rules`)
 - [ ] Implement `bkt admin bootc` commands (status, upgrade, rollback, switch)
-- [ ] Implement `bkt admin systemctl` commands via D-Bus (start, stop, restart, status)
+- [ ] Implement `bkt admin systemctl` commands via D-Bus (start, stop, restart, status, enable, disable)
 - [ ] Add `zbus` dependency for D-Bus integration
 - [ ] Update Containerfile to install polkit rules
 - [ ] Update RFC-0004 to document polkit approach
@@ -187,6 +187,8 @@ Implement `bkt admin` for passwordless privileged operations using **polkit + pk
 - Update RFC-0004 for polkit approach
 - Add CLI tests
 - Document security model
+
+_Total estimated effort: ~3-4 days (22-28 hours)._
 
 ### Polkit Rules (Preview)
 
@@ -281,7 +283,7 @@ Consolidate scattered version pins into unified upstream manifest with semver po
 ## 7. Base Image Drift Detection
 
 **RFC:** [0007-drift-detection.md](docs/rfcs/0007-drift-detection.md)  
-**Priority:** 🟢 Low → 🟡 Medium (next sprint)  
+**Priority:** � Medium  
 **Status:** ✅ Complete (PRs #10, #18)
 
 ### Description
@@ -488,13 +490,13 @@ Phase 2a: Bidirectional Sync ✅ COMPLETE
 
 Phase 2b: Supporting Infrastructure ← CURRENT SPRINT
 │
-├── Week 1: Drift Detection (Item 7)
-│   ├── 7a. Document base image assumptions ← NEXT
-│   ├── 7b. CI workflow (verify-assumptions.yml)
-│   ├── 7c. Scheduled drift check workflow
-│   └── 7d. Changelog integration for assumptions
+├── Week 1: Drift Detection (Item 7) ✅ COMPLETE
+│   ├── 7a. Document base image assumptions ✅
+│   ├── 7b. CI workflow (verify-assumptions.yml) ✅
+│   ├── 7c. Scheduled drift check workflow ✅
+│   └── 7d. Changelog integration for assumptions ✅
 │
-└── Week 2: Privileged Helper (Item 4) - Polkit Approach
+└── Week 2: Privileged Helper (Item 4) - Polkit Approach ← NEXT
     ├── 4a. Polkit rules + pkexec for bootc/rpm-ostree
     ├── 4b. D-Bus systemd integration (zbus)
     └── 4c. RFC-0004 update + tests
