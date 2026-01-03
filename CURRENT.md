@@ -47,7 +47,7 @@ Both commands support `--dry-run` to preview changes without executing them.
 | 4   | [Privileged Helper](#4-privileged-helper)           | [RFC-0004](docs/rfcs/0004-bkt-admin.md)              | 🟡 Medium | Not Started  |
 | 5   | [Changelog Management](#5-changelog-management)     | [RFC-0005](docs/rfcs/0005-changelog.md)              | 🟡 Medium | 🔄 Core Done |
 | 6   | [Upstream Management](#6-upstream-management)       | [RFC-0006](docs/rfcs/0006-upstream-management.md)    | 🟡 Medium | 🔄 Core Done |
-| 7   | [Base Image Drift Detection](#7-drift-detection)    | [RFC-0007](docs/rfcs/0007-drift-detection.md)        | 🟢 Low    | 🔄 Core Done |
+| 7   | [Base Image Drift Detection](#7-drift-detection)    | [RFC-0007](docs/rfcs/0007-drift-detection.md)        | � Medium | ✅ Complete  |
 | 8   | [Validation on Add](#8-validation-on-add)           | —                                                    | 🟢 Low    | ✅ Complete  |
 | 9   | [Command Infrastructure](#9-command-infrastructure) | [RFC-0008](docs/rfcs/0008-command-infrastructure.md) | 🔴 High   | ✅ Complete  |
 | 10  | [Bidirectional Sync](#10-bidirectional-sync)        | —                                                    | 🔴 High   | ✅ Complete  |
