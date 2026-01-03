@@ -262,7 +262,7 @@ Consolidate scattered version pins into unified upstream manifest with semver po
 
 **RFC:** [0007-drift-detection.md](docs/rfcs/0007-drift-detection.md)  
 **Priority:** 🟢 Low → 🟡 Medium (next sprint)  
-**Status:** 🔄 Core Done (PR #10)
+**Status:** ✅ Complete (PRs #10, #18)
 
 ### Description
 
@@ -271,35 +271,27 @@ Explicitly declare and verify assumptions about the base image.
 ### Deliverables
 
 - [x] Create `manifests/base-image-assumptions.json` schema
-- [ ] Document initial assumptions (adw-gtk3-theme, gnome-shell, flatpak, etc.)
+- [x] Document initial assumptions (bootc, flatpak, rpm-ostree, gnome-shell, polkit, etc.)
 - [x] Implement `bkt base verify`
 - [x] Implement `bkt base assume <package>`
-- [ ] Add CI workflow to verify assumptions
-- [ ] Add scheduled check against `:stable` and `:latest`
-- [ ] Integrate with changelog when assumptions change
+- [x] Add CI workflow to verify assumptions
+- [x] Add scheduled check against `:stable` and `:latest`
+- [x] Integrate with changelog when assumptions change
 
-### Implementation Plan (Next Sprint)
+### Completed Implementation
 
-**Day 1: Document Assumptions**
-
-- Run `bkt base snapshot` to capture current system assumptions
-- Review and filter to ~20-30 critical packages (flatpak, rpm-ostree, gnome-shell, etc.)
-- Commit `manifests/base-image-assumptions.json`
-
-**Day 2-3: CI Workflows**
-
-- Create `.github/workflows/verify-assumptions.yml`
-  - Runs `bkt base verify` on every PR/push
-  - Uses `ghcr.io/ublue-os/bazzite-gnome:stable` container
-- Create `.github/workflows/check-upstream-drift.yml`
-  - Weekly scheduled check against `:stable` and `:latest`
-  - Uploads drift reports as artifacts
-  - Opens issues on detected breaking changes
-
-**Day 4: Changelog Integration**
-
-- Auto-generate changelog entry when assumptions added/removed
-- Hook into `bkt base assume` and `bkt base unassume`
+- Captured current system assumptions with `bkt base snapshot`.
+- Reviewed and filtered to ~20–30 critical packages (flatpak, rpm-ostree, gnome-shell, etc.).
+- Committed `manifests/base-image-assumptions.json`.
+- Created `.github/workflows/verify-assumptions.yml`:
+  - Runs `bkt base verify` on every PR/push.
+  - Uses `ghcr.io/ublue-os/bazzite-gnome:stable` container.
+- Created `.github/workflows/check-upstream-drift.yml`:
+  - Weekly scheduled check against `:stable` and `:latest`.
+  - Uploads drift reports as artifacts.
+  - Opens issues on detected breaking changes.
+- Implemented auto-generation of changelog entries when assumptions are added or removed.
+- Hooked into `bkt base assume` and `bkt base unassume`.
 
 ### Acceptance Criteria
 

@@ -5,11 +5,6 @@ on:
     # Run weekly on Sunday at midnight UTC
     - cron: "0 0 * * 0"
   workflow_dispatch:
-    inputs:
-      image_tag:
-        description: "Image tag to check (stable, latest, or specific version)"
-        required: false
-        default: "stable"
 
 env:
   CARGO_TERM_COLOR: always
@@ -68,7 +63,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'open',
-              labels: 'drift,base-image'
+              labels: ['drift', 'base-image']
             });
 
             if (issues.data.length > 0) {
