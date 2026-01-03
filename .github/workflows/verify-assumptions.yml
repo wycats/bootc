@@ -1,0 +1,60 @@
+name: Verify Base Image Assumptions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "manifests/base-image-assumptions.json"
+      - "bkt/src/commands/base.rs"
+      - "bkt/src/manifest/base.rs"
+      - ".github/workflows/verify-assumptions.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "manifests/base-image-assumptions.json"
+      - "bkt/src/commands/base.rs"
+      - "bkt/src/manifest/base.rs"
+      - ".github/workflows/verify-assumptions.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: Verify assumptions
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ublue-os/bazzite-gnome:stable
+      options: --privileged
+    timeout-minutes: 30
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf install -y rust cargo git
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bkt -> target
+
+      - name: Build bkt
+        working-directory: bkt
+        run: cargo build --release
+
+      - name: Verify base image assumptions
+        run: |
+          echo "Verifying base image assumptions..."
+          ./bkt/target/release/bkt base verify
+
+      - name: Show assumption details on failure
+        if: failure()
+        run: |
+          echo "=== Base Image Assumptions ==="
+          ./bkt/target/release/bkt base list
+          echo ""
+          echo "=== Installed Packages ==="
+          rpm -qa | sort | head -100

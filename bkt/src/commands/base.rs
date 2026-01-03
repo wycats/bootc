@@ -15,7 +15,10 @@ use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::manifest::{BaseImageAssumptions, find_repo_root};
+use crate::manifest::{
+    BaseImageAssumptions, ChangeCategory, ChangeType, ChangelogEntry, ChangelogManager,
+    find_repo_root,
+};
 use crate::output::Output;
 
 #[derive(Debug, Args)]
@@ -161,6 +164,21 @@ fn handle_assume(package: String, reason: Option<String>) -> Result<()> {
     assumptions.add_package(&package, reason.as_deref());
     assumptions.save_to_repo()?;
 
+    // Generate changelog entry
+    let message = match &reason {
+        Some(r) => format!("Added base image assumption: {} ({})", package, r),
+        None => format!("Added base image assumption: {}", package),
+    };
+    let entry = ChangelogEntry::new(ChangeType::Added, ChangeCategory::BaseAssumption, &message)
+        .with_command(format!("bkt base assume {}", package));
+
+    if let Ok(repo_root) = get_repo_root() {
+        let manager = ChangelogManager::new(repo_root);
+        if let Err(e) = manager.add_pending(&entry) {
+            Output::warning(format!("Failed to add changelog entry: {}", e));
+        }
+    }
+
     Output::success(format!("Added '{}' to base image assumptions.", package));
     Ok(())
 }
@@ -174,6 +192,23 @@ fn handle_unassume(package: String) -> Result<()> {
     }
 
     assumptions.save_to_repo()?;
+
+    // Generate changelog entry
+    let message = format!("Removed base image assumption: {}", package);
+    let entry = ChangelogEntry::new(
+        ChangeType::Removed,
+        ChangeCategory::BaseAssumption,
+        &message,
+    )
+    .with_command(format!("bkt base unassume {}", package));
+
+    if let Ok(repo_root) = get_repo_root() {
+        let manager = ChangelogManager::new(repo_root);
+        if let Err(e) = manager.add_pending(&entry) {
+            Output::warning(format!("Failed to add changelog entry: {}", e));
+        }
+    }
+
     Output::success(format!(
         "Removed '{}' from base image assumptions.",
         package
