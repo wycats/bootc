@@ -90,6 +90,11 @@
           "const": "copr"
         },
         {
+          "description": "Base image assumption change",
+          "type": "string",
+          "const": "baseassumption"
+        },
+        {
           "description": "System configuration change",
           "type": "string",
           "const": "system"

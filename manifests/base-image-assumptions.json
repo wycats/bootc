@@ -17,20 +17,12 @@
       "reason": "Core to bkt flatpak commands"
     },
     {
-      "name": "git",
-      "reason": "Required for PR workflow and repository operations"
-    },
-    {
       "name": "gnome-extensions-app",
       "reason": "Extension manager integration"
     },
     {
       "name": "gnome-shell",
       "reason": "Required for extension management"
-    },
-    {
-      "name": "jq",
-      "reason": "Used for JSON manifest processing in scripts"
     },
     {
       "name": "polkit",
