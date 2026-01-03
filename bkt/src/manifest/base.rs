@@ -49,25 +49,26 @@ pub struct PackageAssumption {
 
 /// Base image assumptions manifest.
 ///
-/// Tracks what packages, services, and paths the upstream Bazzite image provides.
-/// This is used for verification and drift detection, NOT for package installation.
+/// Tracks what the upstream Bazzite base image provides (packages, services, paths).
+/// This is a reference manifest for drift detection and CI verification, NOT a list
+/// of runtime dependencies. Used to detect when upstream changes break our assumptions.
 ///
 /// Stored at `manifests/base-image-assumptions.json`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct BaseImageAssumptions {
-    /// Information about the base image
+    /// Information about the upstream base image being tracked
     #[serde(default)]
     pub base_image: BaseImageInfo,
 
-    /// Packages assumed to be provided by the base image
+    /// Packages that the upstream Bazzite image provides (what's already in the base image)
     #[serde(default)]
     pub packages: Vec<PackageAssumption>,
 
-    /// Systemd services assumed to be provided
+    /// Systemd services that the upstream Bazzite image provides
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub services: Vec<String>,
 
-    /// Paths assumed to exist
+    /// Filesystem paths that the upstream Bazzite image provides
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<String>,
 }

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "BaseImageAssumptions",
-  "description": "Tracks what the upstream Bazzite base image provides (packages, services, paths). This is a reference manifest for drift detection and CI verification, NOT a list of runtime dependencies. Used to detect when upstream changes break our assumptions.\n\nStored at `manifests/base-image-assumptions.json`.",
+  "description": "Base image assumptions manifest.\n\nTracks what the upstream Bazzite base image provides (packages, services, paths).\nThis is a reference manifest for drift detection and CI verification, NOT a list\nof runtime dependencies. Used to detect when upstream changes break our assumptions.\n\nStored at `manifests/base-image-assumptions.json`.",
   "type": "object",
   "properties": {
     "base_image": {
