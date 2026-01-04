@@ -44,7 +44,7 @@ Both commands support `--dry-run` to preview changes without executing them.
 | 1   | [Command Punning Foundation](#1-command-punning)    | [RFC-0001](docs/rfcs/0001-command-punning.md)        | 🔴 High   | ✅ Complete  |
 | 2   | [RPM Package Management](#2-rpm-package-management) | [RFC-0002](docs/rfcs/0002-bkt-dnf.md)                | 🔴 High   | 🔄 Core Done |
 | 3   | [Toolbox Commands](#3-toolbox-commands)             | [RFC-0003](docs/rfcs/0003-bkt-dev.md)                | 🔴 High   | 🔄 Core Done |
-| 4   | [Privileged Helper](#4-privileged-helper)           | [RFC-0004](docs/rfcs/0004-bkt-admin.md)              | 🟡 Medium | Not Started  |
+| 4   | [Privileged Helper](#4-privileged-helper)           | [RFC-0009](docs/rfcs/0009-privileged-operations.md)  | 🟡 Medium | Not Started  |
 | 5   | [Changelog Management](#5-changelog-management)     | [RFC-0005](docs/rfcs/0005-changelog.md)              | 🟡 Medium | 🔄 Core Done |
 | 6   | [Upstream Management](#6-upstream-management)       | [RFC-0006](docs/rfcs/0006-upstream-management.md)    | 🟡 Medium | 🔄 Core Done |
 | 7   | [Base Image Drift Detection](#7-drift-detection)    | [RFC-0007](docs/rfcs/0007-drift-detection.md)        | � Medium | ✅ Complete  |
@@ -142,7 +142,7 @@ Implement `bkt dev` prefix for commands that target the development toolbox.
 
 ## 4. Privileged Helper
 
-**RFC:** [0004-bkt-admin.md](docs/rfcs/0004-bkt-admin.md)  
+**RFC:** [0009-privileged-operations.md](docs/rfcs/0009-privileged-operations.md)  
 **Priority:** 🟡 Medium  
 **Status:** Not Started
 
@@ -542,8 +542,9 @@ Manage remote machines via SSH with the same `bkt` commands.
 | [RFC-0001](docs/rfcs/0001-command-punning.md)        | Command Punning Philosophy       | Draft  |
 | [RFC-0002](docs/rfcs/0002-bkt-dnf.md)                | `bkt dnf` RPM Package Management | Draft  |
 | [RFC-0003](docs/rfcs/0003-bkt-dev.md)                | `bkt dev` Toolbox Commands       | Draft  |
-| [RFC-0004](docs/rfcs/0004-bkt-admin.md)              | `bkt-admin` Privileged Helper    | Draft  |
+| [RFC-0004](docs/rfcs/0004-bkt-admin.md)              | Image-Time System Config         | Future |
 | [RFC-0005](docs/rfcs/0005-changelog.md)              | Changelog Management             | Draft  |
 | [RFC-0006](docs/rfcs/0006-upstream-management.md)    | Upstream Dependency Management   | Draft  |
 | [RFC-0007](docs/rfcs/0007-drift-detection.md)        | Base Image Drift Detection       | Draft  |
 | [RFC-0008](docs/rfcs/0008-command-infrastructure.md) | Command Infrastructure (Plans)   | Draft  |
+| [RFC-0009](docs/rfcs/0009-privileged-operations.md)  | Runtime Privileged Operations    | Draft  |
