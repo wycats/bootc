@@ -80,6 +80,15 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    /// Privileged operations (bootc, systemctl) via polkit
+    ///
+    /// Provides passwordless access to system administration commands
+    /// for wheel group members. Works from both host and toolbox.
+    ///
+    /// Read-only operations (status) are always passwordless.
+    /// Mutating operations require explicit --confirm flag.
+    Admin(commands::admin::AdminArgs),
+
     /// Apply all manifests to the running system
     Apply(commands::apply::ApplyArgs),
 
@@ -162,6 +171,7 @@ fn main() -> Result<()> {
     );
 
     match cli.command {
+        Commands::Admin(args) => commands::admin::run(args, &plan),
         Commands::Apply(args) => commands::apply::run(args, &plan),
         Commands::Capture(args) => commands::capture::run(args, &plan),
         Commands::Dnf(args) => commands::dnf::run(args, &plan),

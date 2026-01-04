@@ -1,0 +1,41 @@
+// bkt admin: Passwordless privileged operations for wheel group
+// 
+// This polkit rule grants wheel group members passwordless access to
+// bootc and rpm-ostree commands when invoked via pkexec.
+//
+// Security rationale:
+// - Wheel group already has sudo access; this adds no new privilege
+// - Polkit provides audit logging
+// - bkt's --confirm flag prevents accidental mutations
+// - Follows the "you're maintaining your own distribution" philosophy
+//
+// Installed by: Containerfile
+// See: docs/rfcs/0009-privileged-operations.md
+
+polkit.addRule(function(action, subject) {
+    // Only handle pkexec (org.freedesktop.policykit.exec) actions
+    if (action.id !== "org.freedesktop.policykit.exec") {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    // Only grant to wheel group members
+    if (!subject.isInGroup("wheel")) {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    // Get the program being executed
+    var program = action.lookup("program");
+
+    // Allow bootc commands (image management)
+    if (program === "/usr/bin/bootc") {
+        return polkit.Result.YES;
+    }
+
+    // Allow rpm-ostree commands (legacy/fallback)
+    if (program === "/usr/bin/rpm-ostree") {
+        return polkit.Result.YES;
+    }
+
+    // Don't handle other programs
+    return polkit.Result.NOT_HANDLED;
+});

@@ -1,5 +1,6 @@
 //! CLI command implementations.
 
+pub mod admin;
 pub mod apply;
 pub mod base;
 pub mod capture;
