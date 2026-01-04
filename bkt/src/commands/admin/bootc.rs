@@ -102,11 +102,10 @@ fn handle_upgrade(plan: &ExecutionPlan, confirm: bool, yes: bool) -> Result<()> 
     let confirmed = confirm || yes;
     require_confirmation("upgrade", confirmed)?;
 
-    if !yes && !plan.dry_run {
-        if !prompt_continue("This will stage an image upgrade for next boot.")? {
-            Output::info("Cancelled.");
-            return Ok(());
-        }
+    if !yes && !plan.dry_run && !prompt_continue("This will stage an image upgrade for next boot.")?
+    {
+        Output::info("Cancelled.");
+        return Ok(());
     }
 
     if plan.dry_run {
@@ -126,12 +125,10 @@ fn handle_switch(plan: &ExecutionPlan, image: &str, confirm: bool, yes: bool) ->
     let confirmed = confirm || yes;
     require_confirmation("switch", confirmed)?;
 
-    if !yes && !plan.dry_run {
-        let msg = format!("This will switch to image '{}' on next boot.", image);
-        if !prompt_continue(&msg)? {
-            Output::info("Cancelled.");
-            return Ok(());
-        }
+    let msg = format!("This will switch to image '{}' on next boot.", image);
+    if !yes && !plan.dry_run && !prompt_continue(&msg)? {
+        Output::info("Cancelled.");
+        return Ok(());
     }
 
     if plan.dry_run {
@@ -151,11 +148,12 @@ fn handle_rollback(plan: &ExecutionPlan, confirm: bool, yes: bool) -> Result<()>
     let confirmed = confirm || yes;
     require_confirmation("rollback", confirmed)?;
 
-    if !yes && !plan.dry_run {
-        if !prompt_continue("This will make the previous deployment the default for next boot.")? {
-            Output::info("Cancelled.");
-            return Ok(());
-        }
+    if !yes
+        && !plan.dry_run
+        && !prompt_continue("This will make the previous deployment the default for next boot.")?
+    {
+        Output::info("Cancelled.");
+        return Ok(());
     }
 
     if plan.dry_run {
