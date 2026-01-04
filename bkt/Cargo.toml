@@ -33,3 +33,7 @@ predicates = "3"
 assert_fs = "1"
 proptest = "1"
 tempfile = "3"
+serial_test = "3"
+
+[dependencies.is-terminal]
+version = "0.4"

@@ -5,6 +5,7 @@
 
 use anyhow::{bail, Context, Result};
 use clap::Subcommand;
+use is_terminal::IsTerminal;
 use owo_colors::OwoColorize;
 use std::process::Command;
 
@@ -21,22 +22,22 @@ pub enum BootcAction {
     /// image references, and update availability.
     Status,
 
-    /// Upgrade to the latest image (requires --confirm)
+    /// Upgrade to the latest image (requires --confirm or --yes)
     ///
     /// Fetches and stages the latest version of the current image.
     /// The new deployment is staged for next boot; running system is unchanged.
     /// Use `bootc rollback` to revert if needed.
     Upgrade {
-        /// Confirm the upgrade operation
+        /// Confirm the upgrade operation (required for safety)
         #[arg(long)]
         confirm: bool,
 
-        /// Skip confirmation prompt (for automation)
+        /// Skip confirmation prompt and proceed (implies --confirm, for automation)
         #[arg(long, short = 'y')]
         yes: bool,
     },
 
-    /// Switch to a different image (requires --confirm)
+    /// Switch to a different image (requires --confirm or --yes)
     ///
     /// Stages a new deployment using the specified image reference.
     /// The switch takes effect on next boot.
@@ -44,25 +45,25 @@ pub enum BootcAction {
         /// Image reference (e.g., ghcr.io/user/image:tag)
         image: String,
 
-        /// Confirm the switch operation
+        /// Confirm the switch operation (required for safety)
         #[arg(long)]
         confirm: bool,
 
-        /// Skip confirmation prompt (for automation)
+        /// Skip confirmation prompt and proceed (implies --confirm, for automation)
         #[arg(long, short = 'y')]
         yes: bool,
     },
 
-    /// Rollback to previous deployment (requires --confirm)
+    /// Rollback to previous deployment (requires --confirm or --yes)
     ///
     /// Makes the previous deployment the default for next boot.
     /// Useful for reverting after a problematic upgrade.
     Rollback {
-        /// Confirm the rollback operation
+        /// Confirm the rollback operation (required for safety)
         #[arg(long)]
         confirm: bool,
 
-        /// Skip confirmation prompt (for automation)
+        /// Skip confirmation prompt and proceed (implies --confirm, for automation)
         #[arg(long, short = 'y')]
         yes: bool,
     },
@@ -90,7 +91,9 @@ fn handle_status(plan: &ExecutionPlan) -> Result<()> {
 
 /// Handle `bkt admin bootc upgrade`.
 fn handle_upgrade(plan: &ExecutionPlan, confirm: bool, yes: bool) -> Result<()> {
-    require_confirmation("upgrade", confirm)?;
+    // --yes implies --confirm (for non-interactive automation)
+    let confirmed = confirm || yes;
+    require_confirmation("upgrade", confirmed)?;
 
     if !yes && !plan.dry_run {
         if !prompt_continue("This will stage an image upgrade for next boot.")? {
@@ -109,7 +112,9 @@ fn handle_upgrade(plan: &ExecutionPlan, confirm: bool, yes: bool) -> Result<()> 
 
 /// Handle `bkt admin bootc switch`.
 fn handle_switch(plan: &ExecutionPlan, image: &str, confirm: bool, yes: bool) -> Result<()> {
-    require_confirmation("switch", confirm)?;
+    // --yes implies --confirm (for non-interactive automation)
+    let confirmed = confirm || yes;
+    require_confirmation("switch", confirmed)?;
 
     if !yes && !plan.dry_run {
         let msg = format!("This will switch to image '{}' on next boot.", image);
@@ -132,7 +137,9 @@ fn handle_switch(plan: &ExecutionPlan, image: &str, confirm: bool, yes: bool) ->
 
 /// Handle `bkt admin bootc rollback`.
 fn handle_rollback(plan: &ExecutionPlan, confirm: bool, yes: bool) -> Result<()> {
-    require_confirmation("rollback", confirm)?;
+    // --yes implies --confirm (for non-interactive automation)
+    let confirmed = confirm || yes;
+    require_confirmation("rollback", confirmed)?;
 
     if !yes && !plan.dry_run {
         if !prompt_continue("This will make the previous deployment the default for next boot.")? {
@@ -152,7 +159,7 @@ fn handle_rollback(plan: &ExecutionPlan, confirm: bool, yes: bool) -> Result<()>
     exec_bootc("rollback", &[])
 }
 
-/// Require the --confirm flag for mutating operations.
+/// Require the --confirm or --yes flag for mutating operations.
 fn require_confirmation(operation: &str, confirmed: bool) -> Result<()> {
     if confirmed {
         return Ok(());
@@ -194,24 +201,52 @@ fn require_confirmation(operation: &str, confirmed: bool) -> Result<()> {
         operation.green(),
         "--confirm".yellow()
     );
+    println!();
+    println!(
+        "For non-interactive automation, use {} (implies --confirm):",
+        "--yes".yellow()
+    );
+    println!(
+        "  {} {} {}",
+        "bkt admin bootc".green(),
+        operation.green(),
+        "--yes".yellow()
+    );
 
-    bail!("Missing --confirm flag for mutating operation");
+    bail!("Missing --confirm or --yes flag for mutating operation");
 }
 
 /// Prompt user to continue (for non-dry-run mutating operations).
+///
+/// Returns `Ok(false)` if stdin is not a TTY (non-interactive), treating it as "no".
 fn prompt_continue(message: &str) -> Result<bool> {
+    // Check if stdin is a terminal; if not, don't prompt (default to "no")
+    if !std::io::stdin().is_terminal() {
+        Output::warning("Non-interactive mode detected; use --yes to skip prompts.");
+        return Ok(false);
+    }
+
     Output::warning(message);
     print!("Continue? [y/N] ");
     std::io::Write::flush(&mut std::io::stdout())?;
 
     let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
-    let input = input.trim().to_lowercase();
+    let bytes_read = std::io::stdin().read_line(&mut input)?;
 
+    // Handle EOF (e.g., pipe closed)
+    if bytes_read == 0 {
+        return Ok(false);
+    }
+
+    let input = input.trim().to_lowercase();
     Ok(input == "y" || input == "yes")
 }
 
 /// Execute a bootc command via pkexec, handling toolbox context.
+///
+/// - **Host**: Direct `pkexec bootc <args>`
+/// - **Toolbox**: `flatpak-spawn --host pkexec bootc <args>`
+/// - **Container**: Returns error (generic containers can't access host polkit)
 fn exec_bootc(subcommand: &str, args: &[String]) -> Result<()> {
     let env = detect_environment();
     let status = match env {
@@ -231,7 +266,7 @@ fn exec_bootc(subcommand: &str, args: &[String]) -> Result<()> {
                 .status()
                 .context("Failed to execute flatpak-spawn")?
         }
-        RuntimeEnvironment::Host | RuntimeEnvironment::Container => {
+        RuntimeEnvironment::Host => {
             // Direct execution on host
             Command::new("pkexec")
                 .arg("bootc")
@@ -239,6 +274,17 @@ fn exec_bootc(subcommand: &str, args: &[String]) -> Result<()> {
                 .args(args)
                 .status()
                 .context("Failed to execute pkexec")?
+        }
+        RuntimeEnvironment::Container => {
+            // Generic containers don't have access to host's polkit daemon
+            bail!(
+                "Cannot execute admin commands from a generic container\n\n\
+                 Admin commands require access to the host's polkit daemon, which is\n\
+                 only available from toolbox containers (created with 'toolbox create').\n\n\
+                 Options:\n  \
+                 • Exit this container and run from the host\n  \
+                 • Use a toolbox instead: toolbox create && toolbox enter"
+            );
         }
     };
 
@@ -270,8 +316,11 @@ fn describe_execution(subcommand: &str, args: &[String]) -> String {
                 subcommand, args_str
             )
         }
-        RuntimeEnvironment::Host | RuntimeEnvironment::Container => {
+        RuntimeEnvironment::Host => {
             format!("pkexec bootc {}{}", subcommand, args_str)
+        }
+        RuntimeEnvironment::Container => {
+            format!("[error: unsupported in generic container] pkexec bootc {}{}", subcommand, args_str)
         }
     }
 }
@@ -279,31 +328,60 @@ fn describe_execution(subcommand: &str, args: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
-    #[test]
-    fn test_describe_execution_status() {
-        // Force host environment for test
-        // SAFETY: This is a single-threaded test; modifying env vars is safe here.
+    /// Helper to set env var for testing (requires unsafe in Rust 2024)
+    fn set_force_host(value: bool) {
         unsafe {
-            std::env::set_var("BKT_FORCE_HOST", "1");
-        }
-        let desc = describe_execution("status", &[]);
-        assert_eq!(desc, "pkexec bootc status");
-        unsafe {
-            std::env::remove_var("BKT_FORCE_HOST");
+            if value {
+                std::env::set_var("BKT_FORCE_HOST", "1");
+            } else {
+                std::env::remove_var("BKT_FORCE_HOST");
+            }
         }
     }
 
     #[test]
+    #[serial]
+    fn test_describe_execution_status() {
+        set_force_host(true);
+        let desc = describe_execution("status", &[]);
+        assert_eq!(desc, "pkexec bootc status");
+        set_force_host(false);
+    }
+
+    #[test]
+    #[serial]
     fn test_describe_execution_switch_with_args() {
-        // SAFETY: This is a single-threaded test; modifying env vars is safe here.
-        unsafe {
-            std::env::set_var("BKT_FORCE_HOST", "1");
-        }
+        set_force_host(true);
         let desc = describe_execution("switch", &["ghcr.io/test/image:latest".to_string()]);
         assert_eq!(desc, "pkexec bootc switch ghcr.io/test/image:latest");
-        unsafe {
-            std::env::remove_var("BKT_FORCE_HOST");
-        }
+        set_force_host(false);
+    }
+
+    #[test]
+    fn test_require_confirmation_fails_without_flag() {
+        let result = require_confirmation("upgrade", false);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("--confirm"));
+        assert!(err.contains("--yes"));
+    }
+
+    #[test]
+    fn test_require_confirmation_succeeds_with_flag() {
+        let result = require_confirmation("upgrade", true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_require_confirmation_messages_vary_by_operation() {
+        // Each operation should mention different rollback/recovery options
+        let upgrade_err = require_confirmation("upgrade", false).unwrap_err().to_string();
+        let rollback_err = require_confirmation("rollback", false).unwrap_err().to_string();
+
+        // Both should require confirmation
+        assert!(upgrade_err.contains("--confirm"));
+        assert!(rollback_err.contains("--confirm"));
     }
 }

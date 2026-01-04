@@ -9,6 +9,16 @@
 // - bkt's --confirm flag prevents accidental mutations
 // - Follows the "you're maintaining your own distribution" philosophy
 //
+// IMPORTANT LIMITATION:
+// This rule grants access to ALL bootc/rpm-ostree subcommands via pkexec.
+// Users can bypass bkt's --confirm safety by running `pkexec bootc upgrade`
+// directly. This is intentional: wheel users already have root access via
+// sudo, so the polkit rule doesn't grant new capabilities—it just makes
+// authorized operations more convenient.
+//
+// For the safety of the --confirm flag, always use `bkt admin bootc <cmd>`
+// rather than invoking pkexec directly.
+//
 // Installed by: Containerfile
 // See: docs/rfcs/0009-privileged-operations.md
 
