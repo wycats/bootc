@@ -3,13 +3,13 @@
 //! Provides passwordless access to bootc operations via polkit + pkexec.
 //! Handles context detection to work identically from host or toolbox.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Subcommand;
 use is_terminal::IsTerminal;
 use owo_colors::OwoColorize;
 use std::process::Command;
 
-use crate::context::{detect_environment, RuntimeEnvironment};
+use crate::context::{RuntimeEnvironment, detect_environment};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 
@@ -74,7 +74,11 @@ pub fn run(action: BootcAction, plan: &ExecutionPlan) -> Result<()> {
     match action {
         BootcAction::Status => handle_status(plan),
         BootcAction::Upgrade { confirm, yes } => handle_upgrade(plan, confirm, yes),
-        BootcAction::Switch { image, confirm, yes } => handle_switch(plan, &image, confirm, yes),
+        BootcAction::Switch {
+            image,
+            confirm,
+            yes,
+        } => handle_switch(plan, &image, confirm, yes),
         BootcAction::Rollback { confirm, yes } => handle_rollback(plan, confirm, yes),
     }
 }
@@ -82,7 +86,10 @@ pub fn run(action: BootcAction, plan: &ExecutionPlan) -> Result<()> {
 /// Handle `bkt admin bootc status`.
 fn handle_status(plan: &ExecutionPlan) -> Result<()> {
     if plan.dry_run {
-        Output::dry_run(format!("Would execute: {}", describe_execution("status", &[])));
+        Output::dry_run(format!(
+            "Would execute: {}",
+            describe_execution("status", &[])
+        ));
         return Ok(());
     }
 
@@ -103,7 +110,10 @@ fn handle_upgrade(plan: &ExecutionPlan, confirm: bool, yes: bool) -> Result<()> 
     }
 
     if plan.dry_run {
-        Output::dry_run(format!("Would execute: {}", describe_execution("upgrade", &[])));
+        Output::dry_run(format!(
+            "Would execute: {}",
+            describe_execution("upgrade", &[])
+        ));
         return Ok(());
     }
 
@@ -289,12 +299,11 @@ fn exec_bootc(subcommand: &str, args: &[String]) -> Result<()> {
     };
 
     if !status.success() {
-        let code = status.code().map(|c| c.to_string()).unwrap_or_else(|| "unknown".to_string());
-        bail!(
-            "bootc {} failed with exit code {}",
-            subcommand,
-            code
-        );
+        let code = status
+            .code()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        bail!("bootc {} failed with exit code {}", subcommand, code);
     }
 
     Ok(())
@@ -320,7 +329,10 @@ fn describe_execution(subcommand: &str, args: &[String]) -> String {
             format!("pkexec bootc {}{}", subcommand, args_str)
         }
         RuntimeEnvironment::Container => {
-            format!("[error: unsupported in generic container] pkexec bootc {}{}", subcommand, args_str)
+            format!(
+                "[error: unsupported in generic container] pkexec bootc {}{}",
+                subcommand, args_str
+            )
         }
     }
 }
@@ -377,8 +389,12 @@ mod tests {
     #[test]
     fn test_require_confirmation_messages_vary_by_operation() {
         // Each operation should mention different rollback/recovery options
-        let upgrade_err = require_confirmation("upgrade", false).unwrap_err().to_string();
-        let rollback_err = require_confirmation("rollback", false).unwrap_err().to_string();
+        let upgrade_err = require_confirmation("upgrade", false)
+            .unwrap_err()
+            .to_string();
+        let rollback_err = require_confirmation("rollback", false)
+            .unwrap_err()
+            .to_string();
 
         // Both should require confirmation
         assert!(upgrade_err.contains("--confirm"));

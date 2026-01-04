@@ -61,7 +61,6 @@ pub enum AdminAction {
         #[command(subcommand)]
         action: BootcAction,
     },
-
     // Future: Systemctl subcommand will be added in Phase 3-4
     // Systemctl {
     //     #[command(subcommand)]
