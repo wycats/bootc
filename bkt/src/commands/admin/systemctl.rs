@@ -121,18 +121,28 @@ fn status(unit: &str, plan: &ExecutionPlan) -> Result<()> {
     let status = manager.status(unit)?;
 
     // Format output similar to systemctl status
-    let active_color = match status.active_state.as_str() {
-        "active" => status.active_state.green().to_string(),
-        "inactive" => status.active_state.dimmed().to_string(),
-        "failed" => status.active_state.red().to_string(),
-        _ => status.active_state.yellow().to_string(),
+    let use_color = std::io::stdout().is_terminal();
+
+    let active_color = if use_color {
+        match status.active_state.as_str() {
+            "active" => status.active_state.green().to_string(),
+            "inactive" => status.active_state.dimmed().to_string(),
+            "failed" => status.active_state.red().to_string(),
+            _ => status.active_state.yellow().to_string(),
+        }
+    } else {
+        status.active_state.clone()
     };
 
-    let enabled_color = match status.unit_file_state.as_str() {
-        "enabled" | "static" => status.unit_file_state.green().to_string(),
-        "disabled" => status.unit_file_state.dimmed().to_string(),
-        "masked" => status.unit_file_state.red().to_string(),
-        _ => status.unit_file_state.yellow().to_string(),
+    let enabled_color = if use_color {
+        match status.unit_file_state.as_str() {
+            "enabled" | "static" => status.unit_file_state.green().to_string(),
+            "disabled" => status.unit_file_state.dimmed().to_string(),
+            "masked" => status.unit_file_state.red().to_string(),
+            _ => status.unit_file_state.yellow().to_string(),
+        }
+    } else {
+        status.unit_file_state.clone()
     };
 
     println!("● {}", status.name.bold());
@@ -148,7 +158,7 @@ fn status(unit: &str, plan: &ExecutionPlan) -> Result<()> {
 
 /// Start a unit.
 fn start(unit: &str, confirm: bool, plan: &ExecutionPlan) -> Result<()> {
-    require_confirmation(confirm, "start", unit)?;
+    require_confirmation(confirm, "start", Some(unit))?;
 
     if plan.dry_run {
         Output::dry_run(format!("Would start: {}", unit));
@@ -165,7 +175,7 @@ fn start(unit: &str, confirm: bool, plan: &ExecutionPlan) -> Result<()> {
 
 /// Stop a unit.
 fn stop(unit: &str, confirm: bool, plan: &ExecutionPlan) -> Result<()> {
-    require_confirmation(confirm, "stop", unit)?;
+    require_confirmation(confirm, "stop", Some(unit))?;
 
     if plan.dry_run {
         Output::dry_run(format!("Would stop: {}", unit));
@@ -182,7 +192,7 @@ fn stop(unit: &str, confirm: bool, plan: &ExecutionPlan) -> Result<()> {
 
 /// Restart a unit.
 fn restart(unit: &str, confirm: bool, plan: &ExecutionPlan) -> Result<()> {
-    require_confirmation(confirm, "restart", unit)?;
+    require_confirmation(confirm, "restart", Some(unit))?;
 
     if plan.dry_run {
         Output::dry_run(format!("Would restart: {}", unit));
@@ -199,7 +209,7 @@ fn restart(unit: &str, confirm: bool, plan: &ExecutionPlan) -> Result<()> {
 
 /// Enable a unit to start at boot.
 fn enable(unit: &str, confirm: bool, plan: &ExecutionPlan) -> Result<()> {
-    require_confirmation(confirm, "enable", unit)?;
+    require_confirmation(confirm, "enable", Some(unit))?;
 
     if plan.dry_run {
         Output::dry_run(format!("Would enable: {}", unit));
@@ -221,7 +231,7 @@ fn enable(unit: &str, confirm: bool, plan: &ExecutionPlan) -> Result<()> {
 
 /// Disable a unit from starting at boot.
 fn disable(unit: &str, confirm: bool, plan: &ExecutionPlan) -> Result<()> {
-    require_confirmation(confirm, "disable", unit)?;
+    require_confirmation(confirm, "disable", Some(unit))?;
 
     if plan.dry_run {
         Output::dry_run(format!("Would disable: {}", unit));
@@ -238,14 +248,7 @@ fn disable(unit: &str, confirm: bool, plan: &ExecutionPlan) -> Result<()> {
 
 /// Reload systemd daemon configuration.
 fn daemon_reload(confirm: bool, plan: &ExecutionPlan) -> Result<()> {
-    if !confirm {
-        bail!(
-            "This operation requires confirmation.\n\n\
-             Add {} to proceed:\n  \
-             bkt admin systemctl daemon-reload --confirm",
-            "--confirm".cyan()
-        );
-    }
+    require_confirmation(confirm, "daemon-reload", None)?;
 
     if plan.dry_run {
         Output::dry_run("Would reload systemd daemon configuration");
@@ -261,14 +264,17 @@ fn daemon_reload(confirm: bool, plan: &ExecutionPlan) -> Result<()> {
 }
 
 /// Require --confirm flag for mutating operations.
-fn require_confirmation(confirm: bool, operation: &str, unit: &str) -> Result<()> {
+fn require_confirmation(confirm: bool, operation: &str, unit: Option<&str>) -> Result<()> {
     if confirm {
         return Ok(());
     }
 
     // Interactive mode: prompt for confirmation if we have a TTY
     if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
-        let message = format!("This will {} {}. Continue?", operation, unit.cyan());
+        let message = match unit {
+            Some(unit) => format!("This will {} {}. Continue?", operation, unit.cyan()),
+            None => format!("This will {}. Continue?", operation.cyan()),
+        };
         if prompt_continue(&message)? {
             return Ok(());
         }
@@ -276,16 +282,23 @@ fn require_confirmation(confirm: bool, operation: &str, unit: &str) -> Result<()
     }
 
     // Non-interactive: require --confirm
-    bail!(
-        "This operation requires confirmation.\n\n\
-         Add {} to proceed:\n  \
-         bkt admin systemctl {} {} --confirm\n\n\
-         Or use {} to bypass prompts in scripts.",
-        "--confirm".cyan(),
-        operation,
-        unit,
-        "--yes".cyan()
-    );
+    match unit {
+        Some(unit) => bail!(
+            "This operation requires confirmation.\n\n\
+             Add {} to proceed:\n  \
+             bkt admin systemctl {} {} --confirm",
+            "--confirm".cyan(),
+            operation,
+            unit
+        ),
+        None => bail!(
+            "This operation requires confirmation.\n\n\
+             Add {} to proceed:\n  \
+             bkt admin systemctl {} --confirm",
+            "--confirm".cyan(),
+            operation
+        ),
+    }
 }
 
 /// Prompt user for confirmation.

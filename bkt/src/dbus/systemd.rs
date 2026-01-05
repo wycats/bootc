@@ -14,6 +14,7 @@
 //! passwordless access to service control operations.
 
 use anyhow::{Context, Result};
+use tracing::warn;
 use zbus::blocking::Connection;
 use zbus::zvariant::OwnedObjectPath;
 
@@ -178,19 +179,41 @@ impl SystemdManager {
 
         Ok(UnitStatus {
             name: name.clone(),
-            description: unit_proxy.description().unwrap_or_else(|_| String::new()),
-            load_state: unit_proxy
-                .load_state()
-                .unwrap_or_else(|_| "unknown".to_string()),
-            active_state: unit_proxy
-                .active_state()
-                .unwrap_or_else(|_| "unknown".to_string()),
-            sub_state: unit_proxy
-                .sub_state()
-                .unwrap_or_else(|_| "unknown".to_string()),
-            unit_file_state: unit_proxy
-                .unit_file_state()
-                .unwrap_or_else(|_| "unknown".to_string()),
+            description: unit_proxy.description().unwrap_or_else(|e| {
+                warn!(
+                    "Failed to read systemd unit description for '{}': {}",
+                    name, e
+                );
+                String::new()
+            }),
+            load_state: unit_proxy.load_state().unwrap_or_else(|e| {
+                warn!(
+                    "Failed to read systemd unit load_state for '{}': {}",
+                    name, e
+                );
+                "unknown".to_string()
+            }),
+            active_state: unit_proxy.active_state().unwrap_or_else(|e| {
+                warn!(
+                    "Failed to read systemd unit active_state for '{}': {}",
+                    name, e
+                );
+                "unknown".to_string()
+            }),
+            sub_state: unit_proxy.sub_state().unwrap_or_else(|e| {
+                warn!(
+                    "Failed to read systemd unit sub_state for '{}': {}",
+                    name, e
+                );
+                "unknown".to_string()
+            }),
+            unit_file_state: unit_proxy.unit_file_state().unwrap_or_else(|e| {
+                warn!(
+                    "Failed to read systemd unit unit_file_state for '{}': {}",
+                    name, e
+                );
+                "unknown".to_string()
+            }),
         })
     }
 
@@ -244,7 +267,9 @@ impl SystemdManager {
             .context(format!("Failed to enable unit: {}", name))?;
 
         // Reload daemon to pick up changes
-        manager.reload().context("Failed to reload systemd daemon")?;
+        manager
+            .reload()
+            .context("Failed to reload systemd daemon")?;
 
         Ok(changes_made)
     }
@@ -258,7 +283,9 @@ impl SystemdManager {
             .context(format!("Failed to disable unit: {}", name))?;
 
         // Reload daemon to pick up changes
-        manager.reload().context("Failed to reload systemd daemon")?;
+        manager
+            .reload()
+            .context("Failed to reload systemd daemon")?;
 
         Ok(())
     }
@@ -266,7 +293,9 @@ impl SystemdManager {
     /// Reload the systemd daemon (daemon-reload).
     pub fn daemon_reload(&self) -> Result<()> {
         let manager = self.manager()?;
-        manager.reload().context("Failed to reload systemd daemon")?;
+        manager
+            .reload()
+            .context("Failed to reload systemd daemon")?;
         Ok(())
     }
 }
@@ -297,10 +326,7 @@ mod tests {
             SystemdManager::normalize_unit_name("docker"),
             "docker.service"
         );
-        assert_eq!(
-            SystemdManager::normalize_unit_name("sshd"),
-            "sshd.service"
-        );
+        assert_eq!(SystemdManager::normalize_unit_name("sshd"), "sshd.service");
     }
 
     #[test]
