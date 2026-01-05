@@ -12,7 +12,9 @@
 
 use assert_cmd::Command;
 use assert_cmd::cargo::cargo_bin_cmd;
+use assert_fs::prelude::*;
 use predicates::prelude::*;
+use std::os::unix::fs::PermissionsExt;
 
 /// Get bkt command with delegation disabled.
 ///
@@ -628,6 +630,48 @@ fn dev_dnf_help_shows_subcommands() {
         .stdout(predicate::str::contains("install"))
         .stdout(predicate::str::contains("remove"))
         .stdout(predicate::str::contains("list"));
+}
+
+#[test]
+fn dev_dnf_install_updates_toolbox_manifest() {
+    let temp = assert_fs::TempDir::new().unwrap();
+    let home = temp.path().to_str().unwrap();
+
+    // Stub `dnf` so the command can run in CI without installing packages.
+    let bin_dir = temp.child("bin");
+    bin_dir.create_dir_all().unwrap();
+    let dnf = bin_dir.child("dnf");
+    std::fs::write(dnf.path(), "#!/usr/bin/env sh\nexit 0\n").unwrap();
+    let mut perms = std::fs::metadata(dnf.path()).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(dnf.path(), perms).unwrap();
+
+    let path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{}", bin_dir.path().display(), path);
+
+    bkt()
+        .env("HOME", home)
+        .env("PATH", new_path)
+        .args(["dev", "dnf", "install", "--force", "gcc"])
+        .assert()
+        .success();
+
+    let toolbox_manifest = temp
+        .path()
+        .join(".config")
+        .join("bootc")
+        .join("toolbox-packages.json");
+    let system_manifest = temp
+        .path()
+        .join(".config")
+        .join("bootc")
+        .join("system-packages.json");
+
+    let content = std::fs::read_to_string(&toolbox_manifest).unwrap();
+    assert!(content.contains("\"gcc\""));
+    assert!(!system_manifest.exists());
+
+    temp.close().unwrap();
 }
 
 #[test]

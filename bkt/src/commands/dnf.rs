@@ -7,7 +7,7 @@
 //! Query commands (search, info, provides) pass through to dnf5 directly.
 
 use crate::context::{CommandDomain, ExecutionContext};
-use crate::manifest::{CoprRepo, SystemPackagesManifest};
+use crate::manifest::{CoprRepo, SystemPackagesManifest, ToolboxPackagesManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::plan::{
@@ -224,7 +224,76 @@ fn handle_provides(path: String) -> Result<()> {
 // List Command (read manifest)
 // =============================================================================
 
-fn handle_list(format: String, _plan: &ExecutionPlan) -> Result<()> {
+fn handle_list(format: String, plan: &ExecutionPlan) -> Result<()> {
+    if plan.context == ExecutionContext::Dev {
+        let manifest = ToolboxPackagesManifest::load_user()?;
+
+        if format == "json" {
+            println!("{}", serde_json::to_string_pretty(&manifest)?);
+            return Ok(());
+        }
+
+        if manifest.packages.is_empty()
+            && manifest.groups.is_empty()
+            && manifest.copr_repos.is_empty()
+        {
+            Output::info("No packages in manifest.");
+            return Ok(());
+        }
+
+        if !manifest.packages.is_empty() {
+            Output::subheader("PACKAGES:");
+            println!("{:<40} STATUS", "NAME".cyan());
+            Output::separator();
+            for pkg in &manifest.packages {
+                let installed = if is_package_installed(pkg) {
+                    "✓".green().to_string()
+                } else {
+                    "✗".red().to_string()
+                };
+                println!("{:<40} {}", pkg, installed);
+            }
+            Output::blank();
+        }
+
+        if !manifest.groups.is_empty() {
+            Output::subheader("GROUPS:");
+            for group in &manifest.groups {
+                Output::list_item(group);
+            }
+            Output::blank();
+        }
+
+        if !manifest.copr_repos.is_empty() {
+            Output::subheader("COPR REPOSITORIES:");
+            println!("{:<40} ENABLED GPG", "NAME".cyan());
+            Output::separator();
+            for copr in &manifest.copr_repos {
+                let enabled = if copr.enabled {
+                    "yes".green().to_string()
+                } else {
+                    "no".red().to_string()
+                };
+                let gpg = if copr.gpg_check {
+                    "yes".green().to_string()
+                } else {
+                    "no".yellow().to_string()
+                };
+                println!("{:<40} {:<8} {}", copr.name, enabled, gpg);
+            }
+            Output::blank();
+        }
+
+        Output::success(format!(
+            "{} packages, {} groups, {} COPR repos",
+            manifest.packages.len(),
+            manifest.groups.len(),
+            manifest.copr_repos.len()
+        ));
+
+        return Ok(());
+    }
+
     let system = SystemPackagesManifest::load_system()?;
     let user = SystemPackagesManifest::load_user()?;
     let merged = SystemPackagesManifest::merged(&system, &user);
@@ -323,6 +392,53 @@ fn handle_install(
         for pkg in &packages {
             validate_dnf_package(pkg)?;
         }
+    }
+
+    if plan.context == ExecutionContext::Dev {
+        let mut manifest = ToolboxPackagesManifest::load_user()?;
+
+        let mut new_packages = Vec::new();
+        let mut already_in_manifest = Vec::new();
+
+        for pkg in &packages {
+            if manifest.find_package(pkg) {
+                already_in_manifest.push(pkg.clone());
+            } else {
+                new_packages.push(pkg.clone());
+            }
+        }
+
+        for pkg in &already_in_manifest {
+            Output::info(format!("Already in manifest: {}", pkg));
+        }
+
+        if new_packages.is_empty() && already_in_manifest.len() == packages.len() {
+            Output::success("All packages already in manifest.");
+            return Ok(());
+        }
+
+        if plan.should_update_local_manifest() {
+            for pkg in &new_packages {
+                manifest.add_package(pkg.clone());
+            }
+            manifest.save_user()?;
+            Output::success(format!(
+                "Added {} package(s) to user manifest",
+                new_packages.len()
+            ));
+        } else if plan.dry_run {
+            for pkg in &new_packages {
+                Output::dry_run(format!("Would add to manifest: {}", pkg));
+            }
+        }
+
+        if plan.should_execute_locally() {
+            install_via_dnf(&packages)?;
+        } else if plan.dry_run {
+            Output::dry_run(format!("Would run: dnf install -y {}", packages.join(" ")));
+        }
+
+        return Ok(());
     }
 
     let system = SystemPackagesManifest::load_system()?;
@@ -480,6 +596,38 @@ fn handle_remove(packages: Vec<String>, plan: &ExecutionPlan) -> Result<()> {
         bail!("No packages specified");
     }
 
+    if plan.context == ExecutionContext::Dev {
+        let mut manifest = ToolboxPackagesManifest::load_user()?;
+
+        for pkg in &packages {
+            if plan.should_update_local_manifest() {
+                if manifest.remove_package(pkg) {
+                    Output::success(format!("Removed from user manifest: {}", pkg));
+                } else {
+                    Output::warning(format!("Package not found in manifest: {}", pkg));
+                }
+            } else if plan.dry_run {
+                if manifest.find_package(pkg) {
+                    Output::dry_run(format!("Would remove from user manifest: {}", pkg));
+                } else {
+                    Output::dry_run(format!("Package not found in manifest: {}", pkg));
+                }
+            }
+        }
+
+        if plan.should_update_local_manifest() {
+            manifest.save_user()?;
+        }
+
+        if plan.should_execute_locally() {
+            remove_via_dnf(&packages)?;
+        } else if plan.dry_run {
+            Output::dry_run(format!("Would run: dnf remove -y {}", packages.join(" ")));
+        }
+
+        return Ok(());
+    }
+
     let system = SystemPackagesManifest::load_system()?;
     let mut user = SystemPackagesManifest::load_user()?;
 
@@ -615,7 +763,50 @@ fn remove_via_dnf(packages: &[String]) -> Result<()> {
 // Diff Command
 // =============================================================================
 
-fn handle_diff(_plan: &ExecutionPlan) -> Result<()> {
+fn handle_diff(plan: &ExecutionPlan) -> Result<()> {
+    if plan.context == ExecutionContext::Dev {
+        let manifest = ToolboxPackagesManifest::load_user()?;
+
+        if manifest.packages.is_empty() {
+            Output::info("Toolbox manifest is empty.");
+            return Ok(());
+        }
+
+        let mut not_installed = Vec::new();
+        let mut installed = Vec::new();
+
+        for pkg in &manifest.packages {
+            if is_package_installed(pkg) {
+                installed.push(pkg.clone());
+            } else {
+                not_installed.push(pkg.clone());
+            }
+        }
+
+        Output::subheader(format!("Installed ({}):", installed.len()));
+        for pkg in &installed {
+            println!("  {} {}", "✓".green(), pkg);
+        }
+
+        Output::blank();
+        Output::subheader(format!("Not installed ({}):", not_installed.len()));
+        for pkg in &not_installed {
+            println!("  {} {}", "✗".red(), pkg);
+        }
+
+        Output::blank();
+        if not_installed.is_empty() {
+            Output::success("All manifest packages are installed.");
+        } else {
+            Output::hint(format!(
+                "Run 'bkt dev update' to install {} missing package(s).",
+                not_installed.len()
+            ));
+        }
+
+        return Ok(());
+    }
+
     let system = SystemPackagesManifest::load_system()?;
     let user = SystemPackagesManifest::load_user()?;
     let merged = SystemPackagesManifest::merged(&system, &user);
@@ -663,12 +854,54 @@ pub fn handle_copr(action: CoprAction, plan: &ExecutionPlan) -> Result<()> {
     match action {
         CoprAction::Enable { name } => handle_copr_enable(name, plan),
         CoprAction::Disable { name } => handle_copr_disable(name, plan),
-        CoprAction::List => handle_copr_list(),
+        CoprAction::List => handle_copr_list(plan),
     }
 }
 
 fn handle_copr_enable(name: String, plan: &ExecutionPlan) -> Result<()> {
     plan.validate_domain(CommandDomain::Dnf)?;
+
+    if plan.context == ExecutionContext::Dev {
+        let mut manifest = ToolboxPackagesManifest::load_user()?;
+
+        if manifest
+            .copr_repos
+            .iter()
+            .find(|c| c.name == name)
+            .is_some_and(|c| c.enabled)
+        {
+            Output::info(format!("COPR already enabled: {}", name));
+            return Ok(());
+        }
+
+        if plan.should_update_local_manifest() {
+            let mut system = manifest.as_system_manifest();
+            system.upsert_copr(CoprRepo::new(name.clone()));
+            manifest.update_from(&system);
+            manifest.save_user()?;
+            Output::success(format!("Added to user manifest: {}", name));
+        } else if plan.dry_run {
+            Output::dry_run(format!("Would add COPR to manifest: {}", name));
+        }
+
+        if plan.should_execute_locally() {
+            Output::running(format!("dnf copr enable -y {}", name));
+            let status = Command::new("dnf")
+                .args(["copr", "enable", "-y", &name])
+                .status()
+                .context("Failed to enable COPR")?;
+
+            if !status.success() {
+                bail!("Failed to enable COPR: {}", name);
+            }
+
+            Output::success(format!("COPR enabled: {}", name));
+        } else if plan.dry_run {
+            Output::dry_run(format!("Would run: dnf copr enable -y {}", name));
+        }
+
+        return Ok(());
+    }
 
     let system = SystemPackagesManifest::load_system()?;
     let mut user = SystemPackagesManifest::load_user()?;
@@ -729,6 +962,42 @@ fn handle_copr_enable(name: String, plan: &ExecutionPlan) -> Result<()> {
 fn handle_copr_disable(name: String, plan: &ExecutionPlan) -> Result<()> {
     plan.validate_domain(CommandDomain::Dnf)?;
 
+    if plan.context == ExecutionContext::Dev {
+        let mut manifest = ToolboxPackagesManifest::load_user()?;
+
+        let in_manifest = manifest.copr_repos.iter().any(|c| c.name == name);
+        if !in_manifest {
+            Output::warning(format!("COPR not found in manifest: {}", name));
+            return Ok(());
+        }
+
+        if plan.should_update_local_manifest() {
+            let mut system = manifest.as_system_manifest();
+            if system.remove_copr(&name) {
+                manifest.update_from(&system);
+                manifest.save_user()?;
+                Output::success(format!("Removed from user manifest: {}", name));
+            }
+        } else if plan.dry_run {
+            Output::dry_run(format!("Would remove COPR from manifest: {}", name));
+        }
+
+        if plan.should_execute_locally() {
+            Output::running(format!("dnf copr disable {}", name));
+            let status = Command::new("dnf")
+                .args(["copr", "disable", &name])
+                .status()
+                .context("Failed to disable COPR")?;
+
+            if !status.success() {
+                bail!("Failed to disable COPR: {}", name);
+            }
+            Output::success(format!("COPR disabled: {}", name));
+        }
+
+        return Ok(());
+    }
+
     let system = SystemPackagesManifest::load_system()?;
     let mut user = SystemPackagesManifest::load_user()?;
 
@@ -787,7 +1056,36 @@ fn handle_copr_disable(name: String, plan: &ExecutionPlan) -> Result<()> {
     Ok(())
 }
 
-fn handle_copr_list() -> Result<()> {
+fn handle_copr_list(plan: &ExecutionPlan) -> Result<()> {
+    if plan.context == ExecutionContext::Dev {
+        let manifest = ToolboxPackagesManifest::load_user()?;
+
+        if manifest.copr_repos.is_empty() {
+            Output::info("No COPR repositories in manifest.");
+            return Ok(());
+        }
+
+        Output::subheader("COPR REPOSITORIES:");
+        println!("{:<40} {:<8} {:<8}", "NAME".cyan(), "ENABLED", "GPG");
+        Output::separator();
+
+        for copr in &manifest.copr_repos {
+            let enabled = if copr.enabled {
+                "yes".green().to_string()
+            } else {
+                "no".red().to_string()
+            };
+            let gpg = if copr.gpg_check {
+                "yes".green().to_string()
+            } else {
+                "no".yellow().to_string()
+            };
+            println!("{:<40} {:<8} {}", copr.name, enabled, gpg);
+        }
+
+        return Ok(());
+    }
+
     let system = SystemPackagesManifest::load_system()?;
     let user = SystemPackagesManifest::load_user()?;
     let merged = SystemPackagesManifest::merged(&system, &user);
@@ -864,10 +1162,13 @@ impl Plannable for DnfSyncCommand {
     type Plan = DnfSyncPlan;
 
     fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
-        // Load and merge manifests (read-only, no side effects)
-        let system = SystemPackagesManifest::load_system()?;
-        let user = SystemPackagesManifest::load_user()?;
-        let merged = SystemPackagesManifest::merged(&system, &user);
+        let merged = if self.context == ExecutionContext::Dev {
+            ToolboxPackagesManifest::load_user()?.as_system_manifest()
+        } else {
+            let system = SystemPackagesManifest::load_system()?;
+            let user = SystemPackagesManifest::load_user()?;
+            SystemPackagesManifest::merged(&system, &user)
+        };
 
         let mut to_install = Vec::new();
         let mut already_installed = 0;

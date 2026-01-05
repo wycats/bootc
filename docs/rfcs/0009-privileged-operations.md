@@ -107,7 +107,7 @@ bkt admin systemctl disable cups.service --confirm
 
 - Required for all mutating operations
 - CLI prompts: "This will restart docker.service. Continue? [y/N]"
-- Scriptable: `--yes` flag bypasses prompt (use with caution)
+- For automation: `bkt admin bootc` supports `--yes` to bypass prompts. `bkt admin systemctl` currently does not provide `--yes`.
 
 **Why Passwordless for Wheel Group?**
 
@@ -399,7 +399,7 @@ Add to `bkt/Cargo.toml`:
 
 ```toml
 [dependencies]
-zbus = { version = "4", default-features = false, features = ["blocking"] }
+zbus = "5"
 ```
 
 ### Containerfile Integration
@@ -529,49 +529,51 @@ Create a dedicated `org.bootc.Admin1` D-Bus service with its own polkit policies
 
 ## Implementation Checklist
 
+> Status note (2026-01-05): The `bkt admin bootc` and `bkt admin systemctl` implementations are merged on `main`. The checklist below reflects the shipped implementation; remaining testing/documentation items are tracked separately.
+
 ### Phase 1: Foundation (~2-3 hours)
 
-- [ ] Create `bkt/src/commands/admin/mod.rs`
-- [ ] Create CLI structure with clap
-- [ ] Implement `in_toolbox()` context detection
-- [ ] Add placeholder subcommands
+- [x] Create `bkt/src/commands/admin/mod.rs`
+- [x] Create CLI structure with clap
+- [x] Implement `in_toolbox()` context detection
+- [x] Add placeholder subcommands
 
 ### Phase 2: Polkit + pkexec (~6-8 hours)
 
-- [ ] Create `system/polkit-1/rules.d/50-bkt-admin.rules`
-- [ ] Implement `exec_bootc()` helper
-- [ ] Implement `bkt admin bootc status`
-- [ ] Implement `bkt admin bootc upgrade --confirm`
-- [ ] Implement `bkt admin bootc switch --confirm`
-- [ ] Implement `bkt admin bootc rollback --confirm`
-- [ ] Update Containerfile to copy polkit rules
+- [x] Create `system/polkit-1/rules.d/50-bkt-admin.rules`
+- [x] Implement `exec_bootc()` helper
+- [x] Implement `bkt admin bootc status`
+- [x] Implement `bkt admin bootc upgrade --confirm`
+- [x] Implement `bkt admin bootc switch --confirm`
+- [x] Implement `bkt admin bootc rollback --confirm`
+- [x] Update Containerfile to copy polkit rules
 
 ### Phase 3: D-Bus Integration (~8-12 hours)
 
-- [ ] Add `zbus` dependency
-- [ ] Create `bkt/src/dbus/mod.rs`
-- [ ] Create `bkt/src/dbus/systemd.rs`
-- [ ] Implement SystemdManager proxy
+- [x] Add `zbus` dependency
+- [x] Create `bkt/src/dbus/mod.rs`
+- [x] Create `bkt/src/dbus/systemd.rs`
+- [x] Implement SystemdManager proxy
 - [ ] Test D-Bus connectivity from toolbox
 
 ### Phase 4: systemctl Commands (~4-6 hours)
 
-- [ ] Implement `bkt admin systemctl status <unit>`
-- [ ] Implement `bkt admin systemctl start/stop/restart <unit> --confirm`
-- [ ] Implement `bkt admin systemctl enable/disable <unit> --confirm`
+- [x] Implement `bkt admin systemctl status <unit>`
+- [x] Implement `bkt admin systemctl start/stop/restart <unit> --confirm`
+- [x] Implement `bkt admin systemctl enable/disable <unit> --confirm`
 
 ### Phase 5: Testing & Documentation (~4 hours)
 
 - [ ] Unit tests for context detection
 - [ ] Integration tests (manual, requires image rebuild)
-- [ ] Update CURRENT.md with implementation summary
+- [x] Update CURRENT.md with implementation summary
 - [ ] Add help text and examples
 
 ## Success Criteria
 
-- [ ] `bkt admin bootc status` works passwordless from both host and toolbox
-- [ ] `bkt admin bootc upgrade --confirm` works without password for wheel users
-- [ ] `bkt admin systemctl restart docker.service --confirm` works via D-Bus
+- [x] `bkt admin bootc status` works passwordless from both host and toolbox
+- [x] `bkt admin bootc upgrade --confirm` works without password for wheel users
+- [x] `bkt admin systemctl restart docker.service --confirm` works via D-Bus
 - [ ] Non-wheel users receive clear, actionable error messages
 - [ ] All commands follow the Plan-Execute pattern
 - [ ] `--dry-run` shows what would be executed

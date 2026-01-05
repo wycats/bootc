@@ -44,7 +44,7 @@ Both commands support `--dry-run` to preview changes without executing them.
 | 1   | [Command Punning Foundation](#1-command-punning)    | [RFC-0001](docs/rfcs/0001-command-punning.md)        | 🔴 High   | ✅ Complete  |
 | 2   | [RPM Package Management](#2-rpm-package-management) | [RFC-0002](docs/rfcs/0002-bkt-dnf.md)                | 🔴 High   | 🔄 Core Done |
 | 3   | [Toolbox Commands](#3-toolbox-commands)             | [RFC-0003](docs/rfcs/0003-bkt-dev.md)                | 🔴 High   | 🔄 Core Done |
-| 4   | [Privileged Helper](#4-privileged-helper)           | [RFC-0009](docs/rfcs/0009-privileged-operations.md)  | 🟡 Medium | 🔄 Core Done |
+| 4   | [Privileged Helper](#4-privileged-helper)           | [RFC-0009](docs/rfcs/0009-privileged-operations.md)  | 🟡 Medium | ✅ Complete  |
 | 5   | [Changelog Management](#5-changelog-management)     | [RFC-0005](docs/rfcs/0005-changelog.md)              | 🟡 Medium | 🔄 Core Done |
 | 6   | [Upstream Management](#6-upstream-management)       | [RFC-0006](docs/rfcs/0006-upstream-management.md)    | 🟡 Medium | 🔄 Core Done |
 | 7   | [Base Image Drift Detection](#7-drift-detection)    | [RFC-0007](docs/rfcs/0007-drift-detection.md)        | 🟡 Medium | ✅ Complete  |
@@ -130,12 +130,12 @@ Implement `bkt dev` prefix for commands that target the development toolbox.
 
 ### Known Issues
 
-- ⚠️ `bkt dev dnf install` currently updates `system-packages.json` instead of `toolbox-packages.json`
+- ✅ `bkt dev dnf install` updates `toolbox-packages.json` (fixed)
 
 ### Acceptance Criteria
 
 - ✅ `bkt dev dnf install gcc` installs gcc in toolbox immediately
-- ⚠️ `manifests/toolbox-packages.json` is updated with package entry (bug: wrong manifest updated)
+- ✅ `toolbox-packages.json` is updated with package entry
 - ✅ Running `bkt dev flatpak add ...` produces helpful error
 
 ---
@@ -144,7 +144,7 @@ Implement `bkt dev` prefix for commands that target the development toolbox.
 
 **RFC:** [0009-privileged-operations.md](docs/rfcs/0009-privileged-operations.md)  
 **Priority:** 🟡 Medium  
-**Status:** 🔄 Core Done (bootc commands complete)
+**Status:** ✅ Complete
 
 ### Description
 
@@ -166,37 +166,23 @@ Implement `bkt admin` for passwordless privileged operations using **polkit + pk
 
 - [x] Create polkit rules file (`system/polkit-1/rules.d/50-bkt-admin.rules`)
 - [x] Implement `bkt admin bootc` commands (status, upgrade, rollback, switch)
-- [ ] Implement `bkt admin systemctl` commands via D-Bus (start, stop, restart, status, enable, disable)
-- [ ] Add `zbus` dependency for D-Bus integration
+- [x] Implement `bkt admin systemctl` commands via D-Bus (start, stop, restart, status, enable, disable)
+- [x] Add `zbus` dependency for D-Bus integration
 - [x] Update Containerfile to install polkit rules
-- [ ] Update RFC-0009 with D-Bus implementation details
+- [x] Update RFC-0009 with D-Bus implementation details
 
-### Implementation Plan (Revised)
+### Implementation Status
 
-> **Note**: Day 1 deliverables (polkit rules, bootc commands) are complete. RFC-0010 transparent delegation now handles host routing automatically.
+The privileged helper is implemented end-to-end:
 
-**Day 1: D-Bus setup + validation** (~4-6 hours)
+- `bkt admin bootc` uses pkexec + polkit rules for passwordless wheel access
+- `bkt admin systemctl` uses systemd's D-Bus API via `zbus`
 
-- Add `zbus = { version = "5", default-features = false, features = ["blocking"] }` to Cargo.toml
-- Create `bkt/src/dbus/mod.rs` and `bkt/src/dbus/systemd.rs` skeleton
-- **Validate**: D-Bus from toolbox routes to host's system bus
-- Implement `bkt admin systemctl status` (read-only, validates setup)
+### Follow-ups (Optional)
 
-**Day 2: D-Bus mutations** (~6-8 hours)
-
-- Implement `bkt admin systemctl start/stop/restart` via D-Bus
-- Implement `bkt admin systemctl enable/disable` via D-Bus
-- Add `daemon_reload()` call after enable/disable
-- Auto-append `.service` suffix if missing
-
-**Day 3: Polish + tests** (~4-6 hours)
-
-- Handle `org.freedesktop.DBus.Error.AccessDenied` with helpful error
-- Add CLI tests for systemctl commands
-- Update RFC-0009 with D-Bus implementation details
-- Add `--yes` flag for automation (bypass confirmation)
-
-_Total remaining effort: ~2-3 days (14-20 hours)._
+- Add CLI tests for `bkt admin systemctl` commands
+- Improve handling for `org.freedesktop.DBus.Error.AccessDenied` with a more actionable message
+- `--yes` is supported for `bkt admin bootc` for automation; `bkt admin systemctl` currently requires `--confirm` and interactive confirmation
 
 ### Polkit Rules (Preview)
 
@@ -436,6 +422,15 @@ Refactor command implementations to use a `Plan`-centric architecture where all 
 - ✅ No command contains `if dry_run { ... } else { ... }` branching
 - ✅ Plan output is structured and consistent across all commands
 
+### Follow-ups (Polish)
+
+Some commands still implement per-command `--pr` / `--dry-run` flags instead of fully using `ExecutionPlan`. Migrating these would complete the “single global flags, composable plans” story:
+
+- Migrate `bkt gsetting` (set/unset/apply/capture) to `ExecutionPlan`
+- Migrate `bkt extension` (add/remove/sync/capture) to `ExecutionPlan`
+- Migrate `bkt shim` (add/remove/sync) to `ExecutionPlan`
+- Migrate `bkt skel` (add/sync) to `ExecutionPlan`
+
 ---
 
 ## 10. Bidirectional Sync
@@ -509,14 +504,15 @@ Phase 2b: Supporting Infrastructure ← CURRENT SPRINT
 │   ├── 7c. Scheduled drift check workflow ✅
 │   └── 7d. Changelog integration for assumptions ✅
 │
-└── Week 2: Privileged Helper (Item 4) - Polkit Approach ← NEXT
-    ├── 4a. Polkit rules + pkexec for bootc/rpm-ostree
-    ├── 4b. D-Bus systemd integration (zbus)
-    └── 4c. RFC-0004 update + tests
+└── Week 2: Privileged Helper (Item 4) - Polkit Approach ✅ COMPLETE
+  ├── 4a. Polkit rules + pkexec for bootc/rpm-ostree ✅
+  ├── 4b. D-Bus systemd integration (zbus) ✅
+  └── 4c. RFC-0009 updated ✅
 
 Phase 2c: Polish
 ├── 5. Changelog sub-items (CI integration, MOTD)
 ├── 6. Upstream sub-items (Containerfile, semver policies)
+├── Command migrations: move remaining commands to ExecutionPlan
 └── Future considerations (TUI, multi-machine, etc.)
 ```
 
