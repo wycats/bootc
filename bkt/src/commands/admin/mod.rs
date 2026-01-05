@@ -12,27 +12,26 @@
 //!
 //! # Context Handling
 //!
-//! Commands work identically from host or toolbox:
-//! - **Host**: Direct `pkexec bootc <args>`
-//! - **Toolbox**: `flatpak-spawn --host pkexec bootc <args>`
-//!
-//! Context is detected automatically via `RuntimeEnvironment::Toolbox`.
+//! Commands work identically from host or toolbox via RFC-0010 delegation.
+//! The D-Bus system bus routes correctly from toolbox to host automatically.
 //!
 //! # Example Usage
 //!
 //! ```bash
-//! # Read-only (passwordless)
+//! # Bootc operations (via pkexec)
 //! bkt admin bootc status
-//!
-//! # Mutating (requires --confirm)
 //! bkt admin bootc upgrade --confirm
-//! bkt admin bootc switch ghcr.io/user/image:latest --confirm
-//! bkt admin bootc rollback --confirm
+//!
+//! # Systemctl operations (via D-Bus)
+//! bkt admin systemctl status docker
+//! bkt admin systemctl restart docker --confirm
+//! bkt admin systemctl enable docker --confirm
 //! ```
 //!
 //! See [RFC-0009](../../../docs/rfcs/0009-privileged-operations.md) for design details.
 
 mod bootc;
+mod systemctl;
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
@@ -40,6 +39,7 @@ use clap::{Args, Subcommand};
 use crate::pipeline::ExecutionPlan;
 
 pub use bootc::BootcAction;
+pub use systemctl::SystemctlAction;
 
 /// Arguments for the `admin` command.
 #[derive(Debug, Args)]
@@ -61,16 +61,24 @@ pub enum AdminAction {
         #[command(subcommand)]
         action: BootcAction,
     },
-    // Future: Systemctl subcommand will be added in Phase 3-4
-    // Systemctl {
-    //     #[command(subcommand)]
-    //     action: SystemctlAction,
-    // },
+
+    /// Manage systemd services via D-Bus
+    ///
+    /// Provides passwordless access to systemd unit management for wheel group members.
+    /// Read-only operations (status) execute immediately; mutations require --confirm.
+    ///
+    /// Uses D-Bus (zbus) rather than shelling out to systemctl, providing proper
+    /// structured output and avoiding potential privilege escalation vectors.
+    Systemctl {
+        #[command(subcommand)]
+        action: SystemctlAction,
+    },
 }
 
 /// Execute an admin subcommand.
 pub fn run(args: AdminArgs, plan: &ExecutionPlan) -> Result<()> {
     match args.action {
         AdminAction::Bootc { action } => bootc::run(action, plan),
+        AdminAction::Systemctl { action } => systemctl::run(action, plan),
     }
 }

@@ -27,6 +27,7 @@ use tracing_subscriber::EnvFilter;
 
 mod commands;
 pub mod context;
+mod dbus;
 mod delegation;
 pub mod effects;
 mod manifest;
