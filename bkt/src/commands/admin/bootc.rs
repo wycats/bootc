@@ -1,7 +1,7 @@
 //! Bootc subcommand implementation for `bkt admin bootc`.
 //!
 //! Provides passwordless access to bootc operations via polkit + pkexec.
-//! Handles context detection to work identically from host or toolbox.
+//! Global delegation ensures commands always run on the host.
 
 use anyhow::{Context, Result, bail};
 use clap::Subcommand;
@@ -9,7 +9,6 @@ use is_terminal::IsTerminal;
 use owo_colors::OwoColorize;
 use std::process::Command;
 
-use crate::context::{RuntimeEnvironment, detect_environment};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 
@@ -250,51 +249,17 @@ fn prompt_continue(message: &str) -> Result<bool> {
     Ok(input == "y" || input == "yes")
 }
 
-/// Execute a bootc command via pkexec, handling toolbox context.
+/// Execute a bootc command via pkexec.
 ///
-/// - **Host**: Direct `pkexec bootc <args>`
-/// - **Toolbox**: `flatpak-spawn --host pkexec bootc <args>`
-/// - **Container**: Returns error (generic containers can't access host polkit)
+/// Global delegation ensures we're on the host, so we just need pkexec
+/// for privilege elevation.
 fn exec_bootc(subcommand: &str, args: &[String]) -> Result<()> {
-    let env = detect_environment();
-    let status = match env {
-        RuntimeEnvironment::Toolbox => {
-            // Delegate to host via flatpak-spawn
-            Output::info(format!(
-                "Executing {} on host from toolbox...",
-                format!("bootc {}", subcommand).cyan()
-            ));
-
-            Command::new("flatpak-spawn")
-                .arg("--host")
-                .arg("pkexec")
-                .arg("bootc")
-                .arg(subcommand)
-                .args(args)
-                .status()
-                .context("Failed to execute flatpak-spawn")?
-        }
-        RuntimeEnvironment::Host => {
-            // Direct execution on host
-            Command::new("pkexec")
-                .arg("bootc")
-                .arg(subcommand)
-                .args(args)
-                .status()
-                .context("Failed to execute pkexec")?
-        }
-        RuntimeEnvironment::Container => {
-            // Generic containers don't have access to host's polkit daemon
-            bail!(
-                "Cannot execute admin commands from a generic container\n\n\
-                 Admin commands require access to the host's polkit daemon, which is\n\
-                 only available from toolbox containers (created with 'toolbox create').\n\n\
-                 Options:\n  \
-                 • Exit this container and run from the host\n  \
-                 • Use a toolbox instead: toolbox create && toolbox enter"
-            );
-        }
-    };
+    let status = Command::new("pkexec")
+        .arg("bootc")
+        .arg(subcommand)
+        .args(args)
+        .status()
+        .context("Failed to execute pkexec bootc")?;
 
     if !status.success() {
         let code = status
@@ -309,64 +274,29 @@ fn exec_bootc(subcommand: &str, args: &[String]) -> Result<()> {
 
 /// Describe what command would be executed (for dry-run output).
 fn describe_execution(subcommand: &str, args: &[String]) -> String {
-    let env = detect_environment();
     let args_str = if args.is_empty() {
         String::new()
     } else {
         format!(" {}", args.join(" "))
     };
 
-    match env {
-        RuntimeEnvironment::Toolbox => {
-            format!(
-                "flatpak-spawn --host pkexec bootc {}{}",
-                subcommand, args_str
-            )
-        }
-        RuntimeEnvironment::Host => {
-            format!("pkexec bootc {}{}", subcommand, args_str)
-        }
-        RuntimeEnvironment::Container => {
-            format!(
-                "[error: unsupported in generic container] pkexec bootc {}{}",
-                subcommand, args_str
-            )
-        }
-    }
+    format!("pkexec bootc {}{}", subcommand, args_str)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
-
-    /// Helper to set env var for testing (requires unsafe in Rust 2024)
-    fn set_force_host(value: bool) {
-        unsafe {
-            if value {
-                std::env::set_var("BKT_FORCE_HOST", "1");
-            } else {
-                std::env::remove_var("BKT_FORCE_HOST");
-            }
-        }
-    }
 
     #[test]
-    #[serial]
     fn test_describe_execution_status() {
-        set_force_host(true);
         let desc = describe_execution("status", &[]);
         assert_eq!(desc, "pkexec bootc status");
-        set_force_host(false);
     }
 
     #[test]
-    #[serial]
     fn test_describe_execution_switch_with_args() {
-        set_force_host(true);
         let desc = describe_execution("switch", &["ghcr.io/test/image:latest".to_string()]);
         assert_eq!(desc, "pkexec bootc switch ghcr.io/test/image:latest");
-        set_force_host(false);
     }
 
     #[test]

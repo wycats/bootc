@@ -162,11 +162,6 @@
       "scope": "system"
     },
     {
-      "id": "org.DolphinEmu.dolphin-emu",
-      "remote": "flathub",
-      "scope": "user"
-    },
-    {
       "id": "org.altlinux.Tuner",
       "remote": "flathub",
       "scope": "system"
@@ -182,7 +177,17 @@
       "scope": "system"
     },
     {
+      "id": "org.DolphinEmu.dolphin-emu",
+      "remote": "flathub",
+      "scope": "user"
+    },
+    {
       "id": "org.fedoraproject.MediaWriter",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    {
+      "id": "org.gnome.baobab",
       "remote": "flathub",
       "scope": "system"
     },
@@ -207,7 +212,17 @@
       "scope": "system"
     },
     {
+      "id": "org.gnome.clocks",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    {
       "id": "org.gnome.Contacts",
+      "remote": "flathub",
+      "scope": "system"
+    },
+    {
+      "id": "org.gnome.font-viewer",
       "remote": "flathub",
       "scope": "system"
     },
@@ -248,21 +263,6 @@
     },
     {
       "id": "org.gnome.Weather",
-      "remote": "flathub",
-      "scope": "system"
-    },
-    {
-      "id": "org.gnome.baobab",
-      "remote": "flathub",
-      "scope": "system"
-    },
-    {
-      "id": "org.gnome.clocks",
-      "remote": "flathub",
-      "scope": "system"
-    },
-    {
-      "id": "org.gnome.font-viewer",
       "remote": "flathub",
       "scope": "system"
     },

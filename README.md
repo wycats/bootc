@@ -85,7 +85,7 @@ git add -A && git commit -m "feat: add boxes and dash-to-dock"
 git push
 ```
 
-**Note:** `bkt` commands for extensions/flatpaks must run **on the host**, not in the toolbox. From toolbox, exit first or use `flatpak-spawn --host bkt ...`.
+**Note:** All `bkt` commands work from both host and toolbox—delegation is automatic.
 
 See [WORKFLOW.md](docs/WORKFLOW.md) for detailed patterns.
 

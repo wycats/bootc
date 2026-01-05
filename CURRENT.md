@@ -44,7 +44,7 @@ Both commands support `--dry-run` to preview changes without executing them.
 | 1   | [Command Punning Foundation](#1-command-punning)    | [RFC-0001](docs/rfcs/0001-command-punning.md)        | 🔴 High   | ✅ Complete  |
 | 2   | [RPM Package Management](#2-rpm-package-management) | [RFC-0002](docs/rfcs/0002-bkt-dnf.md)                | 🔴 High   | 🔄 Core Done |
 | 3   | [Toolbox Commands](#3-toolbox-commands)             | [RFC-0003](docs/rfcs/0003-bkt-dev.md)                | 🔴 High   | 🔄 Core Done |
-| 4   | [Privileged Helper](#4-privileged-helper)           | [RFC-0009](docs/rfcs/0009-privileged-operations.md)  | 🟡 Medium | Not Started  |
+| 4   | [Privileged Helper](#4-privileged-helper)           | [RFC-0009](docs/rfcs/0009-privileged-operations.md)  | 🟡 Medium | 🔄 Core Done |
 | 5   | [Changelog Management](#5-changelog-management)     | [RFC-0005](docs/rfcs/0005-changelog.md)              | 🟡 Medium | 🔄 Core Done |
 | 6   | [Upstream Management](#6-upstream-management)       | [RFC-0006](docs/rfcs/0006-upstream-management.md)    | 🟡 Medium | 🔄 Core Done |
 | 7   | [Base Image Drift Detection](#7-drift-detection)    | [RFC-0007](docs/rfcs/0007-drift-detection.md)        | 🟡 Medium | ✅ Complete  |
@@ -144,7 +144,7 @@ Implement `bkt dev` prefix for commands that target the development toolbox.
 
 **RFC:** [0009-privileged-operations.md](docs/rfcs/0009-privileged-operations.md)  
 **Priority:** 🟡 Medium  
-**Status:** Not Started
+**Status:** 🔄 Core Done (bootc commands complete)
 
 ### Description
 
@@ -153,55 +153,65 @@ Implement `bkt admin` for passwordless privileged operations using **polkit + pk
 ### Approach (Approved)
 
 **For bootc/rpm-ostree** (no D-Bus interface):
-- Use `pkexec bootc <cmd>` via `flatpak-spawn --host`
+
+- Use `pkexec bootc <cmd>` via RFC-0010 delegation
 - Polkit rules grant passwordless access to wheel group
 
 **For systemctl** (has D-Bus + polkit):
+
 - Use systemd's D-Bus API with `zbus` crate
 - Polkit automatically handles authorization
 
 ### Deliverables
 
-- [ ] Create polkit rules file (`system/polkit-1/rules.d/50-bkt-admin.rules`)
-- [ ] Implement `bkt admin bootc` commands (status, upgrade, rollback, switch)
+- [x] Create polkit rules file (`system/polkit-1/rules.d/50-bkt-admin.rules`)
+- [x] Implement `bkt admin bootc` commands (status, upgrade, rollback, switch)
 - [ ] Implement `bkt admin systemctl` commands via D-Bus (start, stop, restart, status, enable, disable)
 - [ ] Add `zbus` dependency for D-Bus integration
-- [ ] Update Containerfile to install polkit rules
-- [ ] Update RFC-0004 to document polkit approach
+- [x] Update Containerfile to install polkit rules
+- [ ] Update RFC-0009 with D-Bus implementation details
 
-### Implementation Plan (Next Sprint)
+### Implementation Plan (Revised)
 
-**Day 1: Polkit rules + pkexec wrapper** (~6-8 hours)
-- Create `system/polkit-1/rules.d/50-bkt-admin.rules`
-- Create `bkt/src/commands/admin.rs`
-- Implement `bkt admin bootc status/upgrade/rollback/switch` via pkexec
-- Update Containerfile to copy polkit rules
+> **Note**: Day 1 deliverables (polkit rules, bootc commands) are complete. RFC-0010 transparent delegation now handles host routing automatically.
 
-**Day 2-3: D-Bus systemd integration** (~12-16 hours)
-- Add `zbus` dependency to Cargo.toml
-- Create `bkt/src/dbus/mod.rs` and `bkt/src/dbus/systemd.rs`
-- Implement `bkt admin systemctl start/stop/restart/enable/disable/status`
-- Test from toolbox context
+**Day 1: D-Bus setup + validation** (~4-6 hours)
 
-**Day 4: Polish + RFC update** (~4 hours)
-- Update RFC-0004 for polkit approach
-- Add CLI tests
-- Document security model
+- Add `zbus = { version = "5", default-features = false, features = ["blocking"] }` to Cargo.toml
+- Create `bkt/src/dbus/mod.rs` and `bkt/src/dbus/systemd.rs` skeleton
+- **Validate**: D-Bus from toolbox routes to host's system bus
+- Implement `bkt admin systemctl status` (read-only, validates setup)
 
-_Total estimated effort: ~3-4 days (22-28 hours)._
+**Day 2: D-Bus mutations** (~6-8 hours)
+
+- Implement `bkt admin systemctl start/stop/restart` via D-Bus
+- Implement `bkt admin systemctl enable/disable` via D-Bus
+- Add `daemon_reload()` call after enable/disable
+- Auto-append `.service` suffix if missing
+
+**Day 3: Polish + tests** (~4-6 hours)
+
+- Handle `org.freedesktop.DBus.Error.AccessDenied` with helpful error
+- Add CLI tests for systemctl commands
+- Update RFC-0009 with D-Bus implementation details
+- Add `--yes` flag for automation (bypass confirmation)
+
+_Total remaining effort: ~2-3 days (14-20 hours)._
 
 ### Polkit Rules (Preview)
 
 ```javascript
 // 50-bkt-admin.rules
-polkit.addRule(function(action, subject) {
-    if (action.id == "org.freedesktop.policykit.exec" &&
-        subject.isInGroup("wheel")) {
-        var program = action.lookup("program");
-        if (program == "/usr/bin/bootc" || program == "/usr/bin/rpm-ostree") {
-            return polkit.Result.YES;
-        }
+polkit.addRule(function (action, subject) {
+  if (
+    action.id == "org.freedesktop.policykit.exec" &&
+    subject.isInGroup("wheel")
+  ) {
+    var program = action.lookup("program");
+    if (program == "/usr/bin/bootc" || program == "/usr/bin/rpm-ostree") {
+      return polkit.Result.YES;
     }
+  }
 });
 ```
 
@@ -319,11 +329,13 @@ Explicitly declare and verify assumptions about the base image.
 ### Implementation Plan (Completed)
 
 **Day 1: Document Assumptions**
+
 - Run `bkt base snapshot` to capture current system assumptions
 - Review and filter to ~20-30 critical packages (flatpak, rpm-ostree, gnome-shell, etc.)
 - Commit `manifests/base-image-assumptions.json`
 
 **Day 2-3: CI Workflows**
+
 - Create `.github/workflows/verify-assumptions.yml`
   - Runs `bkt base verify` on every PR/push
   - Uses `ghcr.io/ublue-os/bazzite-gnome:stable` container
@@ -333,6 +345,7 @@ Explicitly declare and verify assumptions about the base image.
   - Opens issues on detected breaking changes
 
 **Day 4: Changelog Integration**
+
 - Auto-generate changelog entry when assumptions added/removed
 - Hook into `bkt base assume` and `bkt base unassume`
 

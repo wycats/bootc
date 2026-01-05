@@ -15,32 +15,25 @@ Both share your home directory. The toolbox is a container that mounts `~`.
 
 ## Where to Run `bkt`
 
-**Important:** Most `bkt` commands need to run **on the host**, not in the toolbox.
+**All `bkt` commands work from both host and toolbox.** Delegation is automatic.
 
-| Command Category      | Where to Run | Why                                         |
-| --------------------- | ------------ | ------------------------------------------- |
-| `bkt flatpak ...`     | Host         | Flatpak operates on host                    |
-| `bkt extension ...`   | Host         | GNOME extensions are host-level             |
-| `bkt gsetting ...`    | Host         | GSettings are host-level                    |
-| `bkt capture`         | Host         | Reads host state                            |
-| `bkt apply`           | Host         | Applies to host                             |
-| `bkt status`          | Host         | Reads host state                            |
-| `bkt shim ...`        | Host         | Creates scripts on host                     |
-| `bkt dev dnf ...`     | Toolbox      | Manages toolbox packages                    |
-| `bkt admin bootc ...` | Either       | Auto-delegates to host via flatpak-spawn    |
-
-**From toolbox**, either:
-- Exit first: `exit`, then run `bkt ...`
-- Or delegate: `flatpak-spawn --host bkt ...`
+| Command Category      | Target  | From Toolbox                             |
+| --------------------- | ------- | ---------------------------------------- |
+| `bkt flatpak ...`     | Host    | Auto-delegates via flatpak-spawn         |
+| `bkt extension ...`   | Host    | Auto-delegates via flatpak-spawn         |
+| `bkt gsetting ...`    | Host    | Auto-delegates via flatpak-spawn         |
+| `bkt capture`         | Host    | Auto-delegates via flatpak-spawn         |
+| `bkt apply`           | Host    | Auto-delegates via flatpak-spawn         |
+| `bkt shim ...`        | Host    | Auto-delegates via flatpak-spawn         |
+| `bkt admin bootc ...` | Host    | Auto-delegates via flatpak-spawn         |
+| `bkt dev dnf ...`     | Toolbox | Auto-delegates from host via toolbox run |
+| `bkt status`          | Either  | Runs in current context                  |
 
 ## Syncing System Changes to Manifests
 
 After installing things via GUI (GNOME Software, Extension Manager, Settings):
 
 ```bash
-# Exit toolbox if you're in one
-exit
-
 # Preview what would be captured (dry-run)
 bkt capture --dry-run
 
@@ -58,13 +51,14 @@ git push
 
 ### What Gets Captured
 
-| Subsystem  | What's captured                           |
-| ---------- | ----------------------------------------- |
-| `flatpak`  | User-installed Flatpak apps               |
-| `extension`| Enabled GNOME Shell extensions            |
-| `dnf`      | rpm-ostree layered packages               |
+| Subsystem   | What's captured                |
+| ----------- | ------------------------------ |
+| `flatpak`   | User-installed Flatpak apps    |
+| `extension` | Enabled GNOME Shell extensions |
+| `dnf`       | rpm-ostree layered packages    |
 
 **Not auto-captured:**
+
 - GSettings (use `bkt gsetting capture <schema>` for specific schemas)
 - Shims (added intentionally, not discovered)
 
@@ -103,15 +97,16 @@ bkt apply --exclude dnf
 
 ### What Gets Applied
 
-| Subsystem   | What happens                                      |
-| ----------- | ------------------------------------------------- |
-| `flatpak`   | Installs missing Flatpak apps                     |
+| Subsystem   | What happens                                               |
+| ----------- | ---------------------------------------------------------- |
+| `flatpak`   | Installs missing Flatpak apps                              |
 | `extension` | Enables extensions from manifest (must be installed first) |
-| `gsetting`  | Applies GSettings values                          |
-| `dnf`       | Installs rpm-ostree layered packages              |
-| `shim`      | Creates host shim scripts                         |
+| `gsetting`  | Applies GSettings values                                   |
+| `dnf`       | Installs rpm-ostree layered packages                       |
+| `shim`      | Creates host shim scripts                                  |
 
-**Note:** Extension sync only *enables* extensions. It doesn't install them. To install new extensions:
+**Note:** Extension sync only _enables_ extensions. It doesn't install them. To install new extensions:
+
 1. Add to manifest via `bkt extension add <uuid>`
 2. Install via Extension Manager or wait for next image bootstrap
 
@@ -223,8 +218,7 @@ podman ps         # Delegates to host
 If a command isn't available, add a shim:
 
 ```bash
-# Exit toolbox first (shims are host-level)
-exit
+# Works from both host and toolbox (auto-delegates)
 bkt shim add nmcli
 ```
 
@@ -241,21 +235,14 @@ bootc always keeps the previous deployment.
 
 ## Quick Reference
 
-### From Host
+### Common Tasks (work from anywhere)
 
-| Task                     | Command                           |
-| ------------------------ | --------------------------------- |
-| Capture all changes      | `bkt capture --apply`             |
-| Apply all manifests      | `bkt apply`                       |
-| Add a flatpak            | `bkt flatpak add <app-id>`        |
-| Add an extension         | `bkt extension add <uuid>`        |
-| Check status             | `bkt status`                      |
-| Upgrade system           | `bkt admin bootc upgrade --confirm` |
-
-### From Toolbox
-
-| Task                     | Command                           |
-| ------------------------ | --------------------------------- |
-| Install toolbox package  | `bkt dev dnf install <pkg>`       |
-| Run bkt on host          | `flatpak-spawn --host bkt ...`    |
-| Exit toolbox             | `exit`                            |
+| Task                    | Command                             |
+| ----------------------- | ----------------------------------- |
+| Capture all changes     | `bkt capture --apply`               |
+| Apply all manifests     | `bkt apply`                         |
+| Add a flatpak           | `bkt flatpak add <app-id>`          |
+| Add an extension        | `bkt extension add <uuid>`          |
+| Check status            | `bkt status`                        |
+| Upgrade system          | `bkt admin bootc upgrade --confirm` |
+| Install toolbox package | `bkt dev dnf install <pkg>`         |
