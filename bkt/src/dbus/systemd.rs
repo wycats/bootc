@@ -18,6 +18,9 @@ use tracing::warn;
 use zbus::blocking::Connection;
 use zbus::zvariant::OwnedObjectPath;
 
+type UnitFileSymlinkChange = (String, String, String);
+type EnableUnitFilesResult = (bool, Vec<UnitFileSymlinkChange>);
+
 /// Proxy for the systemd Manager interface.
 #[zbus::proxy(
     interface = "org.freedesktop.systemd1.Manager",
@@ -44,7 +47,7 @@ trait Systemd1Manager {
         files: &[&str],
         runtime: bool,
         force: bool,
-    ) -> zbus::Result<(bool, Vec<(String, String, String)>)>;
+    ) -> zbus::Result<EnableUnitFilesResult>;
 
     /// Disable unit files.
     /// Returns Vec<(type, symlink_name, destination)>
@@ -52,7 +55,7 @@ trait Systemd1Manager {
         &self,
         files: &[&str],
         runtime: bool,
-    ) -> zbus::Result<Vec<(String, String, String)>>;
+    ) -> zbus::Result<Vec<UnitFileSymlinkChange>>;
 
     /// Reload systemd daemon configuration.
     fn reload(&self) -> zbus::Result<()>;
