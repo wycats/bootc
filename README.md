@@ -46,26 +46,48 @@ You're not a user of Bazzite. You're the maintainer of a distribution that happe
 
 Both are disposable. `$HOME` persists across everything.
 
-## Local Changes That Become Permanent
+## The Two Workflows
 
-The key workflow insight: for things that don't require a reboot, you want **immediate local effect** AND **a PR to make it canonical**.
+### Install via GUI → Capture to Manifest
+
+The natural flow: use your system normally, then sync changes to the repo.
 
 ```bash
-# Today: local-only
-bkt shim add nmcli
+# 1. Install something via the GUI
+#    - Install a Flatpak via GNOME Software
+#    - Enable an extension via Extension Manager
+#    - Change a setting via GNOME Settings
 
-# Vision: apply locally AND open PR
-bkt shim add --pr nmcli
+# 2. Capture all changes to manifests (run on host, not in toolbox)
+bkt capture --apply
+
+# 3. Review and commit
+cd ~/Code/Config/bootc
+git diff manifests/
+git add -A && git commit -m "feat: add new flatpak/extension"
+git push
 ```
 
-This applies to:
+### Add to Manifest → Apply to System
 
-- Host command shims
-- Flatpak apps
-- GNOME extensions
-- GSettings
+The declarative flow: edit manifests first, then apply.
 
-One command, two effects: works now, becomes permanent via PR merge.
+```bash
+# 1. Add to manifest with validation
+bkt flatpak add org.gnome.Boxes
+bkt extension add dash-to-dock@micxgx.gmail.com
+
+# 2. Apply all manifests to system
+bkt apply
+
+# 3. Commit and push
+git add -A && git commit -m "feat: add boxes and dash-to-dock"
+git push
+```
+
+**Note:** `bkt` commands for extensions/flatpaks must run **on the host**, not in the toolbox. From toolbox, exit first or use `flatpak-spawn --host bkt ...`.
+
+See [WORKFLOW.md](docs/WORKFLOW.md) for detailed patterns.
 
 ## Three Tiers of Configuration
 
