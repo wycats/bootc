@@ -13,6 +13,180 @@ You have two modes:
 
 Both share your home directory. The toolbox is a container that mounts `~`.
 
+## Where to Run `bkt`
+
+**All `bkt` commands work from both host and toolbox.** Delegation is automatic.
+
+| Command Category      | Target  | From Toolbox                             |
+| --------------------- | ------- | ---------------------------------------- |
+| `bkt flatpak ...`     | Host    | Auto-delegates via flatpak-spawn         |
+| `bkt extension ...`   | Host    | Auto-delegates via flatpak-spawn         |
+| `bkt gsetting ...`    | Host    | Auto-delegates via flatpak-spawn         |
+| `bkt capture`         | Host    | Auto-delegates via flatpak-spawn         |
+| `bkt apply`           | Host    | Auto-delegates via flatpak-spawn         |
+| `bkt shim ...`        | Host    | Auto-delegates via flatpak-spawn         |
+| `bkt admin bootc ...` | Host    | Auto-delegates via flatpak-spawn         |
+| `bkt dev dnf ...`     | Toolbox | Auto-delegates from host via toolbox run |
+| `bkt status`          | Either  | Runs in current context                  |
+
+## Syncing System Changes to Manifests
+
+After installing things via GUI (GNOME Software, Extension Manager, Settings):
+
+```bash
+# Preview what would be captured (dry-run)
+bkt capture --dry-run
+
+# Capture all changes to manifests
+bkt capture --apply
+
+# Review changes
+cd ~/Code/Config/bootc
+git diff manifests/
+
+# Commit and push
+git add -A && git commit -m "feat: capture system changes"
+git push
+```
+
+### What Gets Captured
+
+| Subsystem   | What's captured                |
+| ----------- | ------------------------------ |
+| `flatpak`   | User-installed Flatpak apps    |
+| `extension` | Enabled GNOME Shell extensions |
+| `dnf`       | rpm-ostree layered packages    |
+
+**Not auto-captured:**
+
+- GSettings (use `bkt gsetting capture <schema>` for specific schemas)
+- Shims (added intentionally, not discovered)
+
+### Capture Individual Subsystems
+
+```bash
+# Capture only flatpaks
+bkt flatpak capture --apply
+
+# Capture only extensions
+bkt extension capture --apply
+
+# Capture only layered packages
+bkt dnf capture --apply
+
+# Capture specific gsettings schema
+bkt gsetting capture org.gnome.desktop.interface
+```
+
+## Applying Manifests to System
+
+To sync your system to match the manifests:
+
+```bash
+# Preview what would be applied
+bkt apply --dry-run
+
+# Apply all manifests
+bkt apply
+
+# Apply only specific subsystems
+bkt apply --only flatpak
+bkt apply --only extension,gsetting
+bkt apply --exclude dnf
+```
+
+### What Gets Applied
+
+| Subsystem   | What happens                                               |
+| ----------- | ---------------------------------------------------------- |
+| `flatpak`   | Installs missing Flatpak apps                              |
+| `extension` | Enables extensions from manifest (must be installed first) |
+| `gsetting`  | Applies GSettings values                                   |
+| `dnf`       | Installs rpm-ostree layered packages                       |
+| `shim`      | Creates host shim scripts                                  |
+
+**Note:** Extension sync only _enables_ extensions. It doesn't install them. To install new extensions:
+
+1. Add to manifest via `bkt extension add <uuid>`
+2. Install via Extension Manager or wait for next image bootstrap
+
+## Adding Things Manually
+
+### Add a Flatpak
+
+```bash
+# Add and install
+bkt flatpak add org.gnome.Boxes
+
+# Just add to manifest (don't install yet)
+bkt flatpak add org.gnome.Boxes --pr-only
+```
+
+### Add a GNOME Extension
+
+```bash
+# Add to manifest (will enable if already installed)
+bkt extension add dash-to-dock@micxgx.gmail.com
+
+# Verify it's in the manifest
+bkt extension list
+```
+
+### Add a GSettings Value
+
+```bash
+# Set a value (validates schema exists)
+bkt gsetting set org.gnome.desktop.interface color-scheme prefer-dark
+
+# Skip validation
+bkt gsetting set org.gnome.desktop.interface color-scheme prefer-dark --force
+```
+
+### Add a Host Shim
+
+```bash
+# Simple shim (name = command)
+bkt shim add nmcli
+
+# Aliased shim (different name)
+bkt shim add dc docker-compose
+
+# Sync shims to scripts
+bkt shim sync
+```
+
+## Checking Status
+
+```bash
+# Overall status
+bkt status
+
+# Check for drift
+bkt drift check
+```
+
+## For Things That Require Reboot
+
+System packages, fonts, and configs baked into the image require editing the Containerfile:
+
+```bash
+cd ~/Code/Config/bootc
+
+# Edit Containerfile to add a package
+vim Containerfile
+# Add: RUN rpm-ostree install your-package
+
+# Commit and push
+git add Containerfile && git commit -m "feat: add package"
+git push
+
+# Wait for CI to build (~10 min)
+
+# Upgrade and reboot
+bkt admin bootc upgrade --confirm
+systemctl reboot
+```
+
 ## Developing in the Toolbox
 
 ### Enter the toolbox
@@ -21,125 +195,32 @@ Both share your home directory. The toolbox is a container that mounts `~`.
 toolbox enter
 ```
 
-You're now in your dev environment. Everything in `~` is available — your code, dotfiles, and toolchains.
-
-### Host commands work transparently
-
-From inside the toolbox, these run on the host automatically:
+### Toolbox Packages
 
 ```bash
-bootc status      # System status
-systemctl status  # System services
-podman ps         # Containers (on host)
-ujust update      # System update
+# Install in toolbox (and capture to manifest)
+bkt dev dnf install gcc
+
+# See what's in the toolbox manifest
+bkt dev dnf list
 ```
 
-These are **shims** — small scripts that delegate to the host. They're managed via the `bkt shim` command.
+### Host Commands from Toolbox
 
-### Managing shims
+These work transparently via shims:
 
 ```bash
-bkt shim list                   # See all shims
-bkt shim add nmcli              # Add a shim
-bkt shim add dc docker-compose  # Alias: 'dc' runs 'docker-compose' on host
-bkt shim remove nmcli           # Remove a shim
+bootc status      # Delegates to host
+systemctl status  # Delegates to host
+podman ps         # Delegates to host
 ```
 
-Shims come from two places:
-
-| Source | Location                                     | Purpose          |
-| ------ | -------------------------------------------- | ---------------- |
-| System | `/usr/share/bootc-bootstrap/host-shims.json` | Baked into image |
-| User   | `~/.config/bootc/host-shims.json`            | Your additions   |
-
-## Making Changes Permanent
-
-Here's the key pattern: **apply locally for immediate effect, open a PR to make it permanent**.
-
-### For things that don't require reboot
-
-These apply immediately and can be synced to the repo:
-
-| What             | Local command                 | To bake permanently                          |
-| ---------------- | ----------------------------- | -------------------------------------------- |
-| Add a shim       | `bkt shim add nmcli`          | Edit `manifests/host-shims.json`, push       |
-| Install Flatpak  | `flatpak install ...`         | Edit `manifests/flatpak-apps.json`, push     |
-| Enable extension | `gnome-extensions enable ...` | Edit `manifests/gnome-extensions.json`, push |
-
-The `--pr` flag does both at once:
+If a command isn't available, add a shim:
 
 ```bash
-bkt shim add --pr nmcli   # Apply locally AND open PR
+# Works from both host and toolbox (auto-delegates)
+bkt shim add nmcli
 ```
-
-### For things that require reboot
-
-These require editing the repo and rebuilding:
-
-| What                 | Where to edit                  |
-| -------------------- | ------------------------------ |
-| Add system package   | `Containerfile`                |
-| Add system font      | `Containerfile`                |
-| Change system config | `system/...` + `Containerfile` |
-| Add toolbox package  | `toolbox/Containerfile`        |
-
-The workflow:
-
-```bash
-cd ~/Code/Config/bootc
-# Edit the file
-git add -A && git commit -m "feat: add thing"
-git push
-# Wait for CI (~10 min)
-sudo bootc upgrade
-systemctl reboot
-```
-
-## Checking for Drift
-
-"Drift" = your running system differs from what the repo declares.
-
-```bash
-check-drift
-```
-
-If you find drift you want to keep, update the manifests and push. If you don't want it, the next bootstrap will fix it.
-
-## Updating
-
-### Host OS (requires reboot)
-
-```bash
-sudo bootc upgrade
-systemctl reboot
-```
-
-Or let `uupd` handle it automatically — it checks hourly and stages updates.
-
-### Toolbox (no reboot)
-
-```bash
-podman pull ghcr.io/wycats/bootc-toolbox:latest
-toolbox rm -f dev
-toolbox create --image ghcr.io/wycats/bootc-toolbox:latest dev
-```
-
-Your home directory persists. Only the container is recreated.
-
-## The PATH in Toolbox
-
-```
-~/.local/bin               # Your scripts (works on host too)
-~/.local/toolbox/bin       # Toolbox-only scripts
-~/.local/toolbox/shims     # Host command delegates
-~/.nix-profile/bin         # Nix
-~/.cargo/bin               # Rust
-~/.proto/bin               # Proto
-/usr/bin                   # Container + system packages
-...
-```
-
-Your scripts take precedence over everything.
 
 ## Recovery
 
@@ -150,15 +231,18 @@ Something broke after upgrading?
 3. You're back to working state
 4. Fix the issue in repo, push, try again
 
-bootc always keeps the previous deployment. You're never stuck.
+bootc always keeps the previous deployment.
 
 ## Quick Reference
 
-| Task          | Command                                  |
-| ------------- | ---------------------------------------- |
-| Enter toolbox | `toolbox enter`                          |
-| Update host   | `sudo bootc upgrade && systemctl reboot` |
-| Check drift   | `check-drift`                            |
-| Add shim      | `shim add <name>`                        |
-| List shims    | `shim list`                              |
-| Host status   | `bootc status`                           |
+### Common Tasks (work from anywhere)
+
+| Task                    | Command                             |
+| ----------------------- | ----------------------------------- |
+| Capture all changes     | `bkt capture --apply`               |
+| Apply all manifests     | `bkt apply`                         |
+| Add a flatpak           | `bkt flatpak add <app-id>`          |
+| Add an extension        | `bkt extension add <uuid>`          |
+| Check status            | `bkt status`                        |
+| Upgrade system          | `bkt admin bootc upgrade --confirm` |
+| Install toolbox package | `bkt dev dnf install <pkg>`         |

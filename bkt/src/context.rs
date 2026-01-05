@@ -59,6 +59,20 @@ impl PrMode {
     }
 }
 
+/// Where a command naturally wants to execute.
+///
+/// This determines whether a command should be delegated to a different
+/// runtime environment (host vs. toolbox) for transparent execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandTarget {
+    /// Must run on the host (flatpak, extension, gsetting, shim, capture, apply)
+    Host,
+    /// Must run in the dev toolbox (bkt dev commands)
+    Dev,
+    /// Can run either place, meaning depends on context
+    Either,
+}
+
 /// Command domain categories.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandDomain {
@@ -118,26 +132,23 @@ impl CommandDomain {
         match (self, context) {
             (CommandDomain::Flatpak, ExecutionContext::Dev) => {
                 "Flatpaks are host-level applications.\n\n\
-                 Did you mean to run this on the host instead of in the dev toolbox?\n\n\
-                 Next steps:\n  \
-                 - Exit the dev toolbox (run `exit`)\n  \
-                 - On the host system, run: bkt flatpak add <app_id>"
+                 This command requires host context. If you're seeing this error,\n\
+                 you may have explicitly specified --context dev.\n\n\
+                 Fix: Remove the --context flag (delegation is automatic)"
                     .to_string()
             }
             (CommandDomain::Extension, ExecutionContext::Dev) => {
                 "GNOME extensions are host-level.\n\n\
-                 Did you mean to run this on the host instead of in the dev toolbox?\n\n\
-                 Next steps:\n  \
-                 - Exit the dev toolbox (run `exit`)\n  \
-                 - On the host system, run: bkt extension add <uuid>"
+                 This command requires host context. If you're seeing this error,\n\
+                 you may have explicitly specified --context dev.\n\n\
+                 Fix: Remove the --context flag (delegation is automatic)"
                     .to_string()
             }
             (CommandDomain::Shim, ExecutionContext::Dev) => {
                 "Shims are host-level (they expose host commands to the toolbox).\n\n\
-                 Did you mean to run this on the host instead of in the dev toolbox?\n\n\
-                 Next steps:\n  \
-                 - Exit the dev toolbox (run `exit`)\n  \
-                 - On the host system, run: bkt shim add <name>"
+                 This command requires host context. If you're seeing this error,\n\
+                 you may have explicitly specified --context dev.\n\n\
+                 Fix: Remove the --context flag (delegation is automatic)"
                     .to_string()
             }
             _ => format!("{:?} is not valid in {} context", self, context),
@@ -158,7 +169,7 @@ pub fn validate_context_for_domain(domain: CommandDomain, context: ExecutionCont
 }
 
 /// Runtime environment detection.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeEnvironment {
     /// Running directly on the host system
     Host,

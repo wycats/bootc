@@ -4,10 +4,13 @@
 - Start Date: 2026-01-03
 - RFC PR: (leave this empty until PR is opened)
 - Tracking Issue: (leave this empty)
+- Depends on: [RFC-0010](0010-transparent-delegation.md) (Transparent Command Delegation)
 
 ## Summary
 
 Implement passwordless privileged operations for `bkt` commands using polkit authorization, enabling seamless management of bootc images and systemd services from both host and toolbox contexts.
+
+> **Note**: This RFC assumes that `bkt admin` commands automatically delegate to the host via RFC-0010's transparent delegation infrastructure. The delegation layer handles toolbox→host routing; this RFC focuses on privilege elevation via polkit/pkexec.
 
 ## Motivation
 
@@ -93,19 +96,21 @@ bkt admin systemctl disable cups.service --confirm
 
 **Principle**: Separate read operations (passwordless) from mutations (confirmation required).
 
-| Operation Type | Privilege Level | Requires --confirm | Example |
-|---------------|----------------|-------------------|---------|
-| **Read-only** | Polkit (wheel) | No | `bootc status`, `systemctl status` |
-| **Service control** | Polkit (wheel) | Yes | `systemctl restart` |
-| **Image updates** | Polkit (wheel) | Yes | `bootc upgrade` |
-| **Rollback** | Polkit (wheel) | Yes | `bootc rollback` |
+| Operation Type      | Privilege Level | Requires --confirm | Example                            |
+| ------------------- | --------------- | ------------------ | ---------------------------------- |
+| **Read-only**       | Polkit (wheel)  | No                 | `bootc status`, `systemctl status` |
+| **Service control** | Polkit (wheel)  | Yes                | `systemctl restart`                |
+| **Image updates**   | Polkit (wheel)  | Yes                | `bootc upgrade`                    |
+| **Rollback**        | Polkit (wheel)  | Yes                | `bootc rollback`                   |
 
 **The `--confirm` Flag**:
+
 - Required for all mutating operations
 - CLI prompts: "This will restart docker.service. Continue? [y/N]"
 - Scriptable: `--yes` flag bypasses prompt (use with caution)
 
 **Why Passwordless for Wheel Group?**
+
 - Wheel group already has sudo access — this adds no new privilege
 - Polkit provides audit logging
 - Explicit `--confirm` prevents accidental mutations
@@ -164,21 +169,22 @@ bkt admin bootc upgrade --dry-run
 
 ```javascript
 // Grant passwordless access to wheel group for bkt admin operations
-polkit.addRule(function(action, subject) {
-    // pkexec-based commands (bootc, rpm-ostree)
-    if (action.id == "org.freedesktop.policykit.exec" &&
-        subject.isInGroup("wheel")) {
-        var program = action.lookup("program");
-        if (program == "/usr/bin/bootc" || 
-            program == "/usr/bin/rpm-ostree") {
-            return polkit.Result.YES;
-        }
+polkit.addRule(function (action, subject) {
+  // pkexec-based commands (bootc, rpm-ostree)
+  if (
+    action.id == "org.freedesktop.policykit.exec" &&
+    subject.isInGroup("wheel")
+  ) {
+    var program = action.lookup("program");
+    if (program == "/usr/bin/bootc" || program == "/usr/bin/rpm-ostree") {
+      return polkit.Result.YES;
     }
-    
-    // systemd D-Bus operations are handled by systemd's own polkit rules
-    // We don't need custom rules for those — wheel group already has access
-    
-    return polkit.Result.NOT_HANDLED;
+  }
+
+  // systemd D-Bus operations are handled by systemd's own polkit rules
+  // We don't need custom rules for those — wheel group already has access
+
+  return polkit.Result.NOT_HANDLED;
 });
 ```
 
@@ -191,14 +197,14 @@ pub fn in_toolbox() -> bool {
     if std::env::var("TOOLBOX_PATH").is_ok() {
         return true;
     }
-    
+
     // Method 2: Container type marker
     if let Ok(container_type) = std::env::var("container") {
         if container_type == "toolbox" {
             return true;
         }
     }
-    
+
     // Method 3: Filesystem marker
     std::path::Path::new("/run/.toolboxenv").exists()
 }
@@ -230,9 +236,9 @@ pub fn exec_bootc(subcommand: &str, args: &[String]) -> Result<()> {
             .args(args)
             .status()?
     };
-    
+
     if !status.success() {
-        bail!("bootc {} failed with exit code {:?}", 
+        bail!("bootc {} failed with exit code {:?}",
               subcommand, status.code());
     }
     Ok(())
@@ -252,25 +258,25 @@ use zbus::{blocking::Connection, dbus_proxy, Result as ZbusResult};
     default_path = "/org/freedesktop/systemd1"
 )]
 trait SystemdManager {
-    fn start_unit(&self, name: &str, mode: &str) 
+    fn start_unit(&self, name: &str, mode: &str)
         -> ZbusResult<zbus::zvariant::OwnedObjectPath>;
-    
-    fn stop_unit(&self, name: &str, mode: &str) 
+
+    fn stop_unit(&self, name: &str, mode: &str)
         -> ZbusResult<zbus::zvariant::OwnedObjectPath>;
-    
-    fn restart_unit(&self, name: &str, mode: &str) 
+
+    fn restart_unit(&self, name: &str, mode: &str)
         -> ZbusResult<zbus::zvariant::OwnedObjectPath>;
-    
-    fn reload_unit(&self, name: &str, mode: &str) 
+
+    fn reload_unit(&self, name: &str, mode: &str)
         -> ZbusResult<zbus::zvariant::OwnedObjectPath>;
-    
-    fn enable_unit_files(&self, files: &[&str], runtime: bool, force: bool) 
+
+    fn enable_unit_files(&self, files: &[&str], runtime: bool, force: bool)
         -> ZbusResult<(bool, Vec<(String, String, String)>)>;
-    
-    fn disable_unit_files(&self, files: &[&str], runtime: bool) 
+
+    fn disable_unit_files(&self, files: &[&str], runtime: bool)
         -> ZbusResult<Vec<(String, String, String)>>;
-    
-    fn get_unit(&self, name: &str) 
+
+    fn get_unit(&self, name: &str)
         -> ZbusResult<zbus::zvariant::OwnedObjectPath>;
 }
 
@@ -284,12 +290,12 @@ impl SystemdClient {
         let proxy = SystemdManagerProxyBlocking::new(&connection)?;
         Ok(Self { proxy })
     }
-    
+
     pub fn restart_unit(&self, unit: &str) -> Result<()> {
         self.proxy.restart_unit(unit, "replace")?;
         Ok(())
     }
-    
+
     // ... other methods
 }
 ```
@@ -406,6 +412,7 @@ COPY system/polkit-1/rules.d/50-bkt-admin.rules /etc/polkit-1/rules.d/
 ### Error Handling
 
 **Polkit denial (non-wheel user)**:
+
 ```
 Error: Permission denied by system policy
 
@@ -416,6 +423,7 @@ Then log out and back in.
 ```
 
 **Missing --confirm flag**:
+
 ```
 Error: This operation requires explicit confirmation
 
@@ -429,6 +437,7 @@ To proceed, run:
 ```
 
 **Toolbox without host access**:
+
 ```
 Error: Cannot access host system from this container
 
@@ -449,10 +458,12 @@ Ensure you're using a toolbox created with 'toolbox create'.
 Create a setuid `bkt-admin` binary that handles privileged operations.
 
 **Pros**:
+
 - No polkit dependency
 - Works on systems without polkit
 
 **Cons**:
+
 - Massive security surface area
 - Every input must be carefully sanitized
 - SELinux complications
@@ -466,10 +477,12 @@ Create a setuid `bkt-admin` binary that handles privileged operations.
 Keep the current behavior where users must use sudo.
 
 **Pros**:
+
 - Simple, no new code
 - Familiar to users
 
 **Cons**:
+
 - Breaks automation and scripting
 - Poor UX for frequent operations
 - No distinction between read and write operations
@@ -482,11 +495,13 @@ Keep the current behavior where users must use sudo.
 Create a dedicated `org.bootc.Admin1` D-Bus service with its own polkit policies.
 
 **Pros**:
+
 - Maximum control over authorization
 - Clean API design
 - Could expose additional metadata
 
 **Cons**:
+
 - Requires a daemon to be running
 - More complex packaging (systemd unit, D-Bus service file, polkit policy)
 - Overkill for wrapping a few commands
@@ -496,11 +511,13 @@ Create a dedicated `org.bootc.Admin1` D-Bus service with its own polkit policies
 ## Unresolved Questions
 
 1. **Should `bootc status` require polkit at all?**
+
    - Current: Yes, but passwordless for wheel
    - Alternative: Could use `bootc status --json` which may not need privileges
    - Decision: Start with polkit, revisit if `bootc` adds unprivileged status
 
 2. **What systemd operations should be exposed?**
+
    - Current: start, stop, restart, enable, disable, status
    - Future: reload, mask, unmask, daemon-reload
    - Decision: Start minimal, expand based on use
@@ -513,12 +530,14 @@ Create a dedicated `org.bootc.Admin1` D-Bus service with its own polkit policies
 ## Implementation Checklist
 
 ### Phase 1: Foundation (~2-3 hours)
+
 - [ ] Create `bkt/src/commands/admin/mod.rs`
 - [ ] Create CLI structure with clap
 - [ ] Implement `in_toolbox()` context detection
 - [ ] Add placeholder subcommands
 
 ### Phase 2: Polkit + pkexec (~6-8 hours)
+
 - [ ] Create `system/polkit-1/rules.d/50-bkt-admin.rules`
 - [ ] Implement `exec_bootc()` helper
 - [ ] Implement `bkt admin bootc status`
@@ -528,6 +547,7 @@ Create a dedicated `org.bootc.Admin1` D-Bus service with its own polkit policies
 - [ ] Update Containerfile to copy polkit rules
 
 ### Phase 3: D-Bus Integration (~8-12 hours)
+
 - [ ] Add `zbus` dependency
 - [ ] Create `bkt/src/dbus/mod.rs`
 - [ ] Create `bkt/src/dbus/systemd.rs`
@@ -535,11 +555,13 @@ Create a dedicated `org.bootc.Admin1` D-Bus service with its own polkit policies
 - [ ] Test D-Bus connectivity from toolbox
 
 ### Phase 4: systemctl Commands (~4-6 hours)
+
 - [ ] Implement `bkt admin systemctl status <unit>`
 - [ ] Implement `bkt admin systemctl start/stop/restart <unit> --confirm`
 - [ ] Implement `bkt admin systemctl enable/disable <unit> --confirm`
 
 ### Phase 5: Testing & Documentation (~4 hours)
+
 - [ ] Unit tests for context detection
 - [ ] Integration tests (manual, requires image rebuild)
 - [ ] Update CURRENT.md with implementation summary

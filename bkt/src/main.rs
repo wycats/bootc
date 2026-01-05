@@ -27,6 +27,7 @@ use tracing_subscriber::EnvFilter;
 
 mod commands;
 pub mod context;
+mod delegation;
 pub mod effects;
 mod manifest;
 pub mod output;
@@ -36,6 +37,7 @@ mod pr;
 mod repo;
 pub mod validation;
 
+use context::CommandTarget;
 pub use context::{CommandDomain, ExecutionContext, PrMode};
 
 #[derive(Debug, Parser)]
@@ -65,6 +67,10 @@ pub struct Cli {
     /// Changes are recorded in the ephemeral manifest for later promotion.
     #[arg(long, global = true, conflicts_with = "pr_only")]
     pub local: bool,
+
+    /// Don't auto-delegate to host/toolbox (for debugging)
+    #[arg(long, global = true, hide = true)]
+    pub no_delegate: bool,
 
     /// Show what would be done without making changes
     #[arg(long, short = 'n', global = true)]
@@ -150,6 +156,43 @@ pub enum Commands {
     Base(commands::base::BaseArgs),
 }
 
+impl Commands {
+    /// Get the natural execution target for this command.
+    ///
+    /// Determines whether the command must run on the host, in the dev toolbox,
+    /// or can run in either context. Used by the delegation system to decide
+    /// if automatic re-execution is needed.
+    pub fn target(&self) -> CommandTarget {
+        match self {
+            // Host-only commands
+            Commands::Flatpak(_) => CommandTarget::Host,
+            Commands::Extension(_) => CommandTarget::Host,
+            Commands::Gsetting(_) => CommandTarget::Host,
+            Commands::Shim(_) => CommandTarget::Host,
+            Commands::Capture(_) => CommandTarget::Host,
+            Commands::Apply(_) => CommandTarget::Host,
+            Commands::Admin(_) => CommandTarget::Host,
+
+            // Dev-only commands
+            Commands::Dev(_) => CommandTarget::Dev,
+
+            // Either: depends on explicit context or runtime
+            Commands::Dnf(_) => CommandTarget::Either,
+            Commands::Status(_) => CommandTarget::Either,
+            Commands::Doctor(_) => CommandTarget::Either,
+            Commands::Profile(_) => CommandTarget::Either,
+            Commands::Repo(_) => CommandTarget::Either,
+            Commands::Schema(_) => CommandTarget::Either,
+            Commands::Completions(_) => CommandTarget::Either,
+            Commands::Upstream(_) => CommandTarget::Either,
+            Commands::Changelog(_) => CommandTarget::Either,
+            Commands::Drift(_) => CommandTarget::Either,
+            Commands::Base(_) => CommandTarget::Either,
+            Commands::Skel(_) => CommandTarget::Either,
+        }
+    }
+}
+
 fn main() -> Result<()> {
     // Initialize tracing with RUST_LOG env filter
     // e.g., RUST_LOG=bkt=debug
@@ -159,6 +202,18 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    // Check if we need to delegate to a different context
+    // This happens BEFORE creating the execution plan, using only the command target
+    let runtime = context::detect_environment();
+    let target = match cli.context {
+        Some(ExecutionContext::Host) => CommandTarget::Host,
+        Some(ExecutionContext::Dev) => CommandTarget::Dev,
+        Some(ExecutionContext::Image) => CommandTarget::Either, // Image = no execution
+        None => cli.command.target(),
+    };
+    delegation::maybe_delegate(target, runtime, cli.dry_run, cli.no_delegate)?;
+
+    // If we reach here, we're in the right context
     // Create execution plan from global options
     let plan = pipeline::ExecutionPlan::from_cli(&cli);
 
