@@ -3,11 +3,11 @@
   "upstreams": [
     {
       "name": "bibata-cursor",
-      "description": "Bibata cursor theme - modern style",
+      "description": "Bibata cursor theme - modern classic style",
       "source": {
         "type": "github",
         "repo": "ful1e5/Bibata_Cursor",
-        "asset_pattern": "Bibata-Modern-Ice.tar.xz"
+        "asset_pattern": "Bibata-Modern-Classic.tar.xz"
       },
       "pinned": {
         "version": "v2.0.7",
