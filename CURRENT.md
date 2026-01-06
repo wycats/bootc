@@ -422,14 +422,14 @@ Refactor command implementations to use a `Plan`-centric architecture where all 
 - ✅ No command contains `if dry_run { ... } else { ... }` branching
 - ✅ Plan output is structured and consistent across all commands
 
-### Follow-ups (Polish)
+### Follow-ups (Polish) — ✅ Complete (PR #24)
 
-Some commands still implement per-command `--pr` / `--dry-run` flags instead of fully using `ExecutionPlan`. Migrating these would complete the “single global flags, composable plans” story:
+All commands now use `ExecutionPlan` for global `--dry-run`, `--pr`, `--pr-only`, `--local`, and `--skip-preflight` flags:
 
-- Migrate `bkt gsetting` (set/unset/apply/capture) to `ExecutionPlan`
-- Migrate `bkt extension` (add/remove/sync/capture) to `ExecutionPlan`
-- Migrate `bkt shim` (add/remove/sync) to `ExecutionPlan`
-- Migrate `bkt skel` (add/sync) to `ExecutionPlan`
+- ✅ Migrated `bkt gsetting` (set/unset/apply/capture) to `ExecutionPlan`
+- ✅ Migrated `bkt extension` (add/remove/sync/capture) to `ExecutionPlan`
+- ✅ Migrated `bkt shim` (add/remove/sync) to `ExecutionPlan`
+- ✅ Migrated `bkt skel` (add/sync) to `ExecutionPlan`
 
 ---
 

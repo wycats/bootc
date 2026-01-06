@@ -339,10 +339,7 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
             // Use the Plan-based capture implementation
             let plan_ctx = PlanContext::new(
                 std::env::current_dir().unwrap_or_default(),
-                ExecutionPlan {
-                    dry_run,
-                    ..plan.clone()
-                },
+                plan.with_dry_run(dry_run),
             );
 
             let capture_plan = FlatpakCaptureCommand.plan(&plan_ctx)?;
@@ -363,10 +360,7 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
             }
 
             // Execute the plan
-            let mut exec_ctx = ExecuteContext::new(ExecutionPlan {
-                dry_run: false,
-                ..plan.clone()
-            });
+            let mut exec_ctx = ExecuteContext::new(plan.with_dry_run(false));
             let report = capture_plan.execute(&mut exec_ctx)?;
             print!("{}", report);
         }

@@ -10,7 +10,6 @@
 
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
-use crate::pr::{PrChange, run_pr_workflow};
 use crate::repo::find_repo_path;
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
@@ -30,12 +29,6 @@ pub enum SkelAction {
     Add {
         /// File path relative to $HOME (e.g., .bashrc or .config/foo/bar)
         file: String,
-        /// Create a PR with the change
-        #[arg(long)]
-        pr: bool,
-        /// Skip pre-flight checks for PR workflow
-        #[arg(long)]
-        skip_preflight: bool,
     },
     /// Show diff between skel files and current $HOME
     Diff {
@@ -46,9 +39,6 @@ pub enum SkelAction {
     List,
     /// Sync skel files to $HOME (copies skel → $HOME)
     Sync {
-        /// Show what would be done without making changes
-        #[arg(long)]
-        dry_run: bool,
         /// Force overwrite existing files
         #[arg(long)]
         force: bool,
@@ -139,16 +129,9 @@ fn diff_files(skel_file: &Path, home_file: &Path) -> Result<Option<String>> {
     }
 }
 
-pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
-    // TODO: Migrate to use `ExecutionPlan` instead of per-command flags.
-    // The `_plan` parameter is intentionally unused and reserved for future use
-    // after this migration.
+pub fn run(args: SkelArgs, plan: &ExecutionPlan) -> Result<()> {
     match args.action {
-        SkelAction::Add {
-            file,
-            pr,
-            skip_preflight,
-        } => {
+        SkelAction::Add { file } => {
             let home = home_dir()?;
             let skel = skel_dir()?;
 
@@ -182,34 +165,35 @@ pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
                 bail!("Source file does not exist: {}", source.display());
             }
 
-            // Create parent directories if needed
-            if let Some(parent) = dest.parent() {
-                fs::create_dir_all(parent)
-                    .with_context(|| format!("Failed to create directory {}", parent.display()))?;
+            // Skel add always copies to the repo's skel/ directory (not a manifest)
+            // We don't use should_update_local_manifest because this is a file copy, not manifest update
+            if !plan.dry_run {
+                // Create parent directories if needed
+                if let Some(parent) = dest.parent() {
+                    fs::create_dir_all(parent).with_context(|| {
+                        format!("Failed to create directory {}", parent.display())
+                    })?;
+                }
+
+                // Copy the file
+                fs::copy(&source, &dest).with_context(|| {
+                    format!("Failed to copy {} to {}", source.display(), dest.display())
+                })?;
+
+                Output::success(format!("Added to skel: {}", file));
+                Output::hint(format!("{} → {}", source.display(), dest.display()));
+            } else {
+                Output::dry_run(format!("Would copy {} to skel/{}", source.display(), file));
             }
 
-            // Copy the file
-            fs::copy(&source, &dest).with_context(|| {
-                format!("Failed to copy {} to {}", source.display(), dest.display())
-            })?;
+            if plan.should_create_pr() {
+                // Read the file content for the PR. In dry-run mode, the destination file
+                // does not exist yet, so read from the source instead.
+                let pr_source = if plan.dry_run { &source } else { &dest };
+                let content = fs::read_to_string(pr_source)
+                    .with_context(|| format!("Failed to read {}", pr_source.display()))?;
 
-            Output::success(format!("Added to skel: {}", file));
-            Output::hint(format!("{} → {}", source.display(), dest.display()));
-
-            if pr {
-                // Read the file content for the PR
-                let content = fs::read_to_string(&dest)
-                    .with_context(|| format!("Failed to read {}", dest.display()))?;
-
-                let change = PrChange {
-                    manifest_type: "skel".to_string(),
-                    action: "add".to_string(),
-                    name: file.clone(),
-                    manifest_file: format!("skel/{}", file),
-                };
-
-                // For skel, we write the actual file content
-                run_pr_workflow(&change, &content, skip_preflight)?;
+                plan.maybe_create_pr("skel", "add", &file, &format!("skel/{}", file), &content)?;
             }
         }
         SkelAction::Diff { file } => {
@@ -288,7 +272,7 @@ pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
                 Output::list_item(file.display().to_string());
             }
         }
-        SkelAction::Sync { dry_run, force } => {
+        SkelAction::Sync { force } => {
             let home = home_dir()?;
             let skel = skel_dir()?;
             let files = list_skel_files(&skel)?;
@@ -306,14 +290,14 @@ pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
                 let home_file = home.join(file);
 
                 if home_file.exists() && !force {
-                    if dry_run {
+                    if plan.dry_run {
                         Output::dry_run(format!("Would skip (exists): {}", file.display()));
                     }
                     skipped += 1;
                     continue;
                 }
 
-                if dry_run {
+                if plan.dry_run {
                     Output::dry_run(format!(
                         "Would copy: {} → {}",
                         skel_file.display(),
@@ -338,7 +322,7 @@ pub fn run(args: SkelArgs, _plan: &ExecutionPlan) -> Result<()> {
             }
 
             Output::blank();
-            if dry_run {
+            if plan.dry_run {
                 Output::info(format!(
                     "Dry run: {} would be copied, {} would be skipped",
                     copied, skipped

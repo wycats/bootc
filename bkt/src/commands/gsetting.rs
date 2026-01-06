@@ -6,7 +6,6 @@ use crate::pipeline::ExecutionPlan;
 use crate::plan::{
     ExecuteContext, ExecutionReport, Operation, Plan, PlanContext, PlanSummary, Plannable, Verb,
 };
-use crate::pr::{PrChange, run_pr_workflow};
 use crate::validation::{validate_gsettings_key, validate_gsettings_schema};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -32,12 +31,6 @@ pub enum GSettingAction {
         /// Optional comment
         #[arg(short, long)]
         comment: Option<String>,
-        /// Create a PR with the change
-        #[arg(long)]
-        pr: bool,
-        /// Skip pre-flight checks for PR workflow
-        #[arg(long)]
-        skip_preflight: bool,
         /// Skip schema/key validation
         #[arg(long)]
         force: bool,
@@ -48,12 +41,6 @@ pub enum GSettingAction {
         schema: String,
         /// Key name
         key: String,
-        /// Create a PR with the change
-        #[arg(long)]
-        pr: bool,
-        /// Skip pre-flight checks for PR workflow
-        #[arg(long)]
-        skip_preflight: bool,
     },
     /// List all GSettings in the manifest
     List {
@@ -62,11 +49,7 @@ pub enum GSettingAction {
         format: String,
     },
     /// Apply all GSettings from the manifest
-    Apply {
-        /// Show what would be done without making changes
-        #[arg(long)]
-        dry_run: bool,
-    },
+    Apply,
     /// Capture current GSettings values to manifest
     Capture {
         /// Schema name to capture (required - captures all keys from this schema)
@@ -74,10 +57,7 @@ pub enum GSettingAction {
         /// Specific key to capture (optional - defaults to all keys in schema)
         #[arg(short, long)]
         key: Option<String>,
-        /// Show what would be done without making changes
-        #[arg(long)]
-        dry_run: bool,
-        /// Apply the plan immediately
+        /// Apply the plan immediately (default is preview only)
         #[arg(long)]
         apply: bool,
     },
@@ -102,18 +82,13 @@ fn set_gsetting(schema: &str, key: &str, value: &str) -> Result<bool> {
     Ok(status.success())
 }
 
-pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
-    // TODO: Migrate to use `ExecutionPlan` instead of per-command flags.
-    // The `_plan` parameter is intentionally unused and reserved for future use
-    // after this migration.
+pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
     match args.action {
         GSettingAction::Set {
             schema,
             key,
             value,
             comment,
-            pr,
-            skip_preflight,
             force,
         } => {
             // Validate schema and key exist before modifying manifest
@@ -130,14 +105,29 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
                 .find(&schema, &key)
                 .or_else(|| user.find(&schema, &key));
 
-            if let Some(e) = existing {
-                if e.value == value {
-                    Output::info(format!(
-                        "Already in manifest: {}.{} = {}",
-                        schema, key, value
-                    ));
+            if plan.should_update_local_manifest() {
+                if let Some(e) = existing {
+                    if e.value == value {
+                        Output::info(format!(
+                            "Already in manifest: {}.{} = {}",
+                            schema, key, value
+                        ));
+                    } else {
+                        // Update in user manifest
+                        let setting = GSetting {
+                            schema: schema.clone(),
+                            key: key.clone(),
+                            value: value.clone(),
+                            comment,
+                        };
+                        user.upsert(setting);
+                        user.save_user()?;
+                        Output::success(format!(
+                            "Updated in user manifest: {}.{} = {}",
+                            schema, key, value
+                        ));
+                    }
                 } else {
-                    // Update in user manifest
                     let setting = GSetting {
                         schema: schema.clone(),
                         key: key.clone(),
@@ -147,34 +137,34 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
                     user.upsert(setting);
                     user.save_user()?;
                     Output::success(format!(
-                        "Updated in user manifest: {}.{} = {}",
+                        "Added to user manifest: {}.{} = {}",
                         schema, key, value
                     ));
                 }
-            } else {
-                let setting = GSetting {
-                    schema: schema.clone(),
-                    key: key.clone(),
-                    value: value.clone(),
-                    comment,
-                };
-                user.upsert(setting);
-                user.save_user()?;
-                Output::success(format!(
-                    "Added to user manifest: {}.{} = {}",
+            } else if plan.dry_run {
+                Output::dry_run(format!(
+                    "Would set in manifest: {}.{} = {}",
                     schema, key, value
                 ));
             }
 
             // Apply immediately
-            let spinner = Output::spinner(format!("Applying {}.{} = {}...", schema, key, value));
-            if set_gsetting(&schema, &key, &value)? {
-                spinner.finish_success(format!("Applied {}.{}", schema, key));
-            } else {
-                spinner.finish_error(format!("Failed to apply {}.{}", schema, key));
+            if plan.should_execute_locally() {
+                let spinner =
+                    Output::spinner(format!("Applying {}.{} = {}...", schema, key, value));
+                if set_gsetting(&schema, &key, &value)? {
+                    spinner.finish_success(format!("Applied {}.{}", schema, key));
+                } else {
+                    spinner.finish_error(format!("Failed to apply {}.{}", schema, key));
+                }
+            } else if plan.dry_run {
+                Output::dry_run(format!(
+                    "Would apply gsetting: {}.{} = {}",
+                    schema, key, value
+                ));
             }
 
-            if pr {
+            if plan.should_create_pr() {
                 let mut system_manifest = GSettingsManifest::load_system()?;
                 let setting_for_pr = GSetting {
                     schema: schema.clone(),
@@ -185,63 +175,70 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
                 system_manifest.upsert(setting_for_pr);
                 let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
 
-                let change = PrChange {
-                    manifest_type: "gsetting".to_string(),
-                    action: "set".to_string(),
-                    name: format!("{}.{}", schema, key),
-                    manifest_file: "gsettings.json".to_string(),
-                };
-                run_pr_workflow(&change, &manifest_content, skip_preflight)?;
+                plan.maybe_create_pr(
+                    "gsetting",
+                    "set",
+                    &format!("{}.{}", schema, key),
+                    "gsettings.json",
+                    &manifest_content,
+                )?;
             }
         }
-        GSettingAction::Unset {
-            schema,
-            key,
-            pr,
-            skip_preflight,
-        } => {
+        GSettingAction::Unset { schema, key } => {
             let mut user = GSettingsManifest::load_user()?;
             let system = GSettingsManifest::load_system()?;
 
             let in_system = system.find(&schema, &key).is_some();
-            if in_system && user.find(&schema, &key).is_none() {
+            if in_system && user.find(&schema, &key).is_none() && !plan.should_create_pr() {
                 Output::info(format!(
-                    "'{}.{}' is in the system manifest; use --pr to remove from source",
+                    "'{}.{}' is in the system manifest; use --pr or --pr-only to remove from source",
                     schema, key
                 ));
             }
 
-            if user.remove(&schema, &key) {
-                user.save_user()?;
-                Output::success(format!("Removed from user manifest: {}.{}", schema, key));
-            } else if !in_system {
-                Output::warning(format!("Setting not found in manifest: {}.{}", schema, key));
+            if plan.should_update_local_manifest() {
+                if user.remove(&schema, &key) {
+                    user.save_user()?;
+                    Output::success(format!("Removed from user manifest: {}.{}", schema, key));
+                } else if !in_system {
+                    Output::warning(format!("Setting not found in manifest: {}.{}", schema, key));
+                }
+            } else if plan.dry_run {
+                Output::dry_run(format!("Would remove from manifest: {}.{}", schema, key));
             }
 
             // Reset to default
-            let spinner = Output::spinner(format!("Resetting {}.{} to default...", schema, key));
-            let status = Command::new("gsettings")
-                .args(["reset", &schema, &key])
-                .status()
-                .context("Failed to run gsettings reset")?;
-            if status.success() {
-                spinner.finish_success(format!("Reset {}.{}", schema, key));
-            } else {
-                spinner.finish_error(format!("Failed to reset {}.{}", schema, key));
+            if plan.should_execute_locally() {
+                let spinner =
+                    Output::spinner(format!("Resetting {}.{} to default...", schema, key));
+                let status = Command::new("gsettings")
+                    .args(["reset", &schema, &key])
+                    .status()
+                    .context("Failed to run gsettings reset")?;
+                if status.success() {
+                    spinner.finish_success(format!("Reset {}.{}", schema, key));
+                } else {
+                    spinner.finish_error(format!("Failed to reset {}.{}", schema, key));
+                }
+            } else if plan.dry_run {
+                Output::dry_run(format!(
+                    "Would reset gsetting to default: {}.{}",
+                    schema, key
+                ));
             }
 
-            if pr {
+            if plan.should_create_pr() {
                 let mut system_manifest = GSettingsManifest::load_system()?;
                 if system_manifest.remove(&schema, &key) {
                     let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
 
-                    let change = PrChange {
-                        manifest_type: "gsetting".to_string(),
-                        action: "unset".to_string(),
-                        name: format!("{}.{}", schema, key),
-                        manifest_file: "gsettings.json".to_string(),
-                    };
-                    run_pr_workflow(&change, &manifest_content, skip_preflight)?;
+                    plan.maybe_create_pr(
+                        "gsetting",
+                        "unset",
+                        &format!("{}.{}", schema, key),
+                        "gsettings.json",
+                        &manifest_content,
+                    )?;
                 } else {
                     Output::info(format!(
                         "'{}.{}' not in system manifest, no PR needed",
@@ -306,57 +303,37 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
                 ));
             }
         }
-        GSettingAction::Apply { dry_run } => {
+        GSettingAction::Apply => {
             // Use the new Plan-based implementation
             let cwd = std::env::current_dir()?;
-            let plan_ctx = PlanContext::new(
-                cwd,
-                ExecutionPlan {
-                    dry_run,
-                    ..Default::default()
-                },
-            );
+            let plan_ctx = PlanContext::new(cwd, plan.clone());
 
-            let plan = GsettingApplyCommand.plan(&plan_ctx)?;
+            let apply_plan = GsettingApplyCommand.plan(&plan_ctx)?;
 
-            if plan.is_empty() {
+            if apply_plan.is_empty() {
                 Output::success("All settings are already applied.");
                 return Ok(());
             }
 
             // Always show the plan
-            print!("{}", plan.describe());
+            print!("{}", apply_plan.describe());
 
-            if dry_run {
+            if plan.dry_run {
                 return Ok(());
             }
 
             // Execute the plan
-            let mut exec_ctx = ExecuteContext::new(ExecutionPlan {
-                dry_run: false,
-                ..Default::default()
-            });
-            let report = plan.execute(&mut exec_ctx)?;
+            let mut exec_ctx = ExecuteContext::new(plan.clone());
+            let report = apply_plan.execute(&mut exec_ctx)?;
             print!("{}", report);
         }
-        GSettingAction::Capture {
-            schema,
-            key,
-            dry_run,
-            apply,
-        } => {
+        GSettingAction::Capture { schema, key, apply } => {
             // Validate schema exists
             validate_gsettings_schema(&schema)?;
 
             // Use the Plan-based capture implementation
             let cwd = std::env::current_dir()?;
-            let plan_ctx = PlanContext::new(
-                cwd,
-                ExecutionPlan {
-                    dry_run,
-                    ..Default::default()
-                },
-            );
+            let plan_ctx = PlanContext::new(cwd, plan.clone());
 
             let capture_plan = GsettingCaptureCommand {
                 schema: schema.clone(),
@@ -372,18 +349,15 @@ pub fn run(args: GSettingArgs, _plan: &ExecutionPlan) -> Result<()> {
             // Always show the plan
             print!("{}", capture_plan.describe());
 
-            if dry_run || !apply {
-                if !apply {
+            if plan.dry_run || !apply {
+                if !apply && !plan.dry_run {
                     Output::hint("Use --apply to execute this plan.");
                 }
                 return Ok(());
             }
 
             // Execute the plan
-            let mut exec_ctx = ExecuteContext::new(ExecutionPlan {
-                dry_run: false,
-                ..Default::default()
-            });
+            let mut exec_ctx = ExecuteContext::new(plan.clone());
             let report = capture_plan.execute(&mut exec_ctx)?;
             print!("{}", report);
         }

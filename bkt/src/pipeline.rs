@@ -11,13 +11,14 @@ use crate::Cli;
 use crate::context::{
     CommandDomain, ExecutionContext, PrMode, resolve_context, validate_context_for_domain,
 };
-use crate::pr::{PrChange, run_pr_workflow};
+use crate::pr::{GitHubBackend, PrBackend, PrChange};
 use anyhow::Result;
+use std::sync::Arc;
 
 /// Execution plan for a bkt command.
 ///
 /// Captures all the global options that affect how a command executes.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ExecutionPlan {
     /// The resolved execution context
     pub context: ExecutionContext,
@@ -27,6 +28,8 @@ pub struct ExecutionPlan {
     pub dry_run: bool,
     /// Whether to skip preflight checks
     pub skip_preflight: bool,
+    /// Backend for PR creation (enables testing)
+    pr_backend: Arc<dyn PrBackend>,
 }
 
 impl ExecutionPlan {
@@ -47,6 +50,18 @@ impl ExecutionPlan {
             pr_mode,
             dry_run: cli.dry_run,
             skip_preflight: cli.skip_preflight,
+            pr_backend: Arc::new(GitHubBackend),
+        }
+    }
+
+    /// Create a copy of this plan with the specified dry_run value.
+    pub fn with_dry_run(&self, dry_run: bool) -> Self {
+        Self {
+            context: self.context,
+            pr_mode: self.pr_mode,
+            dry_run,
+            skip_preflight: self.skip_preflight,
+            pr_backend: self.pr_backend.clone(),
         }
     }
 
@@ -97,7 +112,8 @@ impl ExecutionPlan {
                 name: name.to_string(),
                 manifest_file: manifest_file.to_string(),
             };
-            run_pr_workflow(&change, manifest_content, self.skip_preflight)?;
+            self.pr_backend
+                .create_pr(&change, manifest_content, self.skip_preflight)?;
         } else if self.dry_run {
             println!(
                 "[dry-run] Would create PR: {} {} {}",
@@ -115,17 +131,19 @@ impl Default for ExecutionPlan {
             pr_mode: PrMode::Both,
             dry_run: false,
             skip_preflight: false,
+            pr_backend: Arc::new(GitHubBackend),
         }
     }
 }
 
 /// Builder for creating execution plans in tests or programmatically.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct ExecutionPlanBuilder {
     context: Option<ExecutionContext>,
     pr_mode: Option<PrMode>,
     dry_run: bool,
     skip_preflight: bool,
+    pr_backend: Option<Arc<dyn PrBackend>>,
 }
 
 impl ExecutionPlanBuilder {
@@ -153,12 +171,18 @@ impl ExecutionPlanBuilder {
         self
     }
 
+    pub fn pr_backend(mut self, backend: Arc<dyn PrBackend>) -> Self {
+        self.pr_backend = Some(backend);
+        self
+    }
+
     pub fn build(self) -> ExecutionPlan {
         ExecutionPlan {
             context: self.context.unwrap_or(ExecutionContext::Host),
             pr_mode: self.pr_mode.unwrap_or(PrMode::Both),
             dry_run: self.dry_run,
             skip_preflight: self.skip_preflight,
+            pr_backend: self.pr_backend.unwrap_or_else(|| Arc::new(GitHubBackend)),
         }
     }
 }

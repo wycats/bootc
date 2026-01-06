@@ -6,7 +6,6 @@ use crate::pipeline::ExecutionPlan;
 use crate::plan::{
     ExecuteContext, ExecutionReport, Operation, Plan, PlanContext, PlanSummary, Plannable, Verb,
 };
-use crate::pr::{PrChange, run_pr_workflow};
 use crate::validation::validate_gnome_extension;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -25,12 +24,6 @@ pub enum ExtensionAction {
     Add {
         /// Extension UUID (e.g., dash-to-dock@micxgx.gmail.com)
         uuid: String,
-        /// Create a PR with the change
-        #[arg(long)]
-        pr: bool,
-        /// Skip pre-flight checks for PR workflow
-        #[arg(long)]
-        skip_preflight: bool,
         /// Skip validation that extension exists
         #[arg(long)]
         force: bool,
@@ -39,12 +32,6 @@ pub enum ExtensionAction {
     Remove {
         /// Extension UUID to remove
         uuid: String,
-        /// Create a PR with the change
-        #[arg(long)]
-        pr: bool,
-        /// Skip pre-flight checks for PR workflow
-        #[arg(long)]
-        skip_preflight: bool,
     },
     /// List all GNOME extensions in the manifest
     List {
@@ -53,17 +40,10 @@ pub enum ExtensionAction {
         format: String,
     },
     /// Sync: enable extensions from manifest
-    Sync {
-        /// Show what would be done without making changes
-        #[arg(long)]
-        dry_run: bool,
-    },
+    Sync,
     /// Capture enabled extensions to manifest
     Capture {
-        /// Show what would be done without making changes
-        #[arg(long)]
-        dry_run: bool,
-        /// Apply the plan immediately
+        /// Apply the plan immediately (default is preview only)
         #[arg(long)]
         apply: bool,
     },
@@ -108,17 +88,9 @@ fn disable_extension(uuid: &str) -> Result<bool> {
     Ok(status.success())
 }
 
-pub fn run(args: ExtensionArgs, _plan: &ExecutionPlan) -> Result<()> {
-    // TODO: Migrate to use `ExecutionPlan` instead of per-command flags.
-    // The `_plan` parameter is intentionally unused and reserved for future use
-    // after this migration.
+pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
     match args.action {
-        ExtensionAction::Add {
-            uuid,
-            pr,
-            skip_preflight,
-            force,
-        } => {
+        ExtensionAction::Add { uuid, force } => {
             // Validate that the extension exists on extensions.gnome.org
             if !force {
                 validate_gnome_extension(&uuid)?;
@@ -127,91 +99,103 @@ pub fn run(args: ExtensionArgs, _plan: &ExecutionPlan) -> Result<()> {
             let system = GnomeExtensionsManifest::load_system()?;
             let mut user = GnomeExtensionsManifest::load_user()?;
 
-            if system.contains(&uuid) || user.contains(&uuid) {
-                Output::warning(format!("Extension already in manifest: {}", uuid));
-            } else {
-                user.add(uuid.clone());
-                user.save_user()?;
-                Output::success(format!("Added to user manifest: {}", uuid));
+            if plan.should_update_local_manifest() {
+                if system.contains(&uuid) || user.contains(&uuid) {
+                    Output::warning(format!("Extension already in manifest: {}", uuid));
+                } else {
+                    user.add(uuid.clone());
+                    user.save_user()?;
+                    Output::success(format!("Added to user manifest: {}", uuid));
+                }
+            } else if plan.dry_run {
+                Output::dry_run(format!("Would add to user manifest: {}", uuid));
             }
 
             // Enable if installed
-            if is_installed(&uuid) {
-                if !is_enabled(&uuid) {
-                    let spinner = Output::spinner(format!("Enabling {}...", uuid));
-                    if enable_extension(&uuid)? {
-                        spinner.finish_success(format!("Enabled {}", uuid));
+            if plan.should_execute_locally() {
+                if is_installed(&uuid) {
+                    if !is_enabled(&uuid) {
+                        let spinner = Output::spinner(format!("Enabling {}...", uuid));
+                        if enable_extension(&uuid)? {
+                            spinner.finish_success(format!("Enabled {}", uuid));
+                        } else {
+                            spinner.finish_error(format!("Failed to enable {}", uuid));
+                        }
                     } else {
-                        spinner.finish_error(format!("Failed to enable {}", uuid));
+                        Output::info(format!("Already enabled: {}", uuid));
                     }
                 } else {
-                    Output::info(format!("Already enabled: {}", uuid));
+                    Output::hint(
+                        "Extension not installed. Install via Extension Manager or extensions.gnome.org",
+                    );
                 }
-            } else {
-                Output::hint(
-                    "Extension not installed. Install via Extension Manager or extensions.gnome.org",
-                );
+            } else if plan.dry_run {
+                Output::dry_run(format!("Would enable extension: {}", uuid));
             }
 
-            if pr {
+            if plan.should_create_pr() {
                 let mut system_manifest = GnomeExtensionsManifest::load_system()?;
                 system_manifest.add(uuid.clone());
                 let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
 
-                let change = PrChange {
-                    manifest_type: "extension".to_string(),
-                    action: "add".to_string(),
-                    name: uuid.clone(),
-                    manifest_file: "gnome-extensions.json".to_string(),
-                };
-                run_pr_workflow(&change, &manifest_content, skip_preflight)?;
+                plan.maybe_create_pr(
+                    "extension",
+                    "add",
+                    &uuid,
+                    "gnome-extensions.json",
+                    &manifest_content,
+                )?;
             }
         }
-        ExtensionAction::Remove {
-            uuid,
-            pr,
-            skip_preflight,
-        } => {
+        ExtensionAction::Remove { uuid } => {
             let mut user = GnomeExtensionsManifest::load_user()?;
             let system = GnomeExtensionsManifest::load_system()?;
 
             let in_system = system.contains(&uuid);
-            if in_system && !user.contains(&uuid) {
+            if in_system && !user.contains(&uuid) && !plan.should_create_pr() {
                 Output::info(format!(
-                    "'{}' is in the system manifest; use --pr to remove from source",
+                    "'{}' is in the system manifest; use --pr or --pr-only to remove from source",
                     uuid
                 ));
             }
 
-            if user.remove(&uuid) {
-                user.save_user()?;
-                Output::success(format!("Removed from user manifest: {}", uuid));
-            } else if !in_system {
-                Output::warning(format!("Extension not found in manifest: {}", uuid));
+            if plan.should_update_local_manifest() {
+                if user.remove(&uuid) {
+                    user.save_user()?;
+                    Output::success(format!("Removed from user manifest: {}", uuid));
+                } else if !in_system {
+                    Output::warning(format!("Extension not found in manifest: {}", uuid));
+                }
+            } else if plan.dry_run {
+                Output::dry_run(format!("Would remove from user manifest: {}", uuid));
             }
 
             // Disable if enabled
-            if is_enabled(&uuid) {
-                let spinner = Output::spinner(format!("Disabling {}...", uuid));
-                if disable_extension(&uuid)? {
-                    spinner.finish_success(format!("Disabled {}", uuid));
-                } else {
-                    spinner.finish_error(format!("Failed to disable {}", uuid));
+            if plan.should_execute_locally() {
+                if is_enabled(&uuid) {
+                    let spinner = Output::spinner(format!("Disabling {}...", uuid));
+                    if disable_extension(&uuid)? {
+                        spinner.finish_success(format!("Disabled {}", uuid));
+                    } else {
+                        spinner.finish_error(format!("Failed to disable {}", uuid));
+                    }
                 }
+            } else if plan.dry_run && is_enabled(&uuid) {
+                Output::dry_run(format!("Would disable extension: {}", uuid));
             }
 
-            if pr {
+            if plan.should_create_pr() {
                 let mut system_manifest = GnomeExtensionsManifest::load_system()?;
                 if system_manifest.remove(&uuid) {
                     let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
 
-                    let change = PrChange {
-                        manifest_type: "extension".to_string(),
-                        action: "remove".to_string(),
-                        name: uuid.clone(),
-                        manifest_file: "gnome-extensions.json".to_string(),
-                    };
-                    run_pr_workflow(&change, &manifest_content, skip_preflight)?;
+                    plan.maybe_create_pr(
+                        "extension",
+                        "remove",
+                        &uuid,
+                        "gnome-extensions.json",
+                        &manifest_content,
+                    )?;
                 } else {
                     Output::info(format!("'{}' not in system manifest, no PR needed", uuid));
                 }
@@ -264,73 +248,55 @@ pub fn run(args: ExtensionArgs, _plan: &ExecutionPlan) -> Result<()> {
                 ));
             }
         }
-        ExtensionAction::Sync { dry_run } => {
+        ExtensionAction::Sync => {
             // Use the new Plan-based implementation
             let cwd = std::env::current_dir()?;
-            let plan_ctx = PlanContext::new(
-                cwd,
-                ExecutionPlan {
-                    dry_run,
-                    ..Default::default()
-                },
-            );
+            let plan_ctx = PlanContext::new(cwd, plan.clone());
 
-            let plan = ExtensionSyncCommand.plan(&plan_ctx)?;
+            let sync_plan = ExtensionSyncCommand.plan(&plan_ctx)?;
 
-            if plan.is_empty() {
+            if sync_plan.is_empty() {
                 Output::success("All extensions are already enabled.");
                 return Ok(());
             }
 
             // Always show the plan
-            print!("{}", plan.describe());
+            print!("{}", sync_plan.describe());
 
-            if dry_run {
+            if plan.dry_run {
                 return Ok(());
             }
 
             // Execute the plan
-            let mut exec_ctx = ExecuteContext::new(ExecutionPlan {
-                dry_run: false,
-                ..Default::default()
-            });
-            let report = plan.execute(&mut exec_ctx)?;
+            let mut exec_ctx = ExecuteContext::new(plan.clone());
+            let report = sync_plan.execute(&mut exec_ctx)?;
             print!("{}", report);
         }
-        ExtensionAction::Capture { dry_run, apply } => {
+        ExtensionAction::Capture { apply } => {
             // Use the Plan-based capture implementation
             let cwd = std::env::current_dir()?;
-            let plan_ctx = PlanContext::new(
-                cwd,
-                ExecutionPlan {
-                    dry_run,
-                    ..Default::default()
-                },
-            );
+            let plan_ctx = PlanContext::new(cwd, plan.clone());
 
-            let plan = ExtensionCaptureCommand.plan(&plan_ctx)?;
+            let capture_plan = ExtensionCaptureCommand.plan(&plan_ctx)?;
 
-            if plan.is_empty() {
+            if capture_plan.is_empty() {
                 Output::success("All enabled extensions are already in the manifest.");
                 return Ok(());
             }
 
             // Always show the plan
-            print!("{}", plan.describe());
+            print!("{}", capture_plan.describe());
 
-            if dry_run || !apply {
-                if !apply {
+            if plan.dry_run || !apply {
+                if !apply && !plan.dry_run {
                     Output::hint("Use --apply to execute this plan.");
                 }
                 return Ok(());
             }
 
             // Execute the plan
-            let mut exec_ctx = ExecuteContext::new(ExecutionPlan {
-                dry_run: false,
-                ..Default::default()
-            });
-            let report = plan.execute(&mut exec_ctx)?;
+            let mut exec_ctx = ExecuteContext::new(plan.clone());
+            let report = capture_plan.execute(&mut exec_ctx)?;
             print!("{}", report);
         }
     }
