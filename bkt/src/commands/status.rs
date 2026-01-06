@@ -689,6 +689,57 @@ fn print_table_output(report: &StatusReport, verbose: bool) {
     };
     println!("    {:<12} {}", "Skel:".dimmed(), skel_info);
 
+    // Drift Detection Section - show untracked items that need capture
+    if report.drift.pending_capture > 0 {
+        Output::blank();
+        println!("{} {}", "⚠️".yellow(), "Drift Detected".yellow().bold());
+
+        // Show specific drift items
+        if report.manifests.flatpaks.untracked > 0 {
+            let plural = if report.manifests.flatpaks.untracked == 1 {
+                "flatpak"
+            } else {
+                "flatpaks"
+            };
+            println!(
+                "    {} {} installed but not in manifest",
+                report
+                    .manifests
+                    .flatpaks
+                    .untracked
+                    .to_string()
+                    .cyan()
+                    .bold(),
+                plural
+            );
+        }
+
+        if report.manifests.extensions.untracked > 0 {
+            let plural = if report.manifests.extensions.untracked == 1 {
+                "extension"
+            } else {
+                "extensions"
+            };
+            println!(
+                "    {} {} enabled but not in manifest",
+                report
+                    .manifests
+                    .extensions
+                    .untracked
+                    .to_string()
+                    .cyan()
+                    .bold(),
+                plural
+            );
+        }
+
+        Output::blank();
+        println!(
+            "    Run {} to import these changes.",
+            "bkt capture".cyan().bold()
+        );
+    }
+
     // Next Actions Section
     if !report.next_actions.is_empty() {
         Output::blank();
