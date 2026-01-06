@@ -39,7 +39,7 @@ Phase 2 established the top half. Phase 3 closes the manifest→Containerfile lo
 
 | ID  | Item                                                    | Source    | Priority  | Status      |
 | --- | ------------------------------------------------------- | --------- | --------- | ----------- |
-| 1   | [Containerfile Auto-Generation](#1-containerfile-auto)  | RFC-0002  | 🔴 High   | Not Started |
+| 1   | [Containerfile Auto-Generation](#1-containerfile-auto)  | RFC-0002  | 🔴 High   | In Progress |
 | 2   | [Post-Reboot Automation](#2-post-reboot)                | Workflow  | 🔴 High   | Not Started |
 | 3   | [Drift Visibility in Status](#3-drift-visibility)       | Workflow  | ✅ Done   | Completed   |
 | 4   | [Ephemeral Manifest](#4-ephemeral-manifest)             | RFC-0001  | 🟡 Medium | Not Started |
@@ -52,7 +52,7 @@ Phase 2 established the top half. Phase 3 closes the manifest→Containerfile lo
 
 **Source:** RFC-0002 (incomplete deliverable)  
 **Priority:** 🔴 High  
-**Status:** Not Started
+**Status:** In Progress
 
 ### Problem
 
@@ -63,86 +63,74 @@ Phase 2 established the top half. Phase 3 closes the manifest→Containerfile lo
 Add section markers to Containerfile and auto-regenerate managed sections:
 
 ```dockerfile
-# === SYSTEM PACKAGES (managed by bkt) ===
+# === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
     htop \
-    neovim
-# === END SYSTEM PACKAGES ===
+    neovim \
+    && dnf clean all
+# === END SYSTEM_PACKAGES ===
 ```
 
-### Design
+### Implementation Progress
 
-#### Module Structure
-
-```
-bkt/src/
-├── containerfile.rs          # New module
-│   ├── Section              # Enum: SystemPackages, CoprRepos, etc.
-│   ├── ManagedBlock         # Start marker, content, end marker
-│   ├── ContainerfileEditor  # Parse, update, write
-│   └── generate_*()         # Per-section generators
-```
-
-#### Section Markers
-
-```dockerfile
-# === SECTION_NAME (managed by bkt) ===
-# Content here is auto-generated
-# Manual edits will be overwritten
-# === END SECTION_NAME ===
-```
-
-Supported sections:
-- `COPR REPOSITORIES` - `dnf copr enable` commands
-- `SYSTEM PACKAGES` - `dnf install` with sorted package list
-- `HOST SHIMS` - `COPY` and symlink commands for shims
-
-#### API
+✅ **Module Structure** (`bkt/src/containerfile.rs` - 497 lines)
 
 ```rust
+pub enum Section {
+    SystemPackages,  // dnf install packages
+    CoprRepos,       // dnf copr enable commands
+    HostShims,       // COPY and symlink commands
+}
+
 pub struct ContainerfileEditor {
-    path: PathBuf,
-    sections: Vec<(Section, ManagedBlock)>,
-    unmanaged: Vec<String>,  // Lines outside managed sections
-}
-
-impl ContainerfileEditor {
     pub fn load(path: &Path) -> Result<Self>;
-    pub fn update_section(&mut self, section: Section, content: &str);
+    pub fn update_section(&mut self, section: Section, content: Vec<String>);
+    pub fn has_section(&self, section: Section) -> bool;
+    pub fn get_section_content(&self, section: Section) -> Option<&[String]>;
     pub fn write(&self) -> Result<()>;
+    pub fn render(&self) -> String;
 }
 
-// Generator functions
-pub fn generate_system_packages(manifest: &SystemPackagesManifest) -> String;
-pub fn generate_copr_repos(manifest: &CoprManifest) -> String;
+pub fn generate_system_packages(packages: &[String]) -> Vec<String>;
+pub fn generate_copr_repos(repos: &[String]) -> Vec<String>;
 ```
 
-#### Integration Points
+✅ **Section Markers in Containerfile**
 
-1. **`bkt dnf install/remove`** - After updating manifest, regenerate SYSTEM PACKAGES section
-2. **`bkt dnf copr enable/disable`** - Regenerate COPR REPOSITORIES section
-3. **`bkt containerfile sync`** - Manual full regeneration command
-4. **`bkt containerfile check`** - Dry-run showing what would change
+The Containerfile now has `# === SYSTEM_PACKAGES (managed by bkt) ===` markers around the dnf install block.
 
-### Deliverables
+✅ **Integration with dnf commands**
 
-- [ ] Create `bkt/src/containerfile.rs` module
-- [ ] Implement section marker parsing
-- [ ] Implement `generate_system_packages()`
-- [ ] Implement `generate_copr_repos()`
-- [ ] Hook into `bkt dnf install/remove` commands
+The `sync_containerfile()` function in `dnf.rs` is called during PR creation for `bkt dnf install` and `bkt dnf remove`, syncing the Containerfile with manifest changes.
+
+✅ **Tests** (11 tests)
+
+- `test_section_markers` - Verifies marker format
+- `test_parse_start_marker` - Validates marker parsing
+- `test_parse_containerfile_with_sections` - Full parsing test
+- `test_update_section` - Section replacement
+- `test_generate_system_packages` - Package list generation
+- `test_generate_system_packages_empty` - Empty package edge case
+- `test_generate_system_packages_format` - Output format verification
+- `test_generate_copr_repos` - COPR generation
+- `test_generate_copr_repos_empty` - Empty repos edge case
+- `test_render_preserves_unmanaged` - Unmanaged content preserved
+- `test_parse_unclosed_section_error` - Error handling
+
+### Remaining Deliverables
+
 - [ ] Hook into `bkt dnf copr enable/disable` commands
 - [ ] Add `bkt containerfile sync` command
 - [ ] Add `bkt containerfile check` command
-- [ ] Preserve manual content outside managed sections
-- [ ] Add tests for Containerfile parsing and generation
+- [ ] Implement HOST_SHIMS section generation
 
 ### Acceptance Criteria
 
-- `bkt dnf install htop` updates both manifest AND Containerfile
-- `bkt dnf copr enable atim/starship` updates both manifest AND Containerfile
-- Manual Containerfile edits outside markers are preserved
-- `bkt containerfile check` shows drift without modifying
+- ✅ Containerfile has managed section markers
+- ✅ `bkt dnf install htop` updates both manifest AND Containerfile (via PR)
+- ⏳ `bkt dnf copr enable atim/starship` updates both manifest AND Containerfile
+- ✅ Manual Containerfile edits outside markers are preserved
+- ⏳ `bkt containerfile check` shows drift without modifying
 
 ---
 
@@ -182,12 +170,37 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 ```
 
+### Design Questions
+
+**Q1: Boot Detection Strategy**
+
+How do we detect "first boot on new image" vs. regular reboot?
+
+Options:
+1. **Deployment checksum comparison**: Check rpm-ostree deployment checksum vs last-recorded
+2. **Marker file**: Create `/var/lib/bkt/last-applied-deployment` after apply
+3. **Always run**: Apply is idempotent, so run on every boot (wastes time but simple)
+
+**Recommendation**: Option 2 (marker file) - simple, reliable, and avoids unnecessary work.
+
+**Q2: Double-Reboot Prevention**
+
+If `bkt dnf sync` installs packages, it may require a reboot, but we're already post-reboot.
+
+Options:
+1. **`--now` flag**: Use `rpm-ostree install --apply-live` to avoid second reboot
+2. **Skip if layered**: Only sync Containerfile packages, skip rpm-ostree changes
+3. **Notify only**: Just notify user that packages need sync, don't auto-install
+
+**Recommendation**: Option 1 with `--now` flag for seamless experience.
+
 ### Deliverables
 
 - [ ] Create `systemd/system/bootc-apply.service`
 - [ ] Add to Containerfile installation
-- [ ] Consider: detect if running on new image deployment
-- [ ] Consider: `--now` flag for `bkt dnf sync` to avoid double-reboot
+- [ ] Implement deployment tracking marker file
+- [ ] Add `--now` flag to `bkt dnf sync` for apply-live
+- [ ] Test full reboot workflow
 
 ### Acceptance Criteria
 
@@ -231,6 +244,43 @@ Implement ephemeral manifest from RFC-0001:
 ```
 
 Track all `--local` changes with boot_id validation.
+
+### Design Questions
+
+**Q1: Data Structure**
+
+What does `ephemeral.json` contain?
+
+```json
+{
+  "boot_id": "abc123...",
+  "created_at": "2026-01-06T12:00:00Z",
+  "changes": [
+    {
+      "timestamp": "2026-01-06T12:05:00Z",
+      "command": "bkt flatpak add --local org.gnome.Boxes",
+      "subsystem": "flatpak",
+      "action": "add",
+      "item": "org.gnome.Boxes"
+    }
+  ]
+}
+```
+
+**Q2: Aggregation Strategy**
+
+Should ephemeral track each command separately, or aggregate into a single state?
+
+- **Per-command**: Preserves history, can show exact commands to reproduce
+- **Aggregated**: Simpler, mirrors manifest structure, easier to commit
+
+**Recommendation**: Per-command with aggregation on commit.
+
+**Q3: Conflict Handling**
+
+What if ephemeral changes conflict with committed changes (e.g., remove package that manifest says to install)?
+
+**Recommendation**: Ephemeral overrides during local session, `bkt local commit` requires resolution.
 
 ### Deliverables
 
@@ -343,11 +393,45 @@ Phase 3c: Polish (Weeks 4+)
 
 ## Questions to Resolve
 
-1. **Containerfile location**: Should we support custom Containerfile paths?
-2. **Section marker format**: Exact syntax for managed sections?
-3. **COPR in Containerfile**: Separate section or inline with packages?
-4. **Boot detection**: How to detect "first boot on new image" reliably?
+1. ~~**Containerfile location**: Should we support custom Containerfile paths?~~ — Using `Containerfile` in repo root
+2. ~~**Section marker format**: Exact syntax for managed sections?~~ — Resolved: `# === SECTION_NAME (managed by bkt) ===`
+3. **COPR in Containerfile**: Separate section or inline with packages? — Separate `COPR_REPOS` section
+4. ~~**Boot detection**: How to detect "first boot on new image" reliably?~~ — Resolved: Marker file approach
 5. **Ephemeral scope**: Should ephemeral manifest survive image updates?
+
+---
+
+## Immediate Next Steps (Prioritized)
+
+Based on current implementation status and effort estimates:
+
+### This Week (5-6 hours)
+
+1. **Add COPR section to Containerfile** (~10 min)
+   - Add `# === COPR_REPOS (managed by bkt) ===` markers before SYSTEM_PACKAGES
+
+2. **Hook COPR commands into Containerfile sync** (~1 hour)
+   - Add `sync_containerfile_copr()` in `dnf.rs`
+   - Call from `handle_copr_enable` and `handle_copr_disable`
+
+3. **Create `bkt containerfile` subcommand** (~2 hours)
+   - `bkt containerfile sync` - regenerate all sections
+   - `bkt containerfile check` - dry-run showing drift
+
+4. **Merge PR #30** (when CI passes)
+
+### Next Week (3-4 hours + design session)
+
+1. **Design session**: Boot detection strategy (30 min)
+2. **Create `systemd/system/bootc-apply.service`** (~1 hour)
+3. **Add `--now` flag to `bkt dnf sync`** (~1 hour)
+4. **Test full reboot workflow** (~1 hour)
+
+### Later (8-10 hours + design session)
+
+1. **Design session**: Ephemeral manifest data structure (1 hour)
+2. **Implement ephemeral manifest tracking** (~4 hours)
+3. **Implement `bkt local` commands** (~4 hours)
 
 ---
 
@@ -359,3 +443,4 @@ Phase 3c: Polish (Weeks 4+)
 - Plugin system
 - Remote management
 - Semver update policies for upstream
+- Item 5: Image-Time Configuration (RFC-0004)

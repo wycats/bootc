@@ -334,6 +334,49 @@ Explicit is better than implicit. `bkt dev` makes the target clear.
 - **toolbox/distrobox**: Container-based development environments
 - **Nix**: Declarative package management
 
+## Implementation Status
+
+### Completed
+
+- ✅ `bkt dnf install/remove` commands with rpm-ostree integration
+- ✅ `bkt dev dnf install/remove` for toolbox packages  
+- ✅ Query pass-through (`bkt dnf search`, `info`, `provides`, `list`)
+- ✅ COPR management (`bkt dnf copr enable/disable/list`)
+- ✅ Manifest updates with PR creation
+- ✅ Containerfile auto-generation module (`bkt/src/containerfile.rs`)
+- ✅ Section markers in Containerfile (`SYSTEM_PACKAGES`)
+- ✅ Integration: `bkt dnf install/remove` syncs Containerfile via `sync_containerfile()`
+
+### Reference Implementation: `containerfile.rs`
+
+The `bkt/src/containerfile.rs` module (497 lines) provides Containerfile auto-generation:
+
+```rust
+pub enum Section {
+    SystemPackages,  // dnf install packages
+    CoprRepos,       // dnf copr enable commands
+    HostShims,       // COPY and symlink commands
+}
+
+pub struct ContainerfileEditor {
+    pub fn load(path: &Path) -> Result<Self>;
+    pub fn update_section(&mut self, section: Section, content: Vec<String>);
+    pub fn has_section(&self, section: Section) -> bool;
+    pub fn write(&self) -> Result<()>;
+}
+
+pub fn generate_system_packages(packages: &[String]) -> Vec<String>;
+pub fn generate_copr_repos(repos: &[String]) -> Vec<String>;
+```
+
+The `sync_containerfile()` function in `dnf.rs` is called during PR creation, ensuring manifest and Containerfile changes are committed together.
+
+### Remaining Work
+
+- [ ] Hook COPR commands into Containerfile sync (add `COPR_REPOS` section)
+- [ ] Add `bkt containerfile sync` manual sync command
+- [ ] Add `bkt containerfile check` dry-run drift detection
+
 ## Unresolved Questions
 
 ### Q1: `--now` Flag Default
