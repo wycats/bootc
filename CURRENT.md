@@ -568,14 +568,16 @@ Manage remote machines via SSH with the same `bkt` commands.
 
 ## Appendix: RFC Index
 
-| RFC                                                  | Title                            | Status |
-| ---------------------------------------------------- | -------------------------------- | ------ |
-| [RFC-0001](docs/rfcs/0001-command-punning.md)        | Command Punning Philosophy       | Draft  |
-| [RFC-0002](docs/rfcs/0002-bkt-dnf.md)                | `bkt dnf` RPM Package Management | Draft  |
-| [RFC-0003](docs/rfcs/0003-bkt-dev.md)                | `bkt dev` Toolbox Commands       | Draft  |
-| [RFC-0004](docs/rfcs/0004-bkt-admin.md)              | Image-Time System Config         | Future |
-| [RFC-0005](docs/rfcs/0005-changelog.md)              | Changelog Management             | Draft  |
-| [RFC-0006](docs/rfcs/0006-upstream-management.md)    | Upstream Dependency Management   | Draft  |
-| [RFC-0007](docs/rfcs/0007-drift-detection.md)        | Base Image Drift Detection       | Draft  |
-| [RFC-0008](docs/rfcs/0008-command-infrastructure.md) | Command Infrastructure (Plans)   | Draft  |
-| [RFC-0009](docs/rfcs/0009-privileged-operations.md)  | Runtime Privileged Operations    | Draft  |
+| RFC                                                  | Title                            | Status      |
+| ---------------------------------------------------- | -------------------------------- | ----------- |
+| [RFC-0001](docs/rfcs/0001-command-punning.md)        | Command Punning Philosophy       | Implemented |
+| [RFC-0002](docs/rfcs/0002-bkt-dnf.md)                | `bkt dnf` RPM Package Management | Implemented |
+| [RFC-0003](docs/rfcs/0003-bkt-dev.md)                | `bkt dev` Toolbox Commands       | Implemented |
+| [RFC-0004](docs/rfcs/0004-bkt-admin.md)              | Image-Time System Config         | Future      |
+| [RFC-0005](docs/rfcs/0005-changelog.md)              | Changelog Management             | Implemented |
+| [RFC-0006](docs/rfcs/0006-upstream-management.md)    | Upstream Dependency Management   | Implemented |
+| [RFC-0007](docs/rfcs/0007-drift-detection.md)        | Base Image Drift Detection       | Implemented |
+| [RFC-0008](docs/rfcs/0008-command-infrastructure.md) | Command Infrastructure (Plans)   | Implemented |
+| [RFC-0009](docs/rfcs/0009-privileged-operations.md)  | Runtime Privileged Operations    | Implemented |
+| [RFC-0010](docs/rfcs/0010-transparent-delegation.md) | Transparent Command Delegation   | Draft       |
+| [RFC-0011](docs/rfcs/0011-testing-strategy.md)       | Testing Strategy                 | Implemented |
