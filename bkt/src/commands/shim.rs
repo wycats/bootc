@@ -13,7 +13,6 @@ use crate::pipeline::ExecutionPlan;
 use crate::plan::{
     ExecuteContext, ExecutionReport, Operation, Plan, PlanContext, PlanSummary, Plannable, Verb,
 };
-use crate::pr::{PrChange, run_pr_workflow};
 
 #[derive(Debug, Args)]
 pub struct ShimArgs {
@@ -30,23 +29,11 @@ pub enum ShimAction {
         /// Host command name (defaults to shim name)
         #[arg(short = 'H', long)]
         host: Option<String>,
-        /// Create a PR with the change
-        #[arg(long)]
-        pr: bool,
-        /// Skip pre-flight checks for PR workflow
-        #[arg(long)]
-        skip_preflight: bool,
     },
     /// Remove a shim from the manifest
     Remove {
         /// Shim name to remove
         name: String,
-        /// Create a PR with the change
-        #[arg(long)]
-        pr: bool,
-        /// Skip pre-flight checks for PR workflow
-        #[arg(long)]
-        skip_preflight: bool,
     },
     /// List all shims in the manifest
     List {
@@ -55,11 +42,7 @@ pub enum ShimAction {
         format: String,
     },
     /// Sync shims to the toolbox
-    Sync {
-        /// Show what would be done without making changes
-        #[arg(long)]
-        dry_run: bool,
-    },
+    Sync,
 }
 
 /// Generate the content of a shim script.
@@ -159,17 +142,9 @@ fn shim_source(name: &str, system: &ShimsManifest, user: &ShimsManifest) -> &'st
     }
 }
 
-pub fn run(args: ShimArgs, _plan: &ExecutionPlan) -> Result<()> {
-    // TODO: Migrate to use `ExecutionPlan` instead of per-command flags.
-    // The `_plan` parameter is intentionally unused and reserved for future use
-    // after this migration. For now, per-command --pr and --dry-run flags still work.
+pub fn run(args: ShimArgs, plan: &ExecutionPlan) -> Result<()> {
     match args.action {
-        ShimAction::Add {
-            name,
-            host,
-            pr,
-            skip_preflight,
-        } => {
+        ShimAction::Add { name, host } => {
             let host_cmd = host.clone().unwrap_or_else(|| name.clone());
             let shim = Shim {
                 name: name.clone(),
@@ -181,21 +156,29 @@ pub fn run(args: ShimArgs, _plan: &ExecutionPlan) -> Result<()> {
             };
 
             // Load and update user manifest
-            let mut user = ShimsManifest::load_user()?;
-            let is_update = user.find(&name).is_some();
-            user.upsert(shim);
-            user.save_user()?;
+            if plan.should_update_local_manifest() {
+                let mut user = ShimsManifest::load_user()?;
+                let is_update = user.find(&name).is_some();
+                user.upsert(shim);
+                user.save_user()?;
 
-            if is_update {
-                Output::success(format!("Updated shim: {} -> {}", name, host_cmd));
-            } else {
-                Output::success(format!("Added shim: {} -> {}", name, host_cmd));
+                if is_update {
+                    Output::success(format!("Updated shim: {} -> {}", name, host_cmd));
+                } else {
+                    Output::success(format!("Added shim: {} -> {}", name, host_cmd));
+                }
+            } else if plan.dry_run {
+                Output::dry_run(format!("Would add shim: {} -> {}", name, host_cmd));
             }
 
-            // Sync shims to disk
-            sync_shims(false)?;
+            // Sync shims to disk (shims are always synced locally, not host-dependent)
+            if plan.should_execute_locally() {
+                sync_shims(false)?;
+            } else if plan.dry_run {
+                Output::dry_run("Would sync shims to disk");
+            }
 
-            if pr {
+            if plan.should_create_pr() {
                 // Load system manifest, add the shim, and create PR
                 let mut system = ShimsManifest::load_system()?;
                 let shim_for_pr = Shim {
@@ -209,54 +192,54 @@ pub fn run(args: ShimArgs, _plan: &ExecutionPlan) -> Result<()> {
                 system.upsert(shim_for_pr);
                 let manifest_content = serde_json::to_string_pretty(&system)?;
 
-                let change = PrChange {
-                    manifest_type: "shim".to_string(),
-                    action: "add".to_string(),
-                    name: name.clone(),
-                    manifest_file: "host-shims.json".to_string(),
-                };
-                run_pr_workflow(&change, &manifest_content, skip_preflight)?;
+                plan.maybe_create_pr("shim", "add", &name, "host-shims.json", &manifest_content)?;
             }
         }
-        ShimAction::Remove {
-            name,
-            pr,
-            skip_preflight,
-        } => {
-            let mut user = ShimsManifest::load_user()?;
+        ShimAction::Remove { name } => {
             let system = ShimsManifest::load_system()?;
+            let user = ShimsManifest::load_user()?;
 
-            // Check if it's in system manifest
-            if system.find(&name).is_some() && user.find(&name).is_none() {
+            // Check if it's in system manifest but not user manifest
+            let in_system = system.find(&name).is_some();
+            if in_system && user.find(&name).is_none() && !plan.should_create_pr() {
                 Output::info(format!(
-                    "'{}' is in the system manifest; you can add a user override to hide it",
+                    "'{}' is in the system manifest; use --pr or --pr-only to remove from source",
                     name
                 ));
             }
 
-            if user.remove(&name) {
-                user.save_user()?;
-                Output::success(format!("Removed shim: {}", name));
-            } else {
-                Output::warning(format!("Shim not found in user manifest: {}", name));
+            if plan.should_update_local_manifest() {
+                let mut user = ShimsManifest::load_user()?;
+                if user.remove(&name) {
+                    user.save_user()?;
+                    Output::success(format!("Removed shim: {}", name));
+                } else {
+                    Output::warning(format!("Shim not found in user manifest: {}", name));
+                }
+            } else if plan.dry_run {
+                Output::dry_run(format!("Would remove shim: {}", name));
             }
 
             // Sync shims to disk
-            sync_shims(false)?;
+            if plan.should_execute_locally() {
+                sync_shims(false)?;
+            } else if plan.dry_run {
+                Output::dry_run("Would sync shims to disk");
+            }
 
-            if pr {
+            if plan.should_create_pr() {
                 // Load system manifest, remove the shim, and create PR
                 let mut system_manifest = ShimsManifest::load_system()?;
                 if system_manifest.remove(&name) {
                     let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
 
-                    let change = PrChange {
-                        manifest_type: "shim".to_string(),
-                        action: "remove".to_string(),
-                        name: name.clone(),
-                        manifest_file: "host-shims.json".to_string(),
-                    };
-                    run_pr_workflow(&change, &manifest_content, skip_preflight)?;
+                    plan.maybe_create_pr(
+                        "shim",
+                        "remove",
+                        &name,
+                        "host-shims.json",
+                        &manifest_content,
+                    )?;
                 } else {
                     Output::info(format!("'{}' not in system manifest, no PR needed", name));
                 }
@@ -300,37 +283,28 @@ pub fn run(args: ShimArgs, _plan: &ExecutionPlan) -> Result<()> {
                 }
             }
         }
-        ShimAction::Sync { dry_run } => {
+        ShimAction::Sync => {
             // Use the new Plan-based implementation
             let cwd = std::env::current_dir()?;
-            let plan_ctx = PlanContext::new(
-                cwd,
-                ExecutionPlan {
-                    dry_run,
-                    ..Default::default()
-                },
-            );
+            let plan_ctx = PlanContext::new(cwd, plan.clone());
 
-            let plan = ShimSyncCommand.plan(&plan_ctx)?;
+            let sync_plan = ShimSyncCommand.plan(&plan_ctx)?;
 
-            if plan.is_empty() {
+            if sync_plan.is_empty() {
                 Output::info("No shims to generate.");
                 return Ok(());
             }
 
             // Always show the plan
-            print!("{}", plan.describe());
+            print!("{}", sync_plan.describe());
 
-            if dry_run {
+            if plan.dry_run {
                 return Ok(());
             }
 
             // Execute the plan
-            let mut exec_ctx = ExecuteContext::new(ExecutionPlan {
-                dry_run: false,
-                ..Default::default()
-            });
-            let report = plan.execute(&mut exec_ctx)?;
+            let mut exec_ctx = ExecuteContext::new(plan.clone());
+            let report = sync_plan.execute(&mut exec_ctx)?;
             print!("{}", report);
         }
     }

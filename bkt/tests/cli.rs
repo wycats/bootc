@@ -370,7 +370,7 @@ fn shim_add_and_list_integration() {
 
     bkt()
         .env("HOME", home)
-        .args(["shim", "add", "test-shim"])
+        .args(["shim", "add", "test-shim", "--local"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Added shim: test-shim"));
@@ -392,13 +392,13 @@ fn shim_add_and_remove_integration() {
 
     bkt()
         .env("HOME", home)
-        .args(["shim", "add", "to-remove"])
+        .args(["shim", "add", "to-remove", "--local"])
         .assert()
         .success();
 
     bkt()
         .env("HOME", home)
-        .args(["shim", "remove", "to-remove"])
+        .args(["shim", "remove", "to-remove", "--local"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Removed shim: to-remove"));
@@ -413,7 +413,7 @@ fn shim_add_with_host_option() {
 
     bkt()
         .env("HOME", home)
-        .args(["shim", "add", "docker", "--host", "podman"])
+        .args(["shim", "add", "docker", "--host", "podman", "--local"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Added shim: docker"));
@@ -428,7 +428,7 @@ fn extension_add_and_list_integration() {
 
     bkt()
         .env("HOME", home)
-        .args(["extension", "add", "test@example.com"])
+        .args(["extension", "add", "test@example.com", "--local"])
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -452,7 +452,7 @@ fn extension_remove_nonexistent_shows_message() {
 
     bkt()
         .env("HOME", home)
-        .args(["extension", "remove", "nonexistent@example.com"])
+        .args(["extension", "remove", "nonexistent@example.com", "--local"])
         .assert()
         .success()
         .stdout(predicate::str::contains("not found"));
@@ -476,6 +476,7 @@ fn gsetting_set_adds_to_manifest() {
             "key",
             "value",
             "--force",
+            "--local",
         ])
         .assert()
         .success()
@@ -912,6 +913,7 @@ fn gsetting_set_force_bypasses_validation() {
             "key",
             "value",
             "--force",
+            "--local",
         ])
         .assert()
         .success()

@@ -23,6 +23,31 @@ use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
 use std::process::Command;
 
+/// Trait for PR creation operations - enables testing without git/gh.
+pub trait PrBackend: Send + Sync {
+    /// Create a PR with the given manifest changes.
+    fn create_pr(
+        &self,
+        change: &PrChange,
+        manifest_content: &str,
+        skip_preflight: bool,
+    ) -> Result<()>;
+}
+
+/// Production backend that uses real git/gh commands.
+pub struct GitHubBackend;
+
+impl PrBackend for GitHubBackend {
+    fn create_pr(
+        &self,
+        change: &PrChange,
+        manifest_content: &str,
+        skip_preflight: bool,
+    ) -> Result<()> {
+        run_pr_workflow(change, manifest_content, skip_preflight)
+    }
+}
+
 /// Characters allowed in git ref names (conservative subset).
 /// Alphanumeric plus hyphen, underscore, and dot.
 fn is_safe_ref_char(c: char) -> bool {
@@ -240,7 +265,6 @@ fn check_repo_config() -> PreflightResult {
 /// Set `skip` to true to bypass checks (for --skip-preflight flag).
 pub fn ensure_preflight(skip: bool) -> Result<()> {
     if skip {
-        eprintln!("⚠ Skipping pre-flight checks (--skip-preflight)");
         return Ok(());
     }
 
@@ -264,6 +288,7 @@ pub fn ensure_preflight(skip: bool) -> Result<()> {
 }
 
 /// Information about a manifest change for PR creation.
+#[derive(Debug, Clone)]
 pub struct PrChange {
     pub manifest_type: String, // "shim", "flatpak", "extension", etc.
     pub action: String,        // "add", "remove"
@@ -492,4 +517,59 @@ pub fn run_pr_workflow(
 
     println!("✓ PR created successfully!");
     Ok(())
+}
+
+/// Test utilities for PR backend mocking.
+#[cfg(test)]
+#[allow(dead_code)]
+pub mod testing {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    /// Recorded PR creation call for test assertions.
+    #[derive(Debug, Clone)]
+    pub struct PrCall {
+        pub change: PrChange,
+        pub manifest_content: String,
+        pub skip_preflight: bool,
+    }
+
+    /// Mock backend that records PR creation calls for testing.
+    #[derive(Default)]
+    pub struct MockPrBackend {
+        calls: Arc<Mutex<Vec<PrCall>>>,
+    }
+
+    impl MockPrBackend {
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        /// Get all recorded PR creation calls.
+        pub fn calls(&self) -> Vec<PrCall> {
+            self.calls.lock().unwrap().clone()
+        }
+
+        /// Assert that no PRs were created.
+        pub fn assert_no_pr(&self) {
+            let calls = self.calls();
+            assert!(calls.is_empty(), "Expected no PRs, got {}", calls.len());
+        }
+    }
+
+    impl PrBackend for MockPrBackend {
+        fn create_pr(
+            &self,
+            change: &PrChange,
+            manifest_content: &str,
+            skip_preflight: bool,
+        ) -> Result<()> {
+            self.calls.lock().unwrap().push(PrCall {
+                change: change.clone(),
+                manifest_content: manifest_content.to_string(),
+                skip_preflight,
+            });
+            Ok(())
+        }
+    }
 }
