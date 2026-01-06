@@ -554,6 +554,8 @@ Manage remote machines via SSH with the same `bkt` commands.
 | [RFC-0004](docs/rfcs/0004-bkt-admin.md)              | Image-Time System Config         | Future |
 | [RFC-0005](docs/rfcs/0005-changelog.md)              | Changelog Management             | Draft  |
 | [RFC-0006](docs/rfcs/0006-upstream-management.md)    | Upstream Dependency Management   | Draft  |
-| [RFC-0007](docs/rfcs/0007-drift-detection.md)        | Base Image Drift Detection       | Draft  |
-| [RFC-0008](docs/rfcs/0008-command-infrastructure.md) | Command Infrastructure (Plans)   | Draft  |
-| [RFC-0009](docs/rfcs/0009-privileged-operations.md)  | Runtime Privileged Operations    | Draft  |
+| [RFC-0007](docs/rfcs/0007-drift-detection.md)        | Base Image Drift Detection       | Draft       |
+| [RFC-0008](docs/rfcs/0008-command-infrastructure.md) | Command Infrastructure (Plans)   | Draft       |
+| [RFC-0009](docs/rfcs/0009-privileged-operations.md)  | Runtime Privileged Operations    | Draft       |
+| [RFC-0010](docs/rfcs/0010-transparent-delegation.md) | Transparent Delegation           | Implemented |
+| [RFC-0011](docs/rfcs/0011-pr-testing.md)             | PR Testing Infrastructure        | Implemented |
