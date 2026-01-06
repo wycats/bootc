@@ -509,10 +509,32 @@ Phase 2b: Supporting Infrastructure ← CURRENT SPRINT
   ├── 4b. D-Bus systemd integration (zbus) ✅
   └── 4c. RFC-0009 updated ✅
 
-Phase 2c: Polish
-├── 5. Changelog sub-items (CI integration, MOTD)
-├── 6. Upstream sub-items (Containerfile, semver policies)
-├── Command migrations: move remaining commands to ExecutionPlan
+Phase 2c: Polish ← NEXT
+│
+├── MockPrBackend Integration Tests (Est: 2-3 days)
+│   ├── RFC-0011 designed PrBackend trait for dependency injection
+│   ├── MockPrBackend exists in bkt/src/pr.rs, not yet used in integration tests
+│   ├── Add bkt/tests/pr_workflow.rs with tests using MockPrBackend
+│   ├── Test: --pr-only creates PR without local execution
+│   ├── Test: --local executes locally without PR
+│   ├── Test: default mode does both
+│   └── Rationale: PR workflow logic is complex, currently only tested manually
+│
+├── Transparent Delegation / RFC-0010 (Est: 3-5 days)
+│   ├── Major UX: run `bkt dnf install` from toolbox without manual delegation
+│   ├── RFC-0010 is drafted and ready for implementation
+│   ├── Implement CommandTarget enum per RFC-0010
+│   ├── Add early delegation check in main.rs before command dispatch
+│   ├── Update commands to declare their target
+│   └── Test delegation flow (toolbox → host)
+│
+├── Changelog CI Checks (Est: 1 day, optional)
+│   ├── Add workflow to verify changelog entries on PRs
+│   ├── Add check for draft entries (should fail merge)
+│   └── Update RFC-0005 checkboxes when done
+│
+├── 5. Changelog sub-items (MOTD integration)
+├── 6. Upstream sub-items (semver policies, remove old .version files)
 └── Future considerations (TUI, multi-machine, etc.)
 ```
 
