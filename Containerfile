@@ -68,10 +68,10 @@ RUN printf '%s\n' \
     'L+ /var/opt/microsoft - - - - /usr/lib/opt/microsoft' \
     >/usr/lib/tmpfiles.d/bootc-opt.conf
 
-# starship (pinned to upstream version + verified by sha256)
-COPY upstream/starship.version /tmp/starship.version
+# starship (pinned via upstream/manifest.json + verified by sha256)
+COPY upstream/manifest.json /tmp/upstream-manifest.json
 RUN set -eu; \
-    tag="$(cat /tmp/starship.version)"; \
+    tag="$(jq -r '.upstreams[] | select(.name == "starship") | .pinned.version' /tmp/upstream-manifest.json)"; \
     asset="starship-x86_64-unknown-linux-gnu.tar.gz"; \
     curl -fsSL "https://github.com/starship/starship/releases/download/${tag}/${asset}" -o /tmp/${asset}; \
     curl -fsSL "https://github.com/starship/starship/releases/download/${tag}/${asset}.sha256" -o /tmp/${asset}.sha256; \
@@ -79,12 +79,11 @@ RUN set -eu; \
     echo "${expected}  /tmp/${asset}" | sha256sum -c -; \
     tar -xzf /tmp/${asset} -C /usr/bin starship; \
     chmod 0755 /usr/bin/starship; \
-    rm -f /tmp/${asset} /tmp/${asset}.sha256 /tmp/starship.version
+    rm -f /tmp/${asset} /tmp/${asset}.sha256
 
-# lazygit (pinned to upstream version + verified by checksums.txt)
-COPY upstream/lazygit.version /tmp/lazygit.version
+# lazygit (pinned via upstream/manifest.json + verified by checksums.txt)
 RUN set -eu; \
-    tag="$(cat /tmp/lazygit.version)"; \
+    tag="$(jq -r '.upstreams[] | select(.name == "lazygit") | .pinned.version' /tmp/upstream-manifest.json)"; \
     ver="${tag#v}"; \
     asset="lazygit_${ver}_linux_x86_64.tar.gz"; \
     curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/${tag}/${asset}" -o /tmp/${asset}; \
@@ -92,27 +91,24 @@ RUN set -eu; \
     (cd /tmp && grep " ${asset}$" lazygit.checksums.txt | sha256sum -c -); \
     tar -xzf /tmp/${asset} -C /usr/bin lazygit; \
     chmod 0755 /usr/bin/lazygit; \
-    rm -f /tmp/${asset} /tmp/lazygit.checksums.txt /tmp/lazygit.version
+    rm -f /tmp/${asset} /tmp/lazygit.checksums.txt
 
-# keyd (built from source at a pinned upstream tag)
+# keyd (built from source at pinned tag from upstream/manifest.json)
 # FORCE_SYSTEMD=1 is needed because /run/systemd/system doesn't exist in container builds
-COPY upstream/keyd.ref /tmp/keyd.ref
 RUN set -eu; \
-    ref="$(cat /tmp/keyd.ref)"; \
+    ref="$(jq -r '.upstreams[] | select(.name == "keyd") | .pinned.version' /tmp/upstream-manifest.json)"; \
     dnf install -y git gcc make systemd-devel; \
     git clone --depth 1 --branch "${ref}" https://github.com/rvaiya/keyd.git /tmp/keyd; \
     make -C /tmp/keyd; \
     make -C /tmp/keyd PREFIX=/usr FORCE_SYSTEMD=1 install; \
-    rm -rf /tmp/keyd /tmp/keyd.ref; \
+    rm -rf /tmp/keyd; \
     dnf remove -y git gcc make systemd-devel || true; \
     dnf clean all
 
-# getnf (pinned to upstream ref + verified by sha256)
-COPY upstream/getnf.ref /tmp/getnf.ref
-COPY upstream/getnf.sha256 /tmp/getnf.sha256
+# getnf (pinned via upstream/manifest.json + verified by sha256)
 RUN set -eu; \
-    ref="$(cat /tmp/getnf.ref)"; \
-    expected_sha="$(cat /tmp/getnf.sha256)"; \
+    ref="$(jq -r '.upstreams[] | select(.name == "getnf") | .pinned.commit' /tmp/upstream-manifest.json)"; \
+    expected_sha="$(jq -r '.upstreams[] | select(.name == "getnf") | .pinned.sha256' /tmp/upstream-manifest.json)"; \
     ok=0; \
     for attempt in 1 2 3; do \
         curl -fsSL \
@@ -128,8 +124,7 @@ RUN set -eu; \
         sleep $((attempt * 2)); \
     done; \
     test "${ok}" = 1; \
-    chmod 0755 /usr/bin/getnf; \
-    rm -f /tmp/getnf.ref /tmp/getnf.sha256
+    chmod 0755 /usr/bin/getnf
 
 # Fonts (system-wide): Inter (RPM) + JetBrainsMono Nerd Font (zip from nerd-fonts)
 RUN set -eu; \
@@ -150,32 +145,32 @@ RUN dnf remove -y google-noto-emoji-fonts google-noto-color-emoji-fonts || true;
 
 COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
 
-# Bibata cursor theme (pinned to upstream version + verified by sha256)
-COPY upstream/bibata.version /tmp/bibata.version
-COPY upstream/bibata.sha256 /tmp/bibata.sha256
+# Bibata cursor theme (pinned via upstream/manifest.json + verified by sha256)
 RUN set -eu; \
-    version="$(cat /tmp/bibata.version)"; \
-    expected_sha="$(cat /tmp/bibata.sha256)"; \
-    asset="Bibata-Modern-Classic.tar.xz"; \
+    version="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .pinned.version' /tmp/upstream-manifest.json)"; \
+    expected_sha="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .pinned.sha256' /tmp/upstream-manifest.json)"; \
+    asset="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .source.asset_pattern' /tmp/upstream-manifest.json)"; \
     curl -fsSL "https://github.com/ful1e5/Bibata_Cursor/releases/download/${version}/${asset}" -o /tmp/${asset}; \
     echo "${expected_sha}  /tmp/${asset}" | sha256sum -c -; \
     mkdir -p /usr/share/icons; \
     tar -xJf /tmp/${asset} -C /usr/share/icons; \
-    rm -f /tmp/${asset} /tmp/bibata.version /tmp/bibata.sha256
+    rm -f /tmp/${asset}
 
-# WhiteSur icon theme (pinned to immutable commit SHA, installed system-wide)
+# WhiteSur icon theme (pinned via upstream/manifest.json, installed system-wide)
 # Note: Using commit SHA instead of tag for immutability. The install.sh script
 # is simple (copies files only, no network calls). Full tree verification is
 # deferred to a future upstream management system.
-COPY upstream/whitesur-icons.ref /tmp/whitesur-icons.ref
 RUN set -eu; \
-    ref="$(cat /tmp/whitesur-icons.ref)"; \
+    ref="$(jq -r '.upstreams[] | select(.name == "whitesur-icons") | .pinned.commit' /tmp/upstream-manifest.json)"; \
     dnf install -y git; \
     git clone --filter=blob:none https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/whitesur-icons; \
     cd /tmp/whitesur-icons && git checkout "${ref}" && ./install.sh -d /usr/share/icons; \
-    rm -rf /tmp/whitesur-icons /tmp/whitesur-icons.ref; \
+    rm -rf /tmp/whitesur-icons; \
     dnf remove -y git || true; \
     dnf clean all
+
+# Clean up upstream manifest (no longer needed after this point)
+RUN rm -f /tmp/upstream-manifest.json
 
 # Host-level config extracted from wycats/asahi-env (now sourced here)
 COPY system/keyd/default.conf /etc/keyd/default.conf

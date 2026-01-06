@@ -263,14 +263,14 @@ Consolidate scattered version pins into unified upstream manifest with semver po
 - [x] Implement `bkt upstream update` (update within policy)
 - [x] Implement `bkt upstream lock` (regenerate checksums)
 - [x] Implement `bkt upstream verify` (verify all checksums)
-- [ ] Update Containerfile to read from manifest (still uses old `.version` files)
+- [x] Update Containerfile to read from manifest
+- [x] Remove old `upstream/*.version` and `*.ref` files
 - [ ] Generate changelog entries for updates
 - [ ] Implement semver update policies
-- [ ] Remove old `upstream/*.version` and `*.ref` files
 
 ### Acceptance Criteria
 
-- ⚠️ All current `upstream/*.version` files replaced by single manifest (manifest exists, old files remain)
+- ✅ All current `upstream/*.version` files replaced by single manifest
 - ✅ `bkt upstream check` shows available updates with policy indicators
 - ❌ `bkt upstream update` respects semver policies (not yet implemented)
 
