@@ -265,6 +265,7 @@ fn check_repo_config() -> PreflightResult {
 /// Set `skip` to true to bypass checks (for --skip-preflight flag).
 pub fn ensure_preflight(skip: bool) -> Result<()> {
     if skip {
+        eprintln!("⚠ Skipping pre-flight checks (--skip-preflight)");
         return Ok(());
     }
 
