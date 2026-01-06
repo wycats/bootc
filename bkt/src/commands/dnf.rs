@@ -6,6 +6,7 @@
 //!
 //! Query commands (search, info, provides) pass through to dnf5 directly.
 
+use crate::containerfile::{ContainerfileEditor, Section, generate_system_packages};
 use crate::context::{CommandDomain, ExecutionContext};
 use crate::manifest::{CoprRepo, SystemPackagesManifest, ToolboxPackagesManifest};
 use crate::output::Output;
@@ -520,6 +521,9 @@ fn handle_install(
         }
         let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
 
+        // Sync Containerfile before creating PR so both files are committed together
+        sync_containerfile(&system_manifest)?;
+
         plan.maybe_create_pr(
             "dnf",
             "install",
@@ -700,6 +704,10 @@ fn handle_remove(packages: Vec<String>, plan: &ExecutionPlan) -> Result<()> {
 
         if !removed_from_system.is_empty() {
             let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
+
+            // Sync Containerfile before creating PR so both files are committed together
+            sync_containerfile(&system_manifest)?;
+
             plan.maybe_create_pr(
                 "dnf",
                 "remove",
@@ -1391,4 +1399,32 @@ fn get_layered_packages() -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Sync the Containerfile SYSTEM_PACKAGES section with the manifest.
+///
+/// This updates the managed section in the Containerfile to match
+/// the packages in the manifest. Returns Ok(true) if the Containerfile
+/// was modified, Ok(false) if no changes were needed.
+fn sync_containerfile(manifest: &SystemPackagesManifest) -> Result<bool> {
+    let containerfile_path = std::path::Path::new("Containerfile");
+    if !containerfile_path.exists() {
+        // No Containerfile in current directory, skip sync
+        return Ok(false);
+    }
+
+    let mut editor = ContainerfileEditor::load(containerfile_path)?;
+
+    if !editor.has_section(Section::SystemPackages) {
+        // Containerfile doesn't have managed sections yet
+        Output::warning("Containerfile has no SYSTEM_PACKAGES section - skipping sync");
+        return Ok(false);
+    }
+
+    let new_content = generate_system_packages(&manifest.packages);
+    editor.update_section(Section::SystemPackages, new_content);
+    editor.write()?;
+
+    Output::success("Synced Containerfile SYSTEM_PACKAGES section");
+    Ok(true)
 }

@@ -30,6 +30,7 @@ RUN set -eu; \
             'gpgkey=https://downloads.1password.com/linux/keys/1password.asc' \
             >/etc/yum.repos.d/1password.repo
 
+# === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
     1password \
     1password-cli \
@@ -50,6 +51,7 @@ RUN dnf install -y \
     google-noto-sans-meroitic-fonts \
     google-noto-sans-mongolian-fonts \
     && dnf clean all
+# === END SYSTEM_PACKAGES ===
 
 # Relocate /opt to /usr/lib/opt for ostree compatibility
 # On ostree, /opt -> /var/opt which is persistent and NOT updated on upgrade.

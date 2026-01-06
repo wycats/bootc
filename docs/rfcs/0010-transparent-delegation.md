@@ -1,6 +1,6 @@
 # RFC-0010: Transparent Command Delegation
 
-- **Status**: Draft
+- **Status**: Implemented
 - **Created**: 2026-01-05
 - **Depends on**: RFC-0009 (Privileged Operations)
 

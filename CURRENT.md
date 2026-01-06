@@ -579,5 +579,5 @@ Manage remote machines via SSH with the same `bkt` commands.
 | [RFC-0007](docs/rfcs/0007-drift-detection.md)        | Base Image Drift Detection       | Implemented |
 | [RFC-0008](docs/rfcs/0008-command-infrastructure.md) | Command Infrastructure (Plans)   | Implemented |
 | [RFC-0009](docs/rfcs/0009-privileged-operations.md)  | Runtime Privileged Operations    | Implemented |
-| [RFC-0010](docs/rfcs/0010-transparent-delegation.md) | Transparent Command Delegation   | Draft       |
+| [RFC-0010](docs/rfcs/0010-transparent-delegation.md) | Transparent Command Delegation   | Implemented |
 | [RFC-0011](docs/rfcs/0011-testing-strategy.md)       | Testing Strategy                 | Implemented |

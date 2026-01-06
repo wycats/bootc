@@ -26,6 +26,7 @@ use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
 mod commands;
+pub mod containerfile;
 pub mod context;
 mod dbus;
 mod delegation;
