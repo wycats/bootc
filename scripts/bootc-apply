@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# bootc-apply: Apply bkt manifests after image deployment
+#
+# This script runs at boot to sync system packages from manifests.
+# It uses a marker file to detect if we've already applied to this
+# deployment, avoiding unnecessary work on regular reboots.
+#
+# Marker file: /var/lib/bkt/last-applied-deployment
+# Contains the rpm-ostree deployment checksum of the last successful apply.
+
+set -euo pipefail
+
+MARKER_DIR="/var/lib/bkt"
+MARKER_FILE="${MARKER_DIR}/last-applied-deployment"
+LOG_TAG="bootc-apply"
+
+log() {
+    printf "[%s] %s\n" "${LOG_TAG}" "$*" | systemd-cat -t "${LOG_TAG}" -p info
+    printf "[%s] %s\n" "${LOG_TAG}" "$*" >&2
+}
+
+log_error() {
+    printf "[%s] ERROR: %s\n" "${LOG_TAG}" "$*" | systemd-cat -t "${LOG_TAG}" -p err
+    printf "[%s] ERROR: %s\n" "${LOG_TAG}" "$*" >&2
+}
+
+# Get the current deployment checksum from rpm-ostree
+get_current_deployment() {
+    # Ensure required tools are available
+    if ! command -v rpm-ostree >/dev/null 2>&1; then
+        log_error "rpm-ostree binary not found; cannot determine current deployment"
+        echo ""
+        return 0
+    fi
+
+    if ! command -v jq >/dev/null 2>&1; then
+        log_error "jq binary not found; cannot parse rpm-ostree status JSON"
+        echo ""
+        return 0
+    fi
+
+    # Fetch rpm-ostree status JSON
+    local status_json
+    if ! status_json="$(rpm-ostree status --json 2>/dev/null)"; then
+        log_error "rpm-ostree status --json failed; cannot determine current deployment"
+        echo ""
+        return 0
+    fi
+
+    # Parse the deployment checksum from the JSON
+    local checksum
+    if ! checksum="$(printf '%s\n' "${status_json}" | jq -r '.deployments[0].checksum // empty' 2>/dev/null)"; then
+        log_error "jq failed to parse rpm-ostree status JSON; cannot determine current deployment"
+        echo ""
+        return 0
+    fi
+
+    if [[ -z "${checksum}" ]]; then
+        log_error "No deployment checksum found in rpm-ostree status JSON"
+        echo ""
+        return 0
+    fi
+
+    printf '%s\n' "${checksum}"
+}
+
+# Get the last applied deployment from marker file
+get_last_applied() {
+    if [[ -f "${MARKER_FILE}" ]]; then
+        cat "${MARKER_FILE}" 2>/dev/null || echo ""
+    else
+        echo ""
+    fi
+}
+
+# Write the current deployment to marker file
+write_marker() {
+    local deployment="$1"
+    mkdir -p "${MARKER_DIR}"
+    echo "${deployment}" > "${MARKER_FILE}"
+    log "Wrote deployment marker: ${deployment:0:12}..."
+}
+
+main() {
+    log "Starting bootc-apply..."
+
+    # Get current deployment
+    local current_deployment
+    current_deployment="$(get_current_deployment)"
+
+    if [[ -z "${current_deployment}" ]]; then
+        log_error "Could not determine current deployment (not an ostree system?)"
+        exit 0  # Exit successfully - not an error if not on ostree
+    fi
+
+    log "Current deployment: ${current_deployment:0:12}..."
+
+    # Check marker file
+    local last_applied
+    last_applied="$(get_last_applied)"
+
+    if [[ "${current_deployment}" == "${last_applied}" ]]; then
+        log "Already applied to this deployment, skipping."
+        exit 0
+    fi
+
+    if [[ -n "${last_applied}" ]]; then
+        log "New deployment detected (was: ${last_applied:0:12}...)"
+    else
+        log "First run - no previous deployment marker found"
+    fi
+
+    # Run bkt dnf sync with --now to apply changes live (no reboot needed)
+    log "Running: bkt dnf sync --now"
+
+    if bkt dnf sync --now; then
+        log "bkt dnf sync completed successfully"
+        write_marker "${current_deployment}"
+    else
+        local exit_code=$?
+        log_error "bkt dnf sync failed with exit code ${exit_code}"
+        # Don't write marker on failure - will retry next boot
+        exit "${exit_code}"
+    fi
+
+    log "bootc-apply completed successfully"
+}
+
+main "$@"
