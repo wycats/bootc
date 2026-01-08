@@ -20,6 +20,7 @@
 //! - `COPR_REPOS`: COPR repository enablement commands
 //! - `HOST_SHIMS`: Host shim COPY and symlink commands
 
+use crate::manifest::Shim;
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -278,21 +279,10 @@ pub fn generate_system_packages(packages: &[String]) -> Vec<String> {
     let mut lines = Vec::new();
     lines.push("RUN dnf install -y \\".to_string());
 
-    // Note: The trailing backslash on the last package is intentional.
-    // It continues to the next line which contains "&& dnf clean all".
-    // This is valid Dockerfile/Containerfile syntax:
-    //   RUN dnf install -y \
-    //       pkg1 \
-    //       pkg2 \
-    //       && dnf clean all
-    for (i, pkg) in sorted_packages.iter().enumerate() {
-        if i < sorted_packages.len() - 1 {
-            lines.push(format!("    {} \\", pkg));
-        } else {
-            lines.push(format!("    {} \\", pkg));
-            lines.push("    && dnf clean all".to_string());
-        }
+    for pkg in sorted_packages.iter() {
+        lines.push(format!("    {} \\", pkg));
     }
+    lines.push("    && dnf clean all".to_string());
 
     lines
 }
@@ -314,6 +304,59 @@ pub fn generate_copr_repos(repos: &[String]) -> Vec<String> {
             lines.push(format!("    dnf copr enable -y {}; \\", repo));
         } else {
             lines.push(format!("    dnf copr enable -y {}", repo));
+        }
+    }
+
+    lines
+}
+
+/// Generate the HOST_SHIMS section content from a list of shims.
+///
+/// Creates shell commands that:
+/// 1. Create the shim and bin directories
+/// 2. Create each shim script using heredoc syntax
+/// 3. Make shims executable
+/// 4. Create symlinks in PATH
+pub fn generate_host_shims(shims: &[Shim]) -> Vec<String> {
+    if shims.is_empty() {
+        return vec!["# No host shims configured".to_string()];
+    }
+
+    let mut sorted_shims: Vec<_> = shims.iter().collect();
+    sorted_shims.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let shims_dir = "/usr/etc/skel/.local/toolbox/shims";
+    let bin_dir = "/usr/etc/skel/.local/bin";
+
+    let mut lines = Vec::new();
+    lines.push("RUN set -eu; \\".to_string());
+    lines.push(format!("    mkdir -p {} {}; \\", shims_dir, bin_dir));
+
+    for (i, shim) in sorted_shims.iter().enumerate() {
+        let host_cmd = shim.host_cmd();
+        // Use shlex for proper POSIX-compliant shell quoting
+        let quoted = shlex::try_quote(host_cmd).unwrap_or_else(|_| host_cmd.into());
+
+        let is_last = i == sorted_shims.len() - 1;
+
+        lines.push("    \\".to_string());
+        lines.push(format!("    cat > {}/{} <<'SHIMEOF'", shims_dir, shim.name));
+        lines.push("#!/bin/bash".to_string());
+        lines.push(format!("exec flatpak-spawn --host {} \"$@\"", quoted));
+        lines.push("SHIMEOF".to_string());
+        lines.push(format!("    chmod 0755 {}/{}; \\", shims_dir, shim.name));
+
+        // Last symlink doesn't need continuation backslash
+        if is_last {
+            lines.push(format!(
+                "    ln -sf ../toolbox/shims/{} {}/{}",
+                shim.name, bin_dir, shim.name
+            ));
+        } else {
+            lines.push(format!(
+                "    ln -sf ../toolbox/shims/{} {}/{}; \\",
+                shim.name, bin_dir, shim.name
+            ));
         }
     }
 
@@ -492,5 +535,102 @@ COPY . /app
         let err_msg = err.to_string();
         assert!(err_msg.contains("Unclosed managed section"));
         assert!(err_msg.contains("SYSTEM_PACKAGES"));
+    }
+
+    // =========================================================================
+    // HOST_SHIMS tests
+    // =========================================================================
+
+    fn sample_shim(name: &str) -> Shim {
+        Shim {
+            name: name.to_string(),
+            host: None,
+        }
+    }
+
+    fn sample_shim_with_host(name: &str, host: &str) -> Shim {
+        Shim {
+            name: name.to_string(),
+            host: Some(host.to_string()),
+        }
+    }
+
+    #[test]
+    fn test_generate_host_shims_empty() {
+        let shims: Vec<Shim> = vec![];
+        let lines = generate_host_shims(&shims);
+
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0], "# No host shims configured");
+    }
+
+    #[test]
+    fn test_generate_host_shims_single() {
+        let shims = vec![sample_shim("bootc")];
+        let lines = generate_host_shims(&shims);
+
+        // Check structure
+        assert!(lines[0].contains("set -eu"));
+        assert!(lines[1].contains("mkdir -p"));
+        assert!(lines[1].contains("/usr/etc/skel/.local/toolbox/shims"));
+        assert!(lines[1].contains("/usr/etc/skel/.local/bin"));
+
+        // Check shim creation
+        let content = lines.join("\n");
+        assert!(content.contains("cat > /usr/etc/skel/.local/toolbox/shims/bootc"));
+        assert!(content.contains("#!/bin/bash"));
+        assert!(content.contains("exec flatpak-spawn --host bootc \"$@\""));
+        assert!(content.contains("chmod 0755"));
+        assert!(content.contains("ln -sf ../toolbox/shims/bootc /usr/etc/skel/.local/bin/bootc"));
+    }
+
+    #[test]
+    fn test_generate_host_shims_multiple() {
+        let shims = vec![
+            sample_shim("systemctl"),
+            sample_shim("bootc"),
+            sample_shim("podman"),
+        ];
+        let lines = generate_host_shims(&shims);
+        let content = lines.join("\n");
+
+        // Should be sorted alphabetically
+        let bootc_pos = content.find("shims/bootc").unwrap();
+        let podman_pos = content.find("shims/podman").unwrap();
+        let systemctl_pos = content.find("shims/systemctl").unwrap();
+
+        assert!(bootc_pos < podman_pos);
+        assert!(podman_pos < systemctl_pos);
+
+        // All three shims should be present
+        assert!(content.contains("flatpak-spawn --host bootc"));
+        assert!(content.contains("flatpak-spawn --host podman"));
+        assert!(content.contains("flatpak-spawn --host systemctl"));
+    }
+
+    #[test]
+    fn test_generate_host_shims_with_host_override() {
+        let shims = vec![sample_shim_with_host("docker", "podman")];
+        let lines = generate_host_shims(&shims);
+        let content = lines.join("\n");
+
+        // The shim name should be "docker" but it should call "podman" on host
+        assert!(content.contains("shims/docker"));
+        assert!(content.contains("flatpak-spawn --host podman"));
+        assert!(content.contains("/bin/docker"));
+    }
+
+    #[test]
+    fn test_generate_host_shims_no_trailing_backslash() {
+        let shims = vec![sample_shim("bootc")];
+        let lines = generate_host_shims(&shims);
+
+        // Last line should NOT end with a backslash continuation
+        let last_line = lines.last().unwrap();
+        assert!(
+            !last_line.ends_with("\\"),
+            "Last line should not end with backslash: {}",
+            last_line
+        );
     }
 }

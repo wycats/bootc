@@ -96,6 +96,16 @@ impl ShimsManifest {
         Self::load(&PathBuf::from(Self::SYSTEM_PATH))
     }
 
+    /// Load from the repository's manifests directory.
+    ///
+    /// This is used for containerfile generation where we need to read
+    /// the manifest from the repo rather than the installed system path.
+    pub fn load_repo() -> Result<Self> {
+        let repo_path = crate::repo::find_repo_path()?;
+        let manifest_path = repo_path.join("manifests").join("host-shims.json");
+        Self::load(&manifest_path)
+    }
+
     /// Load the user manifest.
     pub fn load_user() -> Result<Self> {
         Self::load(&Self::user_path())

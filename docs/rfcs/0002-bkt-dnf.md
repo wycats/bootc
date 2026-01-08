@@ -57,6 +57,7 @@ bkt dev dnf install gcc cmake ninja-build
 ```
 
 Both commands:
+
 1. Install the package immediately in the appropriate context
 2. Update the relevant manifest/Containerfile
 3. Open a PR to propagate the change
@@ -96,6 +97,7 @@ bkt dnf install htop --now
 ```
 
 The `--now` flag:
+
 - Applies changes to the running system without reboot
 - Useful for quick iteration
 - Can be slower for multiple packages
@@ -238,28 +240,20 @@ The source of truth for package management is `manifests/system-packages.json`:
 
 ```json
 {
-  "packages": [
-    "htop",
-    "neovim",
-    "starship"
-  ],
-  "groups": [
-    "@development-tools"
-  ],
-  "excluded": [
-    "nano"
-  ]
+  "packages": ["htop", "neovim", "starship"],
+  "groups": ["@development-tools"],
+  "excluded": ["nano"]
 }
 ```
 
 ### Command Mapping
 
-| User Command | Host Context | Toolbox Context |
-|--------------|--------------|-----------------|
-| `bkt dnf install X` | `rpm-ostree install X` | N/A |
-| `bkt dev dnf install X` | N/A | `dnf install X` |
-| `bkt dnf remove X` | `rpm-ostree uninstall X` | N/A |
-| `bkt dev dnf remove X` | N/A | `dnf remove X` |
+| User Command            | Host Context             | Toolbox Context |
+| ----------------------- | ------------------------ | --------------- |
+| `bkt dnf install X`     | `rpm-ostree install X`   | N/A             |
+| `bkt dev dnf install X` | N/A                      | `dnf install X` |
+| `bkt dnf remove X`      | `rpm-ostree uninstall X` | N/A             |
+| `bkt dev dnf remove X`  | N/A                      | `dnf remove X`  |
 
 ### Dependency Resolution
 
@@ -299,6 +293,7 @@ bkt dnf install nonexistent-package
 ### Toolbox Integration
 
 For `bkt dev dnf`, the command:
+
 1. Enters the default toolbox (or creates it)
 2. Runs `dnf install` inside
 3. Updates `toolbox/packages.json` (or `toolbox/Containerfile`)
@@ -339,7 +334,7 @@ Explicit is better than implicit. `bkt dev` makes the target clear.
 ### Completed
 
 - ✅ `bkt dnf install/remove` commands with rpm-ostree integration
-- ✅ `bkt dev dnf install/remove` for toolbox packages  
+- ✅ `bkt dev dnf install/remove` for toolbox packages
 - ✅ Query pass-through (`bkt dnf search`, `info`, `provides`, `list`)
 - ✅ COPR management (`bkt dnf copr enable/disable/list`)
 - ✅ Manifest updates with PR creation
@@ -369,13 +364,24 @@ pub fn generate_system_packages(packages: &[String]) -> Vec<String>;
 pub fn generate_copr_repos(repos: &[String]) -> Vec<String>;
 ```
 
-The `sync_containerfile()` function in `dnf.rs` is called during PR creation, ensuring manifest and Containerfile changes are committed together.
+### Unified Sync Architecture
+
+The `sync_all_containerfile_sections()` function in `dnf.rs` is called during PR creation, ensuring manifest and Containerfile changes are committed together.
+
+**Architecture Decision:** Always sync all managed sections (SYSTEM_PACKAGES, COPR_REPOS) atomically on every manifest change, rather than syncing individual sections separately. This design:
+
+- **Simplifies logic**: One sync point instead of many
+- **Prevents bugs**: No risk of partial sync leaving Containerfile inconsistent
+- **Improves correctness**: Containerfile always fully reflects manifests after any change
+- **Minimal cost**: Sections are small, regenerating all is fast
+
+The `bkt containerfile` command remains separate for manual operations (verbose output, drift checking).
 
 ### Remaining Work
 
-- [ ] Hook COPR commands into Containerfile sync (add `COPR_REPOS` section)
-- [ ] Add `bkt containerfile sync` manual sync command
-- [ ] Add `bkt containerfile check` dry-run drift detection
+- [x] Hook COPR commands into Containerfile sync (unified sync handles all sections)
+- [x] Add `bkt containerfile sync` manual sync command
+- [x] Add `bkt containerfile check` dry-run drift detection
 
 ## Unresolved Questions
 

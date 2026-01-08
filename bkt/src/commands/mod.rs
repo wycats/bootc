@@ -6,6 +6,7 @@ pub mod base;
 pub mod capture;
 pub mod changelog;
 pub mod completions;
+pub mod containerfile;
 pub mod dev;
 pub mod dnf;
 pub mod doctor;
