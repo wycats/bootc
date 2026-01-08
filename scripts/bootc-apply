@@ -26,9 +26,42 @@ log_error() {
 
 # Get the current deployment checksum from rpm-ostree
 get_current_deployment() {
-    rpm-ostree status --json 2>/dev/null \
-        | jq -r '.deployments[0].checksum // empty' 2>/dev/null \
-        || echo ""
+    # Ensure required tools are available
+    if ! command -v rpm-ostree >/dev/null 2>&1; then
+        log_error "rpm-ostree binary not found; cannot determine current deployment"
+        echo ""
+        return 0
+    fi
+
+    if ! command -v jq >/dev/null 2>&1; then
+        log_error "jq binary not found; cannot parse rpm-ostree status JSON"
+        echo ""
+        return 0
+    fi
+
+    # Fetch rpm-ostree status JSON
+    local status_json
+    if ! status_json="$(rpm-ostree status --json 2>/dev/null)"; then
+        log_error "rpm-ostree status --json failed; cannot determine current deployment"
+        echo ""
+        return 0
+    fi
+
+    # Parse the deployment checksum from the JSON
+    local checksum
+    if ! checksum="$(printf '%s\n' "${status_json}" | jq -r '.deployments[0].checksum // empty' 2>/dev/null)"; then
+        log_error "jq failed to parse rpm-ostree status JSON; cannot determine current deployment"
+        echo ""
+        return 0
+    fi
+
+    if [[ -z "${checksum}" ]]; then
+        log_error "No deployment checksum found in rpm-ostree status JSON"
+        echo ""
+        return 0
+    fi
+
+    printf '%s\n' "${checksum}"
 }
 
 # Get the last applied deployment from marker file
@@ -54,7 +87,7 @@ main() {
     # Get current deployment
     local current_deployment
     current_deployment="$(get_current_deployment)"
-    
+
     if [[ -z "${current_deployment}" ]]; then
         log_error "Could not determine current deployment (not an ostree system?)"
         exit 0  # Exit successfully - not an error if not on ostree
@@ -79,7 +112,7 @@ main() {
 
     # Run bkt dnf sync with --now to apply changes live (no reboot needed)
     log "Running: bkt dnf sync --now"
-    
+
     if bkt dnf sync --now; then
         log "bkt dnf sync completed successfully"
         write_marker "${current_deployment}"
