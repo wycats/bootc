@@ -206,10 +206,10 @@ Options:
 
 ### Deliverables
 
-- [ ] Create `systemd/system/bootc-apply.service`
-- [ ] Add to Containerfile installation
-- [ ] Implement deployment tracking marker file
-- [ ] Add `--now` flag to `bkt dnf sync` for apply-live
+- [x] Create `systemd/system/bootc-apply.service`
+- [x] Add to Containerfile installation
+- [x] Implement deployment tracking marker file (`scripts/bootc-apply`)
+- [x] Add `--now` flag to `bkt dnf sync` for apply-live (already implemented)
 - [ ] Test full reboot workflow
 
 ### Acceptance Criteria

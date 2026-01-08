@@ -197,14 +197,19 @@ COPY manifests/host-shims.json /usr/share/bootc-bootstrap/host-shims.json
 # Repository identity (for bkt --pr workflow)
 COPY repo.json /usr/share/bootc/repo.json
 COPY scripts/bootc-bootstrap /usr/bin/bootc-bootstrap
+COPY scripts/bootc-apply /usr/bin/bootc-apply
 COPY scripts/check-drift /usr/bin/check-drift
 COPY scripts/bootc-repo /usr/bin/bootc-repo
 # bkt CLI (pre-built by CI, placed in scripts/ during workflow)
 COPY scripts/bkt /usr/bin/bkt
+# systemd units: user-level bootstrap and system-level apply
 COPY systemd/user/bootc-bootstrap.service /usr/lib/systemd/user/bootc-bootstrap.service
-RUN chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/check-drift /usr/bin/bootc-repo /usr/bin/bkt && \
+COPY systemd/system/bootc-apply.service /usr/lib/systemd/system/bootc-apply.service
+RUN chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/check-drift /usr/bin/bootc-repo /usr/bin/bkt && \
     mkdir -p /usr/lib/systemd/user/default.target.wants && \
-    ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service
+    ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service && \
+    mkdir -p /usr/lib/systemd/system/multi-user.target.wants && \
+    ln -sf ../bootc-apply.service /usr/lib/systemd/system/multi-user.target.wants/bootc-apply.service
 
 # Custom ujust recipes (auto-imported as /usr/share/ublue-os/just/60-custom.just)
 RUN mkdir -p /usr/share/ublue-os/just
