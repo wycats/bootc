@@ -229,11 +229,15 @@ fn run_check() -> Result<()> {
     Ok(())
 }
 
-/// Load the merged system packages manifest (system + user)
+/// Load the merged system packages manifest (repo + user)
+///
+/// For containerfile generation, we load from the repo's manifests directory
+/// rather than the system path, since we're generating the Containerfile
+/// that will install the packages into the image.
 fn load_merged_manifest() -> Result<SystemPackagesManifest> {
-    let system = SystemPackagesManifest::load_system()?;
+    let repo = SystemPackagesManifest::load_repo()?;
     let user = SystemPackagesManifest::load_user()?;
-    Ok(SystemPackagesManifest::merged(&system, &user))
+    Ok(SystemPackagesManifest::merged(&repo, &user))
 }
 
 /// Load the merged shims manifest (repo + user)
