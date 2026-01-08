@@ -35,7 +35,26 @@ RUN set -eu; \
 # === END COPR_REPOS ===
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
-# No packages configured
+RUN dnf install -y \
+    1password \
+    1password-cli \
+    code \
+    curl \
+    fontconfig \
+    gh \
+    google-noto-sans-batak-fonts \
+    google-noto-sans-inscriptional-pahlavi-fonts \
+    google-noto-sans-inscriptional-parthian-fonts \
+    google-noto-sans-meroitic-fonts \
+    google-noto-sans-mongolian-fonts \
+    jq \
+    microsoft-edge-stable \
+    papirus-icon-theme \
+    rsms-inter-fonts \
+    toolbox \
+    unzip \
+    xorg-x11-server-Xvfb \
+    && dnf clean all
 # === END SYSTEM_PACKAGES ===
 
 # Relocate /opt to /usr/lib/opt for ostree compatibility

@@ -116,6 +116,16 @@ impl SystemPackagesManifest {
         Self::load(&PathBuf::from(Self::SYSTEM_PATH))
     }
 
+    /// Load from the repository's manifests directory.
+    ///
+    /// For Containerfile generation and other operations that need
+    /// the manifest from the repo rather than the installed system path.
+    pub fn load_repo() -> Result<Self> {
+        let repo_path = crate::repo::find_repo_path()?;
+        let manifest_path = repo_path.join("manifests").join("system-packages.json");
+        Self::load(&manifest_path)
+    }
+
     /// Load the user manifest.
     pub fn load_user() -> Result<Self> {
         Self::load(&Self::user_path())
