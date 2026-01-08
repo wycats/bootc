@@ -156,6 +156,9 @@ pub enum Commands {
 
     /// Track what the upstream Bazzite image provides (for drift detection)
     Base(commands::base::BaseArgs),
+
+    /// Manage Containerfile managed sections
+    Containerfile(commands::containerfile::ContainerfileArgs),
 }
 
 impl Commands {
@@ -191,6 +194,7 @@ impl Commands {
             Commands::Drift(_) => CommandTarget::Either,
             Commands::Base(_) => CommandTarget::Either,
             Commands::Skel(_) => CommandTarget::Either,
+            Commands::Containerfile(_) => CommandTarget::Either,
         }
     }
 }
@@ -248,5 +252,6 @@ fn main() -> Result<()> {
         Commands::Changelog(args) => commands::changelog::run(args),
         Commands::Drift(args) => commands::drift::run(args),
         Commands::Base(args) => commands::base::run(args),
+        Commands::Containerfile(args) => commands::containerfile::run(args),
     }
 }

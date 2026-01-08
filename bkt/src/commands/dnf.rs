@@ -6,9 +6,12 @@
 //!
 //! Query commands (search, info, provides) pass through to dnf5 directly.
 
-use crate::containerfile::{ContainerfileEditor, Section, generate_system_packages};
+use crate::containerfile::{
+    ContainerfileEditor, Section, generate_copr_repos, generate_host_shims,
+    generate_system_packages,
+};
 use crate::context::{CommandDomain, ExecutionContext};
-use crate::manifest::{CoprRepo, SystemPackagesManifest, ToolboxPackagesManifest};
+use crate::manifest::{CoprRepo, ShimsManifest, SystemPackagesManifest, ToolboxPackagesManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::plan::{
@@ -522,7 +525,7 @@ fn handle_install(
         let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
 
         // Sync Containerfile before creating PR so both files are committed together
-        sync_containerfile(&system_manifest)?;
+        sync_all_containerfile_sections(&system_manifest)?;
 
         plan.maybe_create_pr(
             "dnf",
@@ -706,7 +709,7 @@ fn handle_remove(packages: Vec<String>, plan: &ExecutionPlan) -> Result<()> {
             let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
 
             // Sync Containerfile before creating PR so both files are committed together
-            sync_containerfile(&system_manifest)?;
+            sync_all_containerfile_sections(&system_manifest)?;
 
             plan.maybe_create_pr(
                 "dnf",
@@ -953,6 +956,10 @@ fn handle_copr_enable(name: String, plan: &ExecutionPlan) -> Result<()> {
     if plan.should_create_pr() {
         let mut system_manifest = SystemPackagesManifest::load_system()?;
         system_manifest.upsert_copr(CoprRepo::new(name.clone()));
+
+        // Sync Containerfile before creating PR so both files are committed together
+        sync_all_containerfile_sections(&system_manifest)?;
+
         let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
 
         plan.maybe_create_pr(
@@ -1050,6 +1057,9 @@ fn handle_copr_disable(name: String, plan: &ExecutionPlan) -> Result<()> {
     if plan.should_create_pr() && in_system {
         let mut system_manifest = SystemPackagesManifest::load_system()?;
         if system_manifest.remove_copr(&name) {
+            // Sync Containerfile before creating PR so both files are committed together
+            sync_all_containerfile_sections(&system_manifest)?;
+
             let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
             plan.maybe_create_pr(
                 "copr",
@@ -1406,7 +1416,7 @@ fn get_layered_packages() -> Vec<String> {
 /// This updates the managed section in the Containerfile to match
 /// the packages in the manifest. Returns Ok(true) if the Containerfile
 /// was modified, Ok(false) if no changes were needed.
-fn sync_containerfile(manifest: &SystemPackagesManifest) -> Result<bool> {
+fn sync_all_containerfile_sections(manifest: &SystemPackagesManifest) -> Result<bool> {
     let containerfile_path = std::path::Path::new("Containerfile");
     if !containerfile_path.exists() {
         // No Containerfile in current directory, skip sync
@@ -1414,17 +1424,58 @@ fn sync_containerfile(manifest: &SystemPackagesManifest) -> Result<bool> {
     }
 
     let mut editor = ContainerfileEditor::load(containerfile_path)?;
+    let mut updated_any = false;
 
-    if !editor.has_section(Section::SystemPackages) {
-        // Containerfile doesn't have managed sections yet
+    // SYSTEM_PACKAGES
+    if editor.has_section(Section::SystemPackages) {
+        let new_content = generate_system_packages(&manifest.packages);
+        editor.update_section(Section::SystemPackages, new_content);
+        Output::success("Synced Containerfile SYSTEM_PACKAGES section");
+        updated_any = true;
+    } else {
+        // Preserve prior behavior: warn when the expected SYSTEM_PACKAGES section is missing.
         Output::warning("Containerfile has no SYSTEM_PACKAGES section - skipping sync");
+    }
+
+    // COPR_REPOS
+    if editor.has_section(Section::CoprRepos) {
+        // Extract repo names from CoprRepo structs (only enabled ones)
+        let repo_names: Vec<String> = manifest
+            .copr_repos
+            .iter()
+            .filter(|c| c.enabled)
+            .map(|c| c.name.clone())
+            .collect();
+
+        let new_content = generate_copr_repos(&repo_names);
+        editor.update_section(Section::CoprRepos, new_content);
+        Output::success("Synced Containerfile COPR_REPOS section");
+        updated_any = true;
+    } else if manifest.copr_repos.iter().any(|c| c.enabled) {
+        // Only warn if COPRs are actually configured/enabled; otherwise this is a harmless omission.
+        Output::warning("Containerfile has no COPR_REPOS section - skipping sync");
+    }
+
+    // HOST_SHIMS
+    if editor.has_section(Section::HostShims) {
+        // Load the merged shims manifest (repo + user)
+        // We use load_repo() instead of load_system() because we're generating
+        // the Containerfile from the repo's manifests directory.
+        let repo_shims = ShimsManifest::load_repo()?;
+        let user_shims = ShimsManifest::load_user()?;
+        let merged_shims = ShimsManifest::merged(&repo_shims, &user_shims);
+
+        let new_content = generate_host_shims(&merged_shims.shims);
+        editor.update_section(Section::HostShims, new_content);
+        Output::success("Synced Containerfile HOST_SHIMS section");
+        updated_any = true;
+    }
+    // Note: No warning if HOST_SHIMS section is missing - it's optional
+
+    if !updated_any {
         return Ok(false);
     }
 
-    let new_content = generate_system_packages(&manifest.packages);
-    editor.update_section(Section::SystemPackages, new_content);
     editor.write()?;
-
-    Output::success("Synced Containerfile SYSTEM_PACKAGES section");
     Ok(true)
 }

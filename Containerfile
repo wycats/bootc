@@ -30,27 +30,12 @@ RUN set -eu; \
             'gpgkey=https://downloads.1password.com/linux/keys/1password.asc' \
             >/etc/yum.repos.d/1password.repo
 
+# === COPR_REPOS (managed by bkt) ===
+# No COPR repositories configured
+# === END COPR_REPOS ===
+
 # === SYSTEM_PACKAGES (managed by bkt) ===
-RUN dnf install -y \
-    1password \
-    1password-cli \
-    code \
-    gh \
-    jq \
-    microsoft-edge-stable \
-    papirus-icon-theme \
-    xorg-x11-server-Xvfb \
-    rsms-inter-fonts \
-    toolbox \
-    curl \
-    unzip \
-    fontconfig \
-    google-noto-sans-batak-fonts \
-    google-noto-sans-inscriptional-pahlavi-fonts \
-    google-noto-sans-inscriptional-parthian-fonts \
-    google-noto-sans-meroitic-fonts \
-    google-noto-sans-mongolian-fonts \
-    && dnf clean all
+# No packages configured
 # === END SYSTEM_PACKAGES ===
 
 # Relocate /opt to /usr/lib/opt for ostree compatibility
@@ -264,3 +249,71 @@ RUN if [ "${ENABLE_LOGIND_LID_POLICY}" = "1" ]; then \
 COPY skel/.config/nushell/config.nu /etc/skel/.config/nushell/config.nu
 COPY skel/.config/nushell/env.nu /etc/skel/.config/nushell/env.nu
 COPY skel/.config/containers/toolbox.conf /etc/skel/.config/containers/toolbox.conf
+
+# === HOST_SHIMS (managed by bkt) ===
+RUN set -eu; \
+    mkdir -p /usr/etc/skel/.local/toolbox/shims /usr/etc/skel/.local/bin; \
+    \
+    cat > /usr/etc/skel/.local/toolbox/shims/bootc <<'SHIMEOF'
+#!/bin/bash
+exec flatpak-spawn --host bootc "$@"
+SHIMEOF
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/bootc; \
+    ln -sf ../toolbox/shims/bootc /usr/etc/skel/.local/bin/bootc; \
+    \
+    cat > /usr/etc/skel/.local/toolbox/shims/docker <<'SHIMEOF'
+#!/bin/bash
+exec flatpak-spawn --host podman "$@"
+SHIMEOF
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/docker; \
+    ln -sf ../toolbox/shims/docker /usr/etc/skel/.local/bin/docker; \
+    \
+    cat > /usr/etc/skel/.local/toolbox/shims/flatpak <<'SHIMEOF'
+#!/bin/bash
+exec flatpak-spawn --host flatpak "$@"
+SHIMEOF
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/flatpak; \
+    ln -sf ../toolbox/shims/flatpak /usr/etc/skel/.local/bin/flatpak; \
+    \
+    cat > /usr/etc/skel/.local/toolbox/shims/journalctl <<'SHIMEOF'
+#!/bin/bash
+exec flatpak-spawn --host journalctl "$@"
+SHIMEOF
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/journalctl; \
+    ln -sf ../toolbox/shims/journalctl /usr/etc/skel/.local/bin/journalctl; \
+    \
+    cat > /usr/etc/skel/.local/toolbox/shims/podman <<'SHIMEOF'
+#!/bin/bash
+exec flatpak-spawn --host podman "$@"
+SHIMEOF
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/podman; \
+    ln -sf ../toolbox/shims/podman /usr/etc/skel/.local/bin/podman; \
+    \
+    cat > /usr/etc/skel/.local/toolbox/shims/rpm-ostree <<'SHIMEOF'
+#!/bin/bash
+exec flatpak-spawn --host rpm-ostree "$@"
+SHIMEOF
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/rpm-ostree; \
+    ln -sf ../toolbox/shims/rpm-ostree /usr/etc/skel/.local/bin/rpm-ostree; \
+    \
+    cat > /usr/etc/skel/.local/toolbox/shims/systemctl <<'SHIMEOF'
+#!/bin/bash
+exec flatpak-spawn --host systemctl "$@"
+SHIMEOF
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/systemctl; \
+    ln -sf ../toolbox/shims/systemctl /usr/etc/skel/.local/bin/systemctl; \
+    \
+    cat > /usr/etc/skel/.local/toolbox/shims/test-shim <<'SHIMEOF'
+#!/bin/bash
+exec flatpak-spawn --host test-shim "$@"
+SHIMEOF
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/test-shim; \
+    ln -sf ../toolbox/shims/test-shim /usr/etc/skel/.local/bin/test-shim; \
+    \
+    cat > /usr/etc/skel/.local/toolbox/shims/ujust <<'SHIMEOF'
+#!/bin/bash
+exec flatpak-spawn --host ujust "$@"
+SHIMEOF
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/ujust; \
+    ln -sf ../toolbox/shims/ujust /usr/etc/skel/.local/bin/ujust
+# === END HOST_SHIMS ===
