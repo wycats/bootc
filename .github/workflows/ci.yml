@@ -131,3 +131,18 @@ jobs:
             exit 1
           fi
           echo "✓ Schemas are up to date"
+
+  validate-containerfile:
+    name: Validate Containerfile syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Lint Containerfile with hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Containerfile
+          failure-threshold: error

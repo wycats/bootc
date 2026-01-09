@@ -22,6 +22,7 @@
 
 use crate::manifest::Shim;
 use anyhow::{Context, Result, bail};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -314,7 +315,7 @@ pub fn generate_copr_repos(repos: &[String]) -> Vec<String> {
 ///
 /// Creates shell commands that:
 /// 1. Create the shim and bin directories
-/// 2. Create each shim script using heredoc syntax
+/// 2. Create each shim script using base64 encoding (avoids heredoc parsing issues)
 /// 3. Make shims executable
 /// 4. Create symlinks in PATH
 pub fn generate_host_shims(shims: &[Shim]) -> Vec<String> {
@@ -337,14 +338,21 @@ pub fn generate_host_shims(shims: &[Shim]) -> Vec<String> {
         // Use shlex for proper POSIX-compliant shell quoting
         let quoted = shlex::try_quote(host_cmd).unwrap_or_else(|_| host_cmd.into());
 
+        // Generate the shim script content
+        let script_content = format!("#!/bin/bash\nexec flatpak-spawn --host {} \"$@\"\n", quoted);
+
+        // Base64 encode to avoid heredoc parsing issues in Dockerfile
+        let encoded = BASE64_STANDARD.encode(script_content.as_bytes());
+
         let is_last = i == sorted_shims.len() - 1;
 
-        lines.push("    \\".to_string());
-        lines.push(format!("    cat > {}/{} <<'SHIMEOF'", shims_dir, shim.name));
-        lines.push("#!/bin/bash".to_string());
-        lines.push(format!("exec flatpak-spawn --host {} \"$@\"", quoted));
-        lines.push("SHIMEOF".to_string());
-        lines.push(format!("    chmod 0755 {}/{}; \\", shims_dir, shim.name));
+        // Use base64 encoding instead of heredoc to avoid Dockerfile parsing issues
+        // All commands on same logical line with && to stay in RUN context
+        lines.push(format!(
+            "    echo '{}' | base64 -d > {}/{} && \\",
+            encoded, shims_dir, shim.name
+        ));
+        lines.push(format!("    chmod 0755 {}/{} && \\", shims_dir, shim.name));
 
         // Last symlink doesn't need continuation backslash
         if is_last {
@@ -575,13 +583,16 @@ COPY . /app
         assert!(lines[1].contains("/usr/etc/skel/.local/toolbox/shims"));
         assert!(lines[1].contains("/usr/etc/skel/.local/bin"));
 
-        // Check shim creation
+        // Check shim creation uses base64 encoding
         let content = lines.join("\n");
-        assert!(content.contains("cat > /usr/etc/skel/.local/toolbox/shims/bootc"));
-        assert!(content.contains("#!/bin/bash"));
-        assert!(content.contains("exec flatpak-spawn --host bootc \"$@\""));
+        assert!(content.contains("base64 -d > /usr/etc/skel/.local/toolbox/shims/bootc"));
         assert!(content.contains("chmod 0755"));
         assert!(content.contains("ln -sf ../toolbox/shims/bootc /usr/etc/skel/.local/bin/bootc"));
+
+        // Verify the base64 decodes correctly
+        let expected_script = "#!/bin/bash\nexec flatpak-spawn --host bootc \"$@\"\n";
+        let encoded = BASE64_STANDARD.encode(expected_script.as_bytes());
+        assert!(content.contains(&encoded));
     }
 
     #[test]
@@ -602,10 +613,18 @@ COPY . /app
         assert!(bootc_pos < podman_pos);
         assert!(podman_pos < systemctl_pos);
 
-        // All three shims should be present
-        assert!(content.contains("flatpak-spawn --host bootc"));
-        assert!(content.contains("flatpak-spawn --host podman"));
-        assert!(content.contains("flatpak-spawn --host systemctl"));
+        // All three shims should have base64-encoded scripts
+        // Verify by checking the encoded strings are present
+        for cmd in ["bootc", "podman", "systemctl"] {
+            let expected_script =
+                format!("#!/bin/bash\nexec flatpak-spawn --host {} \"$@\"\n", cmd);
+            let encoded = BASE64_STANDARD.encode(expected_script.as_bytes());
+            assert!(
+                content.contains(&encoded),
+                "Missing encoded script for {}",
+                cmd
+            );
+        }
     }
 
     #[test]
@@ -616,8 +635,15 @@ COPY . /app
 
         // The shim name should be "docker" but it should call "podman" on host
         assert!(content.contains("shims/docker"));
-        assert!(content.contains("flatpak-spawn --host podman"));
         assert!(content.contains("/bin/docker"));
+
+        // Verify the base64 encodes the correct host command (podman, not docker)
+        let expected_script = "#!/bin/bash\nexec flatpak-spawn --host podman \"$@\"\n";
+        let encoded = BASE64_STANDARD.encode(expected_script.as_bytes());
+        assert!(
+            content.contains(&encoded),
+            "Should contain base64-encoded script calling podman"
+        );
     }
 
     #[test]
