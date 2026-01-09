@@ -14,6 +14,7 @@ pub mod drift;
 pub mod extension;
 pub mod flatpak;
 pub mod gsetting;
+pub mod local;
 pub mod profile;
 pub mod repo;
 pub mod schema;

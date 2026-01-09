@@ -1,6 +1,8 @@
 //! GNOME extension command implementation.
 
+use crate::context::PrMode;
 use crate::manifest::GnomeExtensionsManifest;
+use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::plan::{
@@ -99,8 +101,11 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
             let system = GnomeExtensionsManifest::load_system()?;
             let mut user = GnomeExtensionsManifest::load_user()?;
 
+            // Pre-compute state before any manifest modifications
+            let already_in_manifest = system.contains(&uuid) || user.contains(&uuid);
+
             if plan.should_update_local_manifest() {
-                if system.contains(&uuid) || user.contains(&uuid) {
+                if already_in_manifest {
                     Output::warning(format!("Extension already in manifest: {}", uuid));
                 } else {
                     user.add(uuid.clone());
@@ -109,6 +114,17 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
                 }
             } else if plan.dry_run {
                 Output::dry_run(format!("Would add to user manifest: {}", uuid));
+            }
+
+            // Record ephemeral change if using --local (not in dry-run mode)
+            if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run && !already_in_manifest {
+                let mut ephemeral = EphemeralManifest::load_validated()?;
+                ephemeral.record(EphemeralChange::new(
+                    ChangeDomain::Extension,
+                    ChangeAction::Add,
+                    &uuid,
+                ));
+                ephemeral.save()?;
             }
 
             // Enable if installed
@@ -168,6 +184,17 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
                 }
             } else if plan.dry_run {
                 Output::dry_run(format!("Would remove from user manifest: {}", uuid));
+            }
+
+            // Record ephemeral change if using --local (not in dry-run mode)
+            if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run {
+                let mut ephemeral = EphemeralManifest::load_validated()?;
+                ephemeral.record(EphemeralChange::new(
+                    ChangeDomain::Extension,
+                    ChangeAction::Remove,
+                    &uuid,
+                ));
+                ephemeral.save()?;
             }
 
             // Disable if enabled

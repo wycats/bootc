@@ -10,7 +10,8 @@ use crate::containerfile::{
     ContainerfileEditor, Section, generate_copr_repos, generate_host_shims,
     generate_system_packages,
 };
-use crate::context::{CommandDomain, ExecutionContext};
+use crate::context::{CommandDomain, ExecutionContext, PrMode};
+use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{CoprRepo, ShimsManifest, SystemPackagesManifest, ToolboxPackagesManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
@@ -486,6 +487,19 @@ fn handle_install(
         }
     }
 
+    // Record ephemeral changes if using --local (not in dry-run mode)
+    if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run && !new_packages.is_empty() {
+        let mut ephemeral = EphemeralManifest::load_validated()?;
+        for pkg in &new_packages {
+            ephemeral.record(EphemeralChange::new(
+                ChangeDomain::Dnf,
+                ChangeAction::Add,
+                pkg,
+            ));
+        }
+        ephemeral.save()?;
+    }
+
     // Execute installation
     if plan.should_execute_locally() {
         match plan.context {
@@ -666,6 +680,19 @@ fn handle_remove(packages: Vec<String>, plan: &ExecutionPlan) -> Result<()> {
 
     if plan.should_update_local_manifest() {
         user.save_user()?;
+    }
+
+    // Record ephemeral changes if using --local (not in dry-run mode)
+    if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run {
+        let mut ephemeral = EphemeralManifest::load_validated()?;
+        for pkg in &packages {
+            ephemeral.record(EphemeralChange::new(
+                ChangeDomain::Dnf,
+                ChangeAction::Remove,
+                pkg,
+            ));
+        }
+        ephemeral.save()?;
     }
 
     // Execute removal

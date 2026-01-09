@@ -5,6 +5,7 @@
 pub mod base;
 pub mod changelog;
 pub mod dnf;
+pub mod ephemeral;
 pub mod extension;
 pub mod flatpak;
 pub mod gsetting;

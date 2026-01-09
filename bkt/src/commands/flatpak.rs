@@ -1,6 +1,7 @@
 //! Flatpak command implementation.
 
-use crate::context::CommandDomain;
+use crate::context::{CommandDomain, PrMode};
+use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{FlatpakApp, FlatpakAppsManifest, FlatpakScope};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
@@ -151,6 +152,17 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
                 ));
             }
 
+            // Record ephemeral change if using --local (not in dry-run mode)
+            if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run && !already_exists {
+                let mut ephemeral = EphemeralManifest::load_validated()?;
+                ephemeral.record(EphemeralChange::new(
+                    ChangeDomain::Flatpak,
+                    ChangeAction::Add,
+                    &app_id,
+                ));
+                ephemeral.save()?;
+            }
+
             // Install the flatpak
             if plan.should_execute_locally() && !is_installed(&app_id) {
                 let spinner = Output::spinner(format!("Installing {}...", app_id));
@@ -219,6 +231,17 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
                 } else if !in_system {
                     Output::dry_run(format!("Flatpak not found in manifest: {}", app_id));
                 }
+            }
+
+            // Record ephemeral change if using --local (not in dry-run mode)
+            if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run {
+                let mut ephemeral = EphemeralManifest::load_validated()?;
+                ephemeral.record(EphemeralChange::new(
+                    ChangeDomain::Flatpak,
+                    ChangeAction::Remove,
+                    &app_id,
+                ));
+                ephemeral.save()?;
             }
 
             // Optionally uninstall

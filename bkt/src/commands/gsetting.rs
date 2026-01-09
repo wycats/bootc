@@ -1,5 +1,7 @@
 //! GSettings command implementation.
 
+use crate::context::PrMode;
+use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{GSetting, GSettingsManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
@@ -148,6 +150,20 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
                 ));
             }
 
+            // Record ephemeral change if using --local (not in dry-run mode)
+            if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run {
+                let mut ephemeral = EphemeralManifest::load_validated()?;
+                ephemeral.record(
+                    EphemeralChange::new(
+                        ChangeDomain::Gsetting,
+                        ChangeAction::Update,
+                        format!("{}.{}", schema, key),
+                    )
+                    .with_metadata("value", &value),
+                );
+                ephemeral.save()?;
+            }
+
             // Apply immediately
             if plan.should_execute_locally() {
                 let spinner =
@@ -205,6 +221,17 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
                 }
             } else if plan.dry_run {
                 Output::dry_run(format!("Would remove from manifest: {}.{}", schema, key));
+            }
+
+            // Record ephemeral change if using --local (not in dry-run mode)
+            if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run {
+                let mut ephemeral = EphemeralManifest::load_validated()?;
+                ephemeral.record(EphemeralChange::new(
+                    ChangeDomain::Gsetting,
+                    ChangeAction::Remove,
+                    format!("{}.{}", schema, key),
+                ));
+                ephemeral.save()?;
             }
 
             // Reset to default
