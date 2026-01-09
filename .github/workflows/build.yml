@@ -154,9 +154,9 @@ jobs:
             --title "chore(upstream): bump bazzite stable digest" \
             --body "Automated PR to update upstream bazzite digest.
 
-This PR was created automatically by the build workflow when a new upstream image was detected.
+          This PR was created automatically by the build workflow when a new upstream image was detected.
 
-**Upstream digest:** \`${{ steps.check.outputs.upstream_digest }}\`" \
+          **Upstream digest:** \`${{ steps.check.outputs.upstream_digest }}\`" \
             --head "${branch_name}" \
             --base main)
           
@@ -281,11 +281,11 @@ This PR was created automatically by the build workflow when a new upstream imag
             --title "chore(upstream): bump getnf (${ver})" \
             --body "Automated PR to update getnf upstream script.
 
-This PR was created automatically by the build workflow when a new getnf version was detected.
+          This PR was created automatically by the build workflow when a new getnf version was detected.
 
-**Version:** \`${ver}\`
-**Ref:** \`${{ steps.check.outputs.getnf_ref }}\`
-**SHA256:** \`${{ steps.check.outputs.getnf_sha }}\`" \
+          **Version:** \`${ver}\`
+          **Ref:** \`${{ steps.check.outputs.getnf_ref }}\`
+          **SHA256:** \`${{ steps.check.outputs.getnf_sha }}\`" \
             --head "${branch_name}" \
             --base main)
           
