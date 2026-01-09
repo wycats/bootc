@@ -138,7 +138,15 @@ jobs:
           
           git checkout -b "${branch_name}"
           git add "${DIGEST_FILE}"
-          git commit -m "chore(upstream): bump bazzite stable digest" || exit 0
+          git commit -m "chore(upstream): bump bazzite stable digest" || {
+            if git diff --cached --quiet; then
+              echo "No changes to commit; skipping push and PR creation."
+              exit 0
+            else
+              echo "git commit failed but there are staged changes; aborting."
+              exit 1
+            fi
+          }
           git push origin "${branch_name}"
           
           # Create PR and enable auto-merge
@@ -223,12 +231,7 @@ This PR was created automatically by the build workflow when a new upstream imag
             exit 0
           fi
 
-          mkdir -p "$(dirname "${GETNF_REF_FILE}")"
-          printf "%s\n" "$ref" > "${GETNF_REF_FILE}"
-          printf "%s\n" "$ver" > "${GETNF_VERSION_FILE}"
-          printf "%s\n" "$sha" > "${GETNF_SHA256_FILE}"
-          
-          # Store version for PR creation step
+          # Store version info for PR creation step (files written after branch checkout to avoid race condition)
           echo "getnf_version=${ver}" >> "$GITHUB_OUTPUT"
           echo "getnf_ref=${ref}" >> "$GITHUB_OUTPUT"
           echo "getnf_sha=${sha}" >> "$GITHUB_OUTPUT"
@@ -248,8 +251,23 @@ This PR was created automatically by the build workflow when a new upstream imag
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
           git checkout -b "${branch_name}"
+          
+          # Recreate getnf files on the feature branch using outputs from the check step
+          mkdir -p "$(dirname "${GETNF_REF_FILE}")"
+          echo "${{ steps.check.outputs.getnf_ref }}" > "${GETNF_REF_FILE}"
+          echo "${{ steps.check.outputs.getnf_version }}" > "${GETNF_VERSION_FILE}"
+          echo "${{ steps.check.outputs.getnf_sha }}" > "${GETNF_SHA256_FILE}"
+          
           git add "${GETNF_REF_FILE}" "${GETNF_VERSION_FILE}" "${GETNF_SHA256_FILE}"
-          git commit -m "chore(upstream): bump getnf (${ver})" || exit 0
+          git commit -m "chore(upstream): bump getnf (${ver})" || {
+            if git diff --cached --quiet; then
+              echo "No changes to commit for getnf update; skipping push and PR creation."
+              exit 0
+            else
+              echo "git commit failed but there are staged changes; aborting."
+              exit 1
+            fi
+          }
           git push origin "${branch_name}"
           
           # Create PR and enable auto-merge
