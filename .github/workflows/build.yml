@@ -253,6 +253,12 @@ This PR was created automatically by the build workflow when a new upstream imag
           git checkout -b "${branch_name}"
           
           # Recreate getnf files on the feature branch using outputs from the check step
+          echo "${{ steps.check.outputs.getnf_ref }}" > "${GETNF_REF_FILE}"
+          echo "${{ steps.check.outputs.getnf_version }}" > "${GETNF_VERSION_FILE}"
+          echo "${{ steps.check.outputs.getnf_sha256 }}" > "${GETNF_SHA256_FILE}"
+          
+          
+          # Recreate getnf files on the feature branch using outputs from the check step
           mkdir -p "$(dirname "${GETNF_REF_FILE}")"
           echo "${{ steps.check.outputs.getnf_ref }}" > "${GETNF_REF_FILE}"
           echo "${{ steps.check.outputs.getnf_version }}" > "${GETNF_VERSION_FILE}"
