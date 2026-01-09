@@ -159,6 +159,12 @@ pub enum Commands {
 
     /// Manage Containerfile managed sections
     Containerfile(commands::containerfile::ContainerfileArgs),
+
+    /// Manage local-only changes (ephemeral manifest)
+    ///
+    /// View, commit, or clear changes made with --local. These changes
+    /// are tracked for later promotion to a PR.
+    Local(commands::local::LocalArgs),
 }
 
 impl Commands {
@@ -195,6 +201,7 @@ impl Commands {
             Commands::Base(_) => CommandTarget::Either,
             Commands::Skel(_) => CommandTarget::Either,
             Commands::Containerfile(_) => CommandTarget::Either,
+            Commands::Local(_) => CommandTarget::Either,
         }
     }
 }
@@ -253,5 +260,6 @@ fn main() -> Result<()> {
         Commands::Drift(args) => commands::drift::run(args),
         Commands::Base(args) => commands::base::run(args),
         Commands::Containerfile(args) => commands::containerfile::run(args),
+        Commands::Local(args) => commands::local::run(args, &plan),
     }
 }
