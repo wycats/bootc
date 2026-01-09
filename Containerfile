@@ -277,67 +277,31 @@ COPY skel/.config/containers/toolbox.conf /etc/skel/.config/containers/toolbox.c
 # === HOST_SHIMS (managed by bkt) ===
 RUN set -eu; \
     mkdir -p /usr/etc/skel/.local/toolbox/shims /usr/etc/skel/.local/bin; \
-    \
-    cat > /usr/etc/skel/.local/toolbox/shims/bootc <<'SHIMEOF'
-#!/bin/bash
-exec flatpak-spawn --host bootc "$@"
-SHIMEOF
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/bootc; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBib290YyAiJEAiCg==' | base64 -d > /usr/etc/skel/.local/toolbox/shims/bootc && \
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/bootc && \
     ln -sf ../toolbox/shims/bootc /usr/etc/skel/.local/bin/bootc; \
-    \
-    cat > /usr/etc/skel/.local/toolbox/shims/docker <<'SHIMEOF'
-#!/bin/bash
-exec flatpak-spawn --host podman "$@"
-SHIMEOF
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/docker; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBwb2RtYW4gIiRAIgo=' | base64 -d > /usr/etc/skel/.local/toolbox/shims/docker && \
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/docker && \
     ln -sf ../toolbox/shims/docker /usr/etc/skel/.local/bin/docker; \
-    \
-    cat > /usr/etc/skel/.local/toolbox/shims/flatpak <<'SHIMEOF'
-#!/bin/bash
-exec flatpak-spawn --host flatpak "$@"
-SHIMEOF
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/flatpak; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBmbGF0cGFrICIkQCIK' | base64 -d > /usr/etc/skel/.local/toolbox/shims/flatpak && \
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/flatpak && \
     ln -sf ../toolbox/shims/flatpak /usr/etc/skel/.local/bin/flatpak; \
-    \
-    cat > /usr/etc/skel/.local/toolbox/shims/journalctl <<'SHIMEOF'
-#!/bin/bash
-exec flatpak-spawn --host journalctl "$@"
-SHIMEOF
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/journalctl; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBqb3VybmFsY3RsICIkQCIK' | base64 -d > /usr/etc/skel/.local/toolbox/shims/journalctl && \
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/journalctl && \
     ln -sf ../toolbox/shims/journalctl /usr/etc/skel/.local/bin/journalctl; \
-    \
-    cat > /usr/etc/skel/.local/toolbox/shims/podman <<'SHIMEOF'
-#!/bin/bash
-exec flatpak-spawn --host podman "$@"
-SHIMEOF
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/podman; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBwb2RtYW4gIiRAIgo=' | base64 -d > /usr/etc/skel/.local/toolbox/shims/podman && \
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/podman && \
     ln -sf ../toolbox/shims/podman /usr/etc/skel/.local/bin/podman; \
-    \
-    cat > /usr/etc/skel/.local/toolbox/shims/rpm-ostree <<'SHIMEOF'
-#!/bin/bash
-exec flatpak-spawn --host rpm-ostree "$@"
-SHIMEOF
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/rpm-ostree; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBycG0tb3N0cmVlICIkQCIK' | base64 -d > /usr/etc/skel/.local/toolbox/shims/rpm-ostree && \
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/rpm-ostree && \
     ln -sf ../toolbox/shims/rpm-ostree /usr/etc/skel/.local/bin/rpm-ostree; \
-    \
-    cat > /usr/etc/skel/.local/toolbox/shims/systemctl <<'SHIMEOF'
-#!/bin/bash
-exec flatpak-spawn --host systemctl "$@"
-SHIMEOF
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/systemctl; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBzeXN0ZW1jdGwgIiRAIgo=' | base64 -d > /usr/etc/skel/.local/toolbox/shims/systemctl && \
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/systemctl && \
     ln -sf ../toolbox/shims/systemctl /usr/etc/skel/.local/bin/systemctl; \
-    \
-    cat > /usr/etc/skel/.local/toolbox/shims/test-shim <<'SHIMEOF'
-#!/bin/bash
-exec flatpak-spawn --host test-shim "$@"
-SHIMEOF
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/test-shim; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCB0ZXN0LXNoaW0gIiRAIgo=' | base64 -d > /usr/etc/skel/.local/toolbox/shims/test-shim && \
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/test-shim && \
     ln -sf ../toolbox/shims/test-shim /usr/etc/skel/.local/bin/test-shim; \
-    \
-    cat > /usr/etc/skel/.local/toolbox/shims/ujust <<'SHIMEOF'
-#!/bin/bash
-exec flatpak-spawn --host ujust "$@"
-SHIMEOF
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/ujust; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCB1anVzdCAiJEAiCg==' | base64 -d > /usr/etc/skel/.local/toolbox/shims/ujust && \
+    chmod 0755 /usr/etc/skel/.local/toolbox/shims/ujust && \
     ln -sf ../toolbox/shims/ujust /usr/etc/skel/.local/bin/ujust
 # === END HOST_SHIMS ===
