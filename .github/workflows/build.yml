@@ -129,6 +129,7 @@ jobs:
           } > "${DIGEST_FILE}"
 
       - name: Create PR for digest update
+        id: create-digest-pr
         if: steps.check.outputs.upstream_changed == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         uses: peter-evans/create-pull-request@v7
         with:
@@ -143,6 +144,14 @@ jobs:
             **Upstream digest:** `${{ steps.check.outputs.upstream_digest }}`
           branch: chore/bump-bazzite-digest
           delete-branch: true
+
+      - name: Enable auto-merge for digest PR
+        if: steps.create-digest-pr.outputs.pull-request-number
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr merge ${{ steps.create-digest-pr.outputs.pull-request-number }} --auto --squash || \
+            echo "::warning::Auto-merge not available - PR requires manual merge"
 
   check-getnf:
     runs-on: ubuntu-latest
@@ -228,6 +237,7 @@ jobs:
           echo "${{ steps.check.outputs.getnf_sha }}" > "${GETNF_SHA256_FILE}"
 
       - name: Create PR for getnf update
+        id: create-getnf-pr
         if: steps.check.outputs.getnf_changed == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         uses: peter-evans/create-pull-request@v7
         with:
@@ -244,6 +254,14 @@ jobs:
             **SHA256:** `${{ steps.check.outputs.getnf_sha }}`
           branch: chore/bump-getnf
           delete-branch: true
+
+      - name: Enable auto-merge for getnf PR
+        if: steps.create-getnf-pr.outputs.pull-request-number
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr merge ${{ steps.create-getnf-pr.outputs.pull-request-number }} --auto --squash || \
+            echo "::warning::Auto-merge not available - PR requires manual merge"
 
   nightly:
     runs-on: ubuntu-latest
