@@ -18,6 +18,7 @@ on:
 permissions:
   contents: write
   packages: write
+  pull-requests: write
 
 concurrency:
   group: build-and-push-${{ github.ref }}
@@ -33,6 +34,36 @@ env:
   GETNF_SHA256_FILE: upstream/getnf.sha256
 
 jobs:
+  # Run the same Rust checks as CI to ensure build doesn't fail on compilation
+  rust-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: bkt
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bkt -> target
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run Clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Run tests
+        run: cargo test
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -84,12 +115,16 @@ jobs:
             echo "upstream_changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Update digest file (commit)
+      - name: Update digest file (create PR)
         if: steps.check.outputs.upstream_changed == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
+          
+          branch_name="chore/bump-bazzite-digest-$(date +%Y%m%d-%H%M%S)"
+          
           mkdir -p "$(dirname "${DIGEST_FILE}")"
           {
             echo "# Updated automatically by GitHub Actions."
@@ -100,16 +135,33 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          git checkout -b "${branch_name}"
           git add "${DIGEST_FILE}"
-          git commit -m "chore(upstream): bump bazzite stable digest" || exit 0
-          for attempt in 1 2 3; do
-            git pull --rebase origin main || true
-            if git push; then
+          git commit -m "chore(upstream): bump bazzite stable digest" || {
+            if git diff --cached --quiet; then
+              echo "No changes to commit; skipping push and PR creation."
               exit 0
+            else
+              echo "git commit failed but there are staged changes; aborting."
+              exit 1
             fi
-            sleep 2
-          done
-          exit 1
+          }
+          git push origin "${branch_name}"
+          
+          # Create PR and enable auto-merge
+          pr_url=$(gh pr create \
+            --title "chore(upstream): bump bazzite stable digest" \
+            --body "Automated PR to update upstream bazzite digest.
+
+          This PR was created automatically by the build workflow when a new upstream image was detected.
+
+          **Upstream digest:** \`${{ steps.check.outputs.upstream_digest }}\`" \
+            --head "${branch_name}" \
+            --base main)
+          
+          echo "Created PR: ${pr_url}"
+          gh pr merge --auto --squash "${pr_url}" || echo "Auto-merge not available, PR requires manual merge"
 
   check-getnf:
     runs-on: ubuntu-latest
@@ -179,23 +231,66 @@ jobs:
             exit 0
           fi
 
-          mkdir -p "$(dirname "${GETNF_REF_FILE}")"
-          printf "%s\n" "$ref" > "${GETNF_REF_FILE}"
-          printf "%s\n" "$ver" > "${GETNF_VERSION_FILE}"
-          printf "%s\n" "$sha" > "${GETNF_SHA256_FILE}"
+          # Store version info for PR creation step (files written after branch checkout to avoid race condition)
+          echo "getnf_version=${ver}" >> "$GITHUB_OUTPUT"
+          echo "getnf_ref=${ref}" >> "$GITHUB_OUTPUT"
+          echo "getnf_sha=${sha}" >> "$GITHUB_OUTPUT"
 
+      - name: Create PR for getnf update
+        if: steps.check.outputs.getnf_changed == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          
+          ver="${{ steps.check.outputs.getnf_version }}"
+          branch_name="chore/bump-getnf-${ver}-$(date +%Y%m%d-%H%M%S)"
+          
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          git checkout -b "${branch_name}"
+          
+          # Recreate getnf files on the feature branch using outputs from the check step
+          echo "${{ steps.check.outputs.getnf_ref }}" > "${GETNF_REF_FILE}"
+          echo "${{ steps.check.outputs.getnf_version }}" > "${GETNF_VERSION_FILE}"
+          echo "${{ steps.check.outputs.getnf_sha256 }}" > "${GETNF_SHA256_FILE}"
+          
+          
+          # Recreate getnf files on the feature branch using outputs from the check step
+          mkdir -p "$(dirname "${GETNF_REF_FILE}")"
+          echo "${{ steps.check.outputs.getnf_ref }}" > "${GETNF_REF_FILE}"
+          echo "${{ steps.check.outputs.getnf_version }}" > "${GETNF_VERSION_FILE}"
+          echo "${{ steps.check.outputs.getnf_sha }}" > "${GETNF_SHA256_FILE}"
+          
           git add "${GETNF_REF_FILE}" "${GETNF_VERSION_FILE}" "${GETNF_SHA256_FILE}"
-          git commit -m "chore(upstream): bump getnf (${ver})" || exit 0
-          for attempt in 1 2 3; do
-            git pull --rebase origin main || true
-            if git push; then
+          git commit -m "chore(upstream): bump getnf (${ver})" || {
+            if git diff --cached --quiet; then
+              echo "No changes to commit for getnf update; skipping push and PR creation."
               exit 0
+            else
+              echo "git commit failed but there are staged changes; aborting."
+              exit 1
             fi
-            sleep 2
-          done
-          exit 1
+          }
+          git push origin "${branch_name}"
+          
+          # Create PR and enable auto-merge
+          pr_url=$(gh pr create \
+            --title "chore(upstream): bump getnf (${ver})" \
+            --body "Automated PR to update getnf upstream script.
+
+          This PR was created automatically by the build workflow when a new getnf version was detected.
+
+          **Version:** \`${ver}\`
+          **Ref:** \`${{ steps.check.outputs.getnf_ref }}\`
+          **SHA256:** \`${{ steps.check.outputs.getnf_sha }}\`" \
+            --head "${branch_name}" \
+            --base main)
+          
+          echo "Created PR: ${pr_url}"
+          gh pr merge --auto --squash "${pr_url}" || echo "Auto-merge not available, PR requires manual merge"
 
   nightly:
     runs-on: ubuntu-latest
@@ -219,7 +314,7 @@ jobs:
           fi
 
   build:
-    needs: [check-upstream, check-getnf, nightly]
+    needs: [rust-checks, lint, check-upstream, check-getnf, nightly]
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'push' ||
