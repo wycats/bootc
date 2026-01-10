@@ -122,9 +122,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          
+
           branch_name="chore/bump-bazzite-digest-$(date +%Y%m%d-%H%M%S)"
-          
+
           mkdir -p "$(dirname "${DIGEST_FILE}")"
           {
             echo "# Updated automatically by GitHub Actions."
@@ -135,7 +135,7 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
+
           git checkout -b "${branch_name}"
           git add "${DIGEST_FILE}"
           git commit -m "chore(upstream): bump bazzite stable digest" || {
@@ -148,9 +148,9 @@ jobs:
             fi
           }
           git push origin "${branch_name}"
-          
-          # Create PR and enable auto-merge
-          pr_url=$(gh pr create \
+
+          # Create PR and enable auto-merge (non-fatal - don't block build if PR creation fails)
+          if pr_url=$(gh pr create \
             --title "chore(upstream): bump bazzite stable digest" \
             --body "Automated PR to update upstream bazzite digest.
 
@@ -158,10 +158,13 @@ jobs:
 
           **Upstream digest:** \`${{ steps.check.outputs.upstream_digest }}\`" \
             --head "${branch_name}" \
-            --base main)
-          
-          echo "Created PR: ${pr_url}"
-          gh pr merge --auto --squash "${pr_url}" || echo "Auto-merge not available, PR requires manual merge"
+            --base main 2>&1); then
+            echo "Created PR: ${pr_url}"
+            gh pr merge --auto --squash "${pr_url}" || echo "Auto-merge not available, PR requires manual merge"
+          else
+            echo "::warning::Failed to create PR: ${pr_url}"
+            echo "Branch ${branch_name} was pushed - please create PR manually if needed"
+          fi
 
   check-getnf:
     runs-on: ubuntu-latest
@@ -243,27 +246,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          
+
           ver="${{ steps.check.outputs.getnf_version }}"
           branch_name="chore/bump-getnf-${ver}-$(date +%Y%m%d-%H%M%S)"
-          
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
+
           git checkout -b "${branch_name}"
-          
+
           # Recreate getnf files on the feature branch using outputs from the check step
           echo "${{ steps.check.outputs.getnf_ref }}" > "${GETNF_REF_FILE}"
           echo "${{ steps.check.outputs.getnf_version }}" > "${GETNF_VERSION_FILE}"
           echo "${{ steps.check.outputs.getnf_sha256 }}" > "${GETNF_SHA256_FILE}"
-          
-          
+
+
           # Recreate getnf files on the feature branch using outputs from the check step
           mkdir -p "$(dirname "${GETNF_REF_FILE}")"
           echo "${{ steps.check.outputs.getnf_ref }}" > "${GETNF_REF_FILE}"
           echo "${{ steps.check.outputs.getnf_version }}" > "${GETNF_VERSION_FILE}"
           echo "${{ steps.check.outputs.getnf_sha }}" > "${GETNF_SHA256_FILE}"
-          
+
           git add "${GETNF_REF_FILE}" "${GETNF_VERSION_FILE}" "${GETNF_SHA256_FILE}"
           git commit -m "chore(upstream): bump getnf (${ver})" || {
             if git diff --cached --quiet; then
@@ -275,9 +278,9 @@ jobs:
             fi
           }
           git push origin "${branch_name}"
-          
-          # Create PR and enable auto-merge
-          pr_url=$(gh pr create \
+
+          # Create PR and enable auto-merge (non-fatal - don't block build if PR creation fails)
+          if pr_url=$(gh pr create \
             --title "chore(upstream): bump getnf (${ver})" \
             --body "Automated PR to update getnf upstream script.
 
@@ -287,10 +290,13 @@ jobs:
           **Ref:** \`${{ steps.check.outputs.getnf_ref }}\`
           **SHA256:** \`${{ steps.check.outputs.getnf_sha }}\`" \
             --head "${branch_name}" \
-            --base main)
-          
-          echo "Created PR: ${pr_url}"
-          gh pr merge --auto --squash "${pr_url}" || echo "Auto-merge not available, PR requires manual merge"
+            --base main 2>&1); then
+            echo "Created PR: ${pr_url}"
+            gh pr merge --auto --squash "${pr_url}" || echo "Auto-merge not available, PR requires manual merge"
+          else
+            echo "::warning::Failed to create PR: ${pr_url}"
+            echo "Branch ${branch_name} was pushed - please create PR manually if needed"
+          fi
 
   nightly:
     runs-on: ubuntu-latest
