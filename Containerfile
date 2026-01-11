@@ -274,9 +274,13 @@ COPY skel/.config/nushell/config.nu /etc/skel/.config/nushell/config.nu
 COPY skel/.config/nushell/env.nu /etc/skel/.config/nushell/env.nu
 COPY skel/.config/containers/toolbox.conf /etc/skel/.config/containers/toolbox.conf
 
+# Toolbox-specific scripts (not host shims, but scripts that run inside toolbox)
+COPY --chmod=0755 skel/.local/toolbox/bin/code /etc/skel/.local/toolbox/bin/code
+
 # === HOST_SHIMS (managed by bkt) ===
 RUN set -eu; \
-    mkdir -p /usr/etc/skel/.local/toolbox/shims /usr/etc/skel/.local/bin; \
+    mkdir -p /usr/etc/skel/.local/toolbox/shims /usr/etc/skel/.local/toolbox/bin /usr/etc/skel/.local/bin; \
+    ln -sf ../toolbox/bin/code /usr/etc/skel/.local/bin/code; \
     echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBib290YyAiJEAiCg==' | base64 -d > /usr/etc/skel/.local/toolbox/shims/bootc && \
     chmod 0755 /usr/etc/skel/.local/toolbox/shims/bootc && \
     ln -sf ../toolbox/shims/bootc /usr/etc/skel/.local/bin/bootc; \

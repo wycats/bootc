@@ -114,7 +114,11 @@ impl PreflightResult {
             name: name.to_string(),
             passed: false,
             message: message.to_string(),
-            fix_hint: Some(fix_hint.to_string()),
+            fix_hint: if fix_hint.trim().is_empty() {
+                None
+            } else {
+                Some(fix_hint.to_string())
+            },
         }
     }
 }
@@ -253,11 +257,7 @@ fn check_repo_config() -> PreflightResult {
         Ok(config) => {
             PreflightResult::pass("repo.json", &format!("{}/{}", config.owner, config.name))
         }
-        Err(_) => PreflightResult::fail(
-            "repo.json",
-            "Repository config not found at /usr/share/bootc/repo.json",
-            "Ensure bkt is running from a properly built bootc image",
-        ),
+        Err(e) => PreflightResult::fail("repo.json", &e.to_string(), ""),
     }
 }
 
