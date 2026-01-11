@@ -3,11 +3,6 @@ name: build-and-push
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - upstream/bazzite-stable.digest
-      - upstream/getnf.ref
-      - upstream/getnf.version
-      - upstream/getnf.sha256
   schedule:
     # Hourly cheap poll of upstream digest
     - cron: "0 * * * *"
@@ -21,17 +16,13 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: build-and-push-${{ github.ref }}
-  # Let manual/push runs cancel anything in-flight, but don't let the hourly
-  # scheduled runs cancel a manual build-and-push.
-  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+  # Ensure we don't pile up scheduled builds (they can take a while).
+  # This keeps only one build-and-push run in flight per branch.
+  group: build-and-push-${{ github.ref_name }}
+  cancel-in-progress: true
 
 env:
   BASE_IMAGE: ghcr.io/ublue-os/bazzite:stable
-  DIGEST_FILE: upstream/bazzite-stable.digest
-  GETNF_REF_FILE: upstream/getnf.ref
-  GETNF_VERSION_FILE: upstream/getnf.version
-  GETNF_SHA256_FILE: upstream/getnf.sha256
 
 jobs:
   # Run the same Rust checks as CI to ensure build doesn't fail on compilation
@@ -77,7 +68,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       upstream_changed: ${{ steps.check.outputs.upstream_changed }}
-      force_rebuild: ${{ steps.check.outputs.force_rebuild }}
       upstream_digest: ${{ steps.check.outputs.upstream_digest }}
     steps:
       - name: Checkout
@@ -89,7 +79,7 @@ jobs:
       - name: Install skopeo
         run: |
           sudo apt-get update
-          sudo apt-get install -y skopeo
+          sudo apt-get install -y skopeo jq
 
       - name: Check upstream digest
         id: check
@@ -97,171 +87,101 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Nightly forced rebuild is determined by a separate job (see below).
-          force_rebuild=false
-
           upstream_digest="$(skopeo inspect --format '{{.Digest}}' "docker://${BASE_IMAGE}")"
           echo "upstream_digest=${upstream_digest}" >> "$GITHUB_OUTPUT"
-          echo "force_rebuild=${force_rebuild}" >> "$GITHUB_OUTPUT"
 
-          current_digest=""
-          if [[ -f "${DIGEST_FILE}" ]]; then
-            current_digest="$(grep -Eo '^sha256:[0-9a-f]{64}$' "${DIGEST_FILE}" | tail -n 1 || true)"
+          # Compare against the last published image (if available). We embed
+          # the last seen upstream digest as an image label.
+          last_seen=""
+          if skopeo inspect "docker://ghcr.io/${GITHUB_REPOSITORY}:latest" >/tmp/current.json 2>/dev/null; then
+            last_seen="$(jq -r '.Labels["org.wycats.bootc.base.digest"] // empty' </tmp/current.json)"
           fi
 
-          if [[ "${upstream_digest}" != "${current_digest}" ]]; then
+          if [[ -z "${last_seen}" || "${upstream_digest}" != "${last_seen}" ]]; then
             echo "upstream_changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "upstream_changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Update digest file
-        if: steps.check.outputs.upstream_changed == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$(dirname "${DIGEST_FILE}")"
-          {
-            echo "# Updated automatically by GitHub Actions."
-            echo "# This is the last-seen digest for ${BASE_IMAGE}"
-            echo "# Format: sha256:..."
-            echo "${{ steps.check.outputs.upstream_digest }}"
-          } > "${DIGEST_FILE}"
-
-      - name: Create PR for digest update
-        id: create-digest-pr
-        if: steps.check.outputs.upstream_changed == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-        uses: peter-evans/create-pull-request@v7
-        with:
-          token: ${{ github.token }}
-          commit-message: "chore(upstream): bump bazzite stable digest"
-          title: "chore(upstream): bump bazzite stable digest"
-          body: |
-            Automated PR to update upstream bazzite digest.
-
-            This PR was created automatically by the build workflow when a new upstream image was detected.
-
-            **Upstream digest:** `${{ steps.check.outputs.upstream_digest }}`
-          branch: chore/bump-bazzite-digest
-          delete-branch: true
-
-      - name: Enable auto-merge for digest PR
-        if: steps.create-digest-pr.outputs.pull-request-number
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh pr merge ${{ steps.create-digest-pr.outputs.pull-request-number }} --auto --squash || \
-            echo "::warning::Auto-merge not available - PR requires manual merge"
-
-  check-getnf:
+  validate-manifests:
+    name: Validate manifests
     runs-on: ubuntu-latest
-    outputs:
-      getnf_changed: ${{ steps.check.outputs.getnf_changed }}
+    timeout-minutes: 10
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
 
-      - name: Install jq
+      - name: Validate JSON syntax
         run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
+          echo "Checking JSON syntax..."
+          for manifest in manifests/*.json; do
+            echo "  → $manifest"
+            jq empty "$manifest" || exit 1
+          done
+          echo "✓ All manifests have valid JSON syntax"
 
-      - name: Check getnf upstream script
-        id: check
-        shell: bash
-        env:
-          RAW_URL: https://raw.githubusercontent.com/getnf/getnf
+      - name: Validate against schemas
         run: |
-          set -euo pipefail
+          npm install -g ajv-cli ajv-formats
 
-          curl_common=(
-            --fail
-            --silent
-            --show-error
-            --location
-            --retry 5
-            --retry-all-errors
-            --retry-delay 2
+          echo "Validating manifests against schemas..."
+
+          # Map manifests to their schemas
+          declare -A SCHEMA_MAP=(
+            ["manifests/flatpak-apps.json"]="schemas/flatpak-apps.schema.json"
+            ["manifests/flatpak-remotes.json"]="schemas/flatpak-remotes.schema.json"
+            ["manifests/gnome-extensions.json"]="schemas/gnome-extensions.schema.json"
+            ["manifests/gsettings.json"]="schemas/gsettings.schema.json"
+            ["manifests/host-shims.json"]="schemas/host-shims.schema.json"
           )
 
-          # Resolve the moving branch to an immutable commit SHA so the build stays reproducible.
-          # Pin to an immutable commit SHA so builds don't break when upstream moves.
-          ref="$(curl "${curl_common[@]}" -H 'Accept: application/vnd.github+json' https://api.github.com/repos/getnf/getnf/commits/main | jq -r .sha)"
-          url="${RAW_URL}/${ref}/getnf"
+          for manifest in "${!SCHEMA_MAP[@]}"; do
+            schema="${SCHEMA_MAP[$manifest]}"
+            echo "  → $manifest against $schema"
+            ajv validate -s "$schema" -d "$manifest" --spec=draft2020 -c ajv-formats || exit 1
+          done
 
-          # Download to a temp file instead of a variable to preserve the trailing
-          # newline. Command substitution strips trailing newlines, which would
-          # produce a different sha256 than what the Containerfile downloads.
-          tmpfile="$(mktemp)"
-          trap 'rm -f "$tmpfile"' EXIT
-          curl "${curl_common[@]}" "$url" -o "$tmpfile"
-          sha="$(sha256sum "$tmpfile" | cut -d" " -f1)"
-          ver="$(grep -E "^readonly VERSION=\"" "$tmpfile" | head -n1 | sed -E "s/^readonly VERSION=\"([^\"]+)\"/\1/" || true)"
-          ver="${ver:-unknown}"
+          echo "✓ All manifests are valid"
 
-          current_sha=""
-          if [[ -f "${GETNF_SHA256_FILE}" ]]; then
-            current_sha="$(tr -d "\n" < "${GETNF_SHA256_FILE}" || true)"
-          fi
+  check-schemas-current:
+    name: Check schemas are current
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: bkt
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-          if [[ "${sha}" != "${current_sha}" ]]; then
-            echo "getnf_changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "getnf_changed=false" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-          if [[ "${{ github.event_name }}" != "schedule" && "${{ github.event_name }}" != "workflow_dispatch" ]]; then
-            exit 0
-          fi
-
-          if [[ "${sha}" == "${current_sha}" ]]; then
-            exit 0
-          fi
-
-          # Store version info for PR creation step (files written after branch checkout to avoid race condition)
-          echo "getnf_version=${ver}" >> "$GITHUB_OUTPUT"
-          echo "getnf_ref=${ref}" >> "$GITHUB_OUTPUT"
-          echo "getnf_sha=${sha}" >> "$GITHUB_OUTPUT"
-
-      - name: Update getnf files
-        if: steps.check.outputs.getnf_changed == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$(dirname "${GETNF_REF_FILE}")"
-          echo "${{ steps.check.outputs.getnf_ref }}" > "${GETNF_REF_FILE}"
-          echo "${{ steps.check.outputs.getnf_version }}" > "${GETNF_VERSION_FILE}"
-          echo "${{ steps.check.outputs.getnf_sha }}" > "${GETNF_SHA256_FILE}"
-
-      - name: Create PR for getnf update
-        id: create-getnf-pr
-        if: steps.check.outputs.getnf_changed == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-        uses: peter-evans/create-pull-request@v7
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          token: ${{ github.token }}
-          commit-message: "chore(upstream): bump getnf (${{ steps.check.outputs.getnf_version }})"
-          title: "chore(upstream): bump getnf (${{ steps.check.outputs.getnf_version }})"
-          body: |
-            Automated PR to update getnf upstream script.
+          workspaces: bkt -> target
 
-            This PR was created automatically by the build workflow when a new getnf version was detected.
+      - name: Build bkt
+        run: cargo build --release
 
-            **Version:** `${{ steps.check.outputs.getnf_version }}`
-            **Ref:** `${{ steps.check.outputs.getnf_ref }}`
-            **SHA256:** `${{ steps.check.outputs.getnf_sha }}`
-          branch: chore/bump-getnf
-          delete-branch: true
-
-      - name: Enable auto-merge for getnf PR
-        if: steps.create-getnf-pr.outputs.pull-request-number
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Generate schemas
+        working-directory: .
         run: |
-          gh pr merge ${{ steps.create-getnf-pr.outputs.pull-request-number }} --auto --squash || \
-            echo "::warning::Auto-merge not available - PR requires manual merge"
+          mkdir -p /tmp/schemas-generated
+          ./bkt/target/release/bkt schema generate -o /tmp/schemas-generated
+
+      - name: Compare with committed schemas
+        working-directory: .
+        run: |
+          echo "Checking if committed schemas match generated schemas..."
+          if ! diff -r schemas /tmp/schemas-generated; then
+            echo ""
+            echo "::error::Committed schemas are out of sync with Rust types!"
+            echo "Run: cd bkt && cargo run -- schema generate -o ../schemas"
+            exit 1
+          fi
+          echo "✓ Schemas are up to date"
 
   nightly:
     runs-on: ubuntu-latest
@@ -285,13 +205,12 @@ jobs:
           fi
 
   build:
-    needs: [rust-checks, lint, check-upstream, check-getnf, nightly]
+    needs: [rust-checks, lint, validate-manifests, check-schemas-current, check-upstream, nightly]
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       needs.check-upstream.outputs.upstream_changed == 'true' ||
-      needs.check-getnf.outputs.getnf_changed == 'true' ||
       needs.nightly.outputs.force_rebuild == 'true'
     steps:
       - name: Checkout
@@ -357,7 +276,10 @@ jobs:
           file: Containerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            org.wycats.bootc.base.image=${{ env.BASE_IMAGE }}
+            org.wycats.bootc.base.digest=${{ needs.check-upstream.outputs.upstream_digest }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
