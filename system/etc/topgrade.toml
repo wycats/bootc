@@ -1,0 +1,11 @@
+# Custom topgrade configuration for this bootc image
+# This is merged with the user's config and other system configs.
+
+[commands]
+"Bootc Bootstrap" = "ujust bootc-bootstrap"
+"Check Drift" = "check-drift"
+
+[linux]
+# Ensure bootc is used for system updates
+# (Topgrade 14+ detects this, but we can be explicit or disable others)
+bootc = true

@@ -215,6 +215,9 @@ RUN chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/check-drif
 RUN mkdir -p /usr/share/ublue-os/just
 COPY ujust/60-custom.just /usr/share/ublue-os/just/60-custom.just
 
+# Integrated topgrade configuration
+COPY system/etc/topgrade.toml /etc/topgrade.toml
+
 # Optional: remote play / console mode (off by default; enabled via `ujust enable-remote-play`)
 RUN mkdir -p /usr/share/bootc-optional/remote-play/bin \
     /usr/share/bootc-optional/remote-play/systemd
