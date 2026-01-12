@@ -1,0 +1,16 @@
+pre-commit:
+  parallel: true
+  commands:
+    check-schemas:
+      glob: "bkt/src/**/*.rs"
+      run: |
+        cargo run -q --manifest-path bkt/Cargo.toml -- schema generate --output schemas
+        git diff --exit-code -- schemas
+
+    fmt:
+      glob: "bkt/**/*.rs"
+      run: cargo fmt --manifest-path bkt/Cargo.toml -- --check
+
+    clippy:
+      glob: "bkt/**/*.rs"
+      run: cargo clippy --manifest-path bkt/Cargo.toml -- -D warnings
