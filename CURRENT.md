@@ -376,6 +376,7 @@ The `topgrade` utility (used by Bazzite's `ujust update`) has no awareness of `b
 ### Solution
 
 Inject a custom configuration file (`/etc/topgrade.toml`) into the image that:
+
 1.  Enables `bootc` support explicitly.
 2.  Adds a custom step to run `ujust bootc-bootstrap` post-update.
 3.  Adds a custom step to run `check-drift`.
