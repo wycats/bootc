@@ -40,12 +40,13 @@ Phase 2 established the top half. Phase 3 closes the manifest→Containerfile lo
 | ID  | Item                                                   | Source    | Priority  | Status      |
 | --- | ------------------------------------------------------ | --------- | --------- | ----------- |
 | 1   | [Containerfile Auto-Generation](#1-containerfile-auto) | RFC-0002  | ✅ Done   | Completed   |
-| 2   | [Post-Reboot Automation](#2-post-reboot)               | Workflow  | 🔴 High   | Not Started |
+| 2   | [Post-Reboot Automation](#2-post-reboot)               | Workflow  | 🔴 High   | Completed   |
 | 3   | [Drift Visibility in Status](#3-drift-visibility)      | Workflow  | ✅ Done   | Completed   |
-| 4   | [Ephemeral Manifest](#4-ephemeral-manifest)            | RFC-0001  | 🟡 Medium | Not Started |
-| 5   | [Image-Time Configuration](#5-image-time-config)       | RFC-0004  | 🟡 Medium | Not Started |
+| 4   | [Ephemeral Manifest](#4-ephemeral-manifest)            | RFC-0001  | 🟡 Medium | Completed   |
+| 5   | [Image-Time Configuration](#5-image-time-config)       | RFC-0004  | 🟡 Medium | Partial     |
 | 6   | [RFC Audit & Cleanup](#6-rfc-audit)                    | Housekeep | ✅ Done   | Completed   |
 | 7   | [Changelog in Status](#7-changelog-in-status)          | RFC-0005  | 🟢 Low    | Not Started |
+| 8   | [Topgrade Integration](#8-topgrade-integration)        | Feature   | 🟡 Medium | Completed   |
 
 ---
 
@@ -146,7 +147,7 @@ The `sync_all_containerfile_sections()` function in `dnf.rs` is called during PR
 
 **Source:** Workflow gap  
 **Priority:** 🔴 High  
-**Status:** Not Started
+**Status:** Completed
 
 ### Problem
 
@@ -209,8 +210,8 @@ Options:
 - [x] Create `systemd/system/bootc-apply.service`
 - [x] Add to Containerfile installation
 - [x] Implement deployment tracking marker file (`scripts/bootc-apply`)
-- [x] Add `--now` flag to `bkt dnf sync` for apply-live (already implemented)
-- [ ] Test full reboot workflow
+- [x] Add `--now` flag to `bkt dnf sync` for apply-live
+- [x] Test full reboot workflow
 
 ### Acceptance Criteria
 
@@ -239,7 +240,7 @@ Implemented in PR #28. `bkt status` now shows:
 
 **Source:** RFC-0001  
 **Priority:** 🟡 Medium  
-**Status:** Not Started
+**Status:** Completed
 
 ### Problem
 
@@ -294,13 +295,13 @@ What if ephemeral changes conflict with committed changes (e.g., remove package 
 
 ### Deliverables
 
-- [ ] Create `bkt/src/manifest/ephemeral.rs`
-- [ ] Implement `EphemeralManifest` struct with boot_id tracking
-- [ ] Record `--local` changes to ephemeral.json
-- [ ] Implement `bkt local list` command
-- [ ] Implement `bkt local commit` command (creates PR from accumulated changes)
-- [ ] Implement `bkt local clear` command
-- [ ] Clear ephemeral manifest on reboot (boot_id mismatch)
+- [x] Create `bkt/src/manifest/ephemeral.rs`
+- [x] Implement `EphemeralManifest` struct with boot_id tracking
+- [x] Record `--local` changes to ephemeral.json
+- [x] Implement `bkt local list` command
+- [x] Implement `bkt local commit` command (creates PR from accumulated changes)
+- [x] Implement `bkt local clear` command
+- [x] Clear ephemeral manifest on reboot (boot_id mismatch)
 
 ### Acceptance Criteria
 
@@ -315,7 +316,7 @@ What if ephemeral changes conflict with committed changes (e.g., remove package 
 
 **Source:** RFC-0004  
 **Priority:** 🟡 Medium  
-**Status:** Not Started
+**Status:** Partial
 
 ### Problem
 
@@ -338,11 +339,11 @@ Implement `bkt admin` commands for image-time config:
 
 ### Deliverables
 
-- [ ] Review and update RFC-0004
+- [x] Review and update RFC-0004
 - [ ] Implement `bkt admin kargs` commands
-- [ ] Implement systemd unit management for image-time
-- [ ] Create manifest for managed units
-- [ ] Hook into Containerfile generation
+- [x] Implement systemd unit management for image-time
+- [x] Create manifest for managed units
+- [x] Hook into Containerfile generation
 
 ### Acceptance Criteria
 
@@ -361,6 +362,36 @@ Completed in PR #25. All RFC statuses now reflect implementation reality:
 - RFC-0005 through RFC-0009: Implemented
 - RFC-0010: Implemented (Transparent Delegation)
 - RFC-0011: Implemented (Testing Strategy)
+
+## 8. Topgrade Integration
+
+**Source:** Feature Request  
+**Priority:** 🟡 Medium  
+**Status:** Completed
+
+### Problem
+
+The `topgrade` utility (used by Bazzite's `ujust update`) has no awareness of `bkt` or `bootc` by default, leading to potential drift or missed updates.
+
+### Solution
+
+Inject a custom configuration file (`/etc/topgrade.toml`) into the image that:
+1.  Enables `bootc` support explicitly.
+2.  Adds a custom step to run `ujust bootc-bootstrap` post-update.
+3.  Adds a custom step to run `check-drift`.
+
+### Deliverables
+
+- [x] Create `system/etc/topgrade.toml`
+- [x] Add TOML file to Containerfile
+- [x] Create `ujust bootc-bootstrap` recipe
+- [x] Verify integration via `topgrade` dry-run
+
+### Acceptance Criteria
+
+- `ujust update` runs `bootc upgrade`
+- `ujust update` runs `bootc-bootstrap`
+- `ujust update` checks for drift
 
 ---
 
