@@ -1,0 +1,72 @@
+#!/bin/bash
+set -e
+
+# VS Code wrapper for toolbox containers
+#
+# When run inside a toolbox, launches VS Code on the host and attaches it
+# to this container using the Remote - Containers extension.
+#
+# Features:
+# - Handles both files and folders
+# - Passes through flags like --wait
+# - Falls back to normal invocation outside containers
+
+# 1. Root Check
+# Strictly refuse to run as root.
+if [ "$(id -u)" -eq 0 ]; then
+    echo "Refusing to launch VS Code as root. Please run as your regular user." >&2
+    exit 1
+fi
+
+# 2. Argument Parsing
+# We separate flags (like --wait) from the target file/folder.
+args=()
+target=""
+
+for arg in "$@"; do
+    if [[ "$arg" == -* ]]; then
+        args+=("$arg")
+    elif [ -z "$target" ]; then
+        target="$arg"
+    else
+        # If we already have a target, pass extra args through
+        args+=("$arg")
+    fi
+done
+
+# Default to current directory if no target given
+if [ -z "$target" ]; then
+    target="."
+fi
+
+# 3. Container Logic
+if [ -f "/run/.containerenv" ]; then
+    # Parse container name safely without sourcing
+    name=$(sed -n 's/^name="\(.*\)"$/\1/p' /run/.containerenv)
+
+    # Hex encode the name for the URI
+    hex_name=$(printf "%s" "$name" | od -A n -t x1 | tr -d ' \n')
+
+    # Resolve absolute path
+    abs_path=$(readlink -f "$target")
+
+    # Determine URI type (file vs folder)
+    if [ -d "$abs_path" ]; then
+        uri_flag="--folder-uri"
+    else
+        uri_flag="--file-uri"
+    fi
+
+    remote_uri="vscode-remote://attached-container+${hex_name}${abs_path}"
+
+    # Force the correct D-Bus address for the user's session.
+    uid=$(id -u)
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus"
+
+    # Execute using absolute path to the host's VS Code
+    exec /usr/bin/flatpak-spawn --host /usr/bin/code "${args[@]}" "$uri_flag" "$remote_uri"
+
+else
+    # Not in a container? Just run code normally.
+    exec /usr/bin/code "${args[@]}" "$target"
+fi

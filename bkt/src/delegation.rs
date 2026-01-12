@@ -88,6 +88,9 @@ pub fn maybe_delegate(
 /// Re-executes the entire bkt invocation on the host, passing through all
 /// arguments unchanged. Sets BKT_DELEGATED=1 to prevent recursion.
 ///
+/// Uses the absolute path /usr/bin/bkt to avoid PATH shadowing from
+/// development copies in ~/.local/bin or ~/.cargo/bin.
+///
 /// This function never returns on success (the process is replaced).
 fn delegate_to_host() -> Result<()> {
     Output::info("→ Delegating to host via flatpak-spawn...");
@@ -95,7 +98,7 @@ fn delegate_to_host() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let status = std::process::Command::new("flatpak-spawn")
         .arg("--host")
-        .arg("bkt")
+        .arg("/usr/bin/bkt") // Absolute path avoids PATH shadowing
         .args(&args[1..]) // Skip argv[0] (the current binary path)
         .env("BKT_DELEGATED", "1") // Prevent recursion
         .status()

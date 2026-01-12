@@ -1,6 +1,7 @@
 {
   "$schema": "https://wycats.github.io/bootc/host-shims.schema.json",
   "shims": [
+    { "name": "bkt" },
     { "name": "bootc" },
     { "name": "rpm-ostree" },
     { "name": "systemctl" },
