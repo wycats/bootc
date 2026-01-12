@@ -384,8 +384,9 @@ fn apply_flatpak_changes(
                 let app = FlatpakApp {
                     id: change.identifier.clone(),
                     remote,
-                    scope,
-                };
+                    scope,                    branch: None,
+                    commit: None,
+                    overrides: None,                };
                 manifest.upsert(app);
             }
             ChangeAction::Remove => {
@@ -407,8 +408,9 @@ fn apply_flatpak_changes(
                 let app = FlatpakApp {
                     id: change.identifier.clone(),
                     remote,
-                    scope,
-                };
+                    scope,                    branch: None,
+                    commit: None,
+                    overrides: None,                };
                 manifest.upsert(app);
             }
         }

@@ -47,6 +47,15 @@ pub struct FlatpakApp {
     pub remote: String,
     /// Installation scope
     pub scope: FlatpakScope,
+    /// Branch (e.g., "stable", "1.2")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// Commit hash
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    /// Overrides (e.g. "--filesystem=home")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overrides: Option<Vec<String>>,
 }
 
 /// The flatpak-apps.json manifest.
@@ -190,6 +199,9 @@ mod tests {
             id: id.to_string(),
             remote: "flathub".to_string(),
             scope: FlatpakScope::System,
+            branch: None,
+            commit: None,
+            overrides: None,
         }
     }
 
@@ -198,6 +210,9 @@ mod tests {
             id: id.to_string(),
             remote: "flathub".to_string(),
             scope: FlatpakScope::User,
+            branch: None,
+            commit: None,
+            overrides: None,
         }
     }
 

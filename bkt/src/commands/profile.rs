@@ -232,7 +232,11 @@ fn show_diff(section: Option<&str>) -> Result<()> {
         let manifest = GnomeExtensionsManifest::merged(&system, &user);
         let installed = get_installed_extensions()?;
 
-        let manifest_set: HashSet<String> = manifest.extensions.into_iter().collect();
+        let manifest_set: HashSet<String> = manifest
+            .extensions
+            .into_iter()
+            .map(|e| e.id().to_string())
+            .collect();
         let installed_set: HashSet<String> = installed.into_iter().collect();
 
         let in_manifest_not_installed: Vec<_> = manifest_set.difference(&installed_set).collect();
