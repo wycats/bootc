@@ -4,9 +4,33 @@
   "description": "A Flatpak application entry.",
   "type": "object",
   "properties": {
+    "branch": {
+      "description": "Branch (e.g., \"stable\", \"1.2\")",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "commit": {
+      "description": "Commit hash",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "id": {
       "description": "Application ID (e.g., \"org.gnome.Calculator\")",
       "type": "string"
+    },
+    "overrides": {
+      "description": "Overrides (e.g. \"--filesystem=home\")",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
     },
     "remote": {
       "description": "Remote name (e.g., \"flathub\")",
