@@ -352,18 +352,18 @@ pub fn run(args: StatusArgs) -> Result<()> {
         let merged = GnomeExtensionsManifest::merged(&system, &user);
 
         let manifest_uuids: std::collections::HashSet<_> =
-            merged.extensions.iter().map(|s| s.as_str()).collect();
+            merged.extensions.iter().map(|s| s.id()).collect();
 
         let total = merged.extensions.len();
         let installed = merged
             .extensions
             .iter()
-            .filter(|u| is_extension_installed(u))
+            .filter(|u| is_extension_installed(u.id()))
             .count();
         let enabled = merged
             .extensions
             .iter()
-            .filter(|u| enabled_extensions.contains(*u))
+            .filter(|u| enabled_extensions.contains(u.id()))
             .count();
 
         // Find untracked extensions (enabled but not in manifest)

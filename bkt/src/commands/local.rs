@@ -385,6 +385,9 @@ fn apply_flatpak_changes(
                     id: change.identifier.clone(),
                     remote,
                     scope,
+                    branch: None,
+                    commit: None,
+                    overrides: None,
                 };
                 manifest.upsert(app);
             }
@@ -408,6 +411,9 @@ fn apply_flatpak_changes(
                     id: change.identifier.clone(),
                     remote,
                     scope,
+                    branch: None,
+                    commit: None,
+                    overrides: None,
                 };
                 manifest.upsert(app);
             }

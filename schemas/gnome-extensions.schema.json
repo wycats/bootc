@@ -11,14 +11,43 @@
       ]
     },
     "extensions": {
-      "description": "List of extension UUIDs (e.g., \"dash-to-dock@micxgx.gmail.com\")",
+      "description": "List of extension items, either string UUIDs or objects with state",
       "type": "array",
+      "default": [],
       "items": {
-        "type": "string"
+        "$ref": "#/$defs/ExtensionItem"
       }
     }
   },
-  "required": [
-    "extensions"
-  ]
+  "$defs": {
+    "ExtensionConfig": {
+      "description": "Detailed configuration for an extension.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "ExtensionItem": {
+      "description": "A GNOME extension entry in the manifest.\nCan be deserialized from either a plain string UUID or a structured object.",
+      "anyOf": [
+        {
+          "description": "Legacy format: Just the UUID (implies enabled = true)",
+          "type": "string"
+        },
+        {
+          "description": "Modern format: Object with state",
+          "$ref": "#/$defs/ExtensionConfig"
+        }
+      ]
+    }
+  }
 }

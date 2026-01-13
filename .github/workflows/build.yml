@@ -207,7 +207,15 @@ jobs:
           fi
 
   build:
-    needs: [rust-checks, lint, validate-manifests, check-schemas-current, check-upstream, nightly]
+    needs:
+      [
+        rust-checks,
+        lint,
+        validate-manifests,
+        check-schemas-current,
+        check-upstream,
+        nightly,
+      ]
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'push' ||

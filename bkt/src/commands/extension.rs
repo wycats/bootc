@@ -250,16 +250,25 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
                 );
                 Output::separator();
 
-                for uuid in &merged.extensions {
+                for item in &merged.extensions {
+                    let uuid = item.id();
                     let source = if user.contains(uuid) {
                         "user".yellow().to_string()
                     } else {
                         "system".dimmed().to_string()
                     };
                     let status = if is_enabled(uuid) {
-                        format!("{} enabled", "✓".green())
+                        if item.enabled() {
+                            format!("{} enabled", "✓".green())
+                        } else {
+                            format!("{} enabled (should be disabled)", "⚠".red())
+                        }
                     } else if is_installed(uuid) {
-                        format!("{} disabled", "○".yellow())
+                        if item.enabled() {
+                            format!("{} disabled", "○".yellow())
+                        } else {
+                            format!("{} disabled (config)", "○".dimmed())
+                        }
                     } else {
                         format!("{} not installed", "✗".red())
                     };
@@ -359,8 +368,10 @@ pub struct ExtensionSyncCommand;
 pub struct ExtensionSyncPlan {
     /// Extensions to enable.
     pub to_enable: Vec<ExtensionToSync>,
-    /// Extensions already enabled.
-    pub already_enabled: usize,
+    /// Extensions to disable (UUIDs).
+    pub to_disable: Vec<String>,
+    /// Extensions checked.
+    pub checked: usize,
 }
 
 impl Plannable for ExtensionSyncCommand {
@@ -373,27 +384,37 @@ impl Plannable for ExtensionSyncCommand {
         let merged = GnomeExtensionsManifest::merged(&system, &user);
 
         let mut to_enable = Vec::new();
-        let mut already_enabled = 0;
+        let mut to_disable = Vec::new();
+        let mut checked = 0;
 
-        for uuid in merged.extensions {
+        for item in merged.extensions {
+            let uuid = item.id().to_string();
+            let should_be_enabled = item.enabled();
+            checked += 1;
+
             if is_enabled(&uuid) {
-                already_enabled += 1;
-            } else if is_installed(&uuid) {
-                to_enable.push(ExtensionToSync {
-                    uuid,
-                    state: ExtensionState::Disabled,
-                });
-            } else {
-                to_enable.push(ExtensionToSync {
-                    uuid,
-                    state: ExtensionState::NotInstalled,
-                });
+                if !should_be_enabled {
+                    to_disable.push(uuid);
+                }
+            } else if should_be_enabled {
+                if is_installed(&uuid) {
+                    to_enable.push(ExtensionToSync {
+                        uuid,
+                        state: ExtensionState::Disabled,
+                    });
+                } else {
+                    to_enable.push(ExtensionToSync {
+                        uuid,
+                        state: ExtensionState::NotInstalled,
+                    });
+                }
             }
         }
 
         Ok(ExtensionSyncPlan {
             to_enable,
-            already_enabled,
+            to_disable,
+            checked,
         })
     }
 }
@@ -405,15 +426,17 @@ impl Plan for ExtensionSyncPlan {
             .iter()
             .filter(|e| matches!(e.state, ExtensionState::Disabled))
             .count();
-        let not_installed = self
+        let _not_installed = self
             .to_enable
             .iter()
             .filter(|e| matches!(e.state, ExtensionState::NotInstalled))
             .count();
 
         let mut summary = PlanSummary::new(format!(
-            "Extension Sync: {} to enable, {} already enabled, {} not installed",
-            installable, self.already_enabled, not_installed
+            "Extension Sync: {} to enable, {} to disable, {} checked",
+            installable,
+            self.to_disable.len(),
+            self.checked
         ));
 
         for ext in &self.to_enable {
@@ -432,6 +455,10 @@ impl Plan for ExtensionSyncPlan {
                     ));
                 }
             }
+        }
+
+        for uuid in &self.to_disable {
+            summary.add_operation(Operation::new(Verb::Disable, format!("extension:{}", uuid)));
         }
 
         summary
@@ -467,16 +494,40 @@ impl Plan for ExtensionSyncPlan {
             }
         }
 
+        for uuid in self.to_disable {
+            match disable_extension(&uuid) {
+                Ok(true) => {
+                    report.record_success(Verb::Disable, format!("extension:{}", uuid));
+                }
+                Ok(false) => {
+                    report.record_failure(
+                        Verb::Disable,
+                        format!("extension:{}", uuid),
+                        "gnome-extensions disable failed",
+                    );
+                }
+                Err(e) => {
+                    report.record_failure(
+                        Verb::Disable,
+                        format!("extension:{}", uuid),
+                        e.to_string(),
+                    );
+                }
+            }
+        }
+
         Ok(report)
     }
 
     fn is_empty(&self) -> bool {
-        // Empty if no extensions need enabling (ignore not-installed ones)
-        self.to_enable
+        // Empty if no extensions need enabling (ignore not-installed ones) AND nothing to disable
+        let to_enable_count = self
+            .to_enable
             .iter()
             .filter(|e| matches!(e.state, ExtensionState::Disabled))
-            .count()
-            == 0
+            .count();
+
+        to_enable_count == 0 && self.to_disable.is_empty()
     }
 }
 
@@ -500,11 +551,29 @@ fn get_enabled_extensions() -> Vec<String> {
     }
 }
 
+/// Get list of all installed GNOME extension UUIDs from the system.
+fn get_installed_extensions_list() -> Vec<String> {
+    let output = std::process::Command::new("gnome-extensions")
+        .arg("list")
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// An extension to capture (add to manifest).
 #[derive(Debug, Clone)]
 pub struct ExtensionToCapture {
     /// The extension UUID.
     pub uuid: String,
+    /// Whether the extension is enabled.
+    pub enabled: bool,
 }
 
 /// Command to capture enabled extensions to manifest.
@@ -522,8 +591,9 @@ impl Plannable for ExtensionCaptureCommand {
     type Plan = ExtensionCapturePlan;
 
     fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
-        // Get currently enabled extensions on the system
-        let enabled = get_enabled_extensions();
+        // Get all installed extensions and enabled ones
+        let installed = get_installed_extensions_list();
+        let enabled: std::collections::HashSet<_> = get_enabled_extensions().into_iter().collect();
 
         // Load manifests to see what's already tracked
         let system = GnomeExtensionsManifest::load_system()?;
@@ -533,11 +603,14 @@ impl Plannable for ExtensionCaptureCommand {
         let mut to_capture = Vec::new();
         let mut already_in_manifest = 0;
 
-        for uuid in enabled {
+        for uuid in installed {
             if merged.contains(&uuid) {
                 already_in_manifest += 1;
             } else {
-                to_capture.push(ExtensionToCapture { uuid });
+                to_capture.push(ExtensionToCapture {
+                    enabled: enabled.contains(&uuid),
+                    uuid,
+                });
             }
         }
 
@@ -560,10 +633,12 @@ impl Plan for ExtensionCapturePlan {
         ));
 
         for ext in &self.to_capture {
-            summary.add_operation(Operation::new(
-                Verb::Capture,
-                format!("extension:{}", ext.uuid),
-            ));
+            let desc = if ext.enabled {
+                format!("extension:{}", ext.uuid)
+            } else {
+                format!("extension:{} (disabled)", ext.uuid)
+            };
+            summary.add_operation(Operation::new(Verb::Capture, desc));
         }
 
         summary
@@ -576,8 +651,24 @@ impl Plan for ExtensionCapturePlan {
         let mut user = GnomeExtensionsManifest::load_user()?;
 
         for ext in self.to_capture {
-            if user.add(ext.uuid.clone()) {
-                report.record_success(Verb::Capture, format!("extension:{}", ext.uuid));
+            let item = if ext.enabled {
+                crate::manifest::extension::ExtensionItem::Uuid(ext.uuid.clone())
+            } else {
+                crate::manifest::extension::ExtensionItem::Object(
+                    crate::manifest::extension::ExtensionConfig {
+                        id: ext.uuid.clone(),
+                        enabled: false,
+                    },
+                )
+            };
+
+            if user.add(item) {
+                let desc = if ext.enabled {
+                    format!("extension:{}", ext.uuid)
+                } else {
+                    format!("extension:{} (disabled)", ext.uuid)
+                };
+                report.record_success(Verb::Capture, desc);
             } else {
                 // Should not happen since we checked in planning, but handle gracefully
                 report.record_failure(

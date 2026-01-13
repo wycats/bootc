@@ -138,6 +138,9 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
                     id: app_id.clone(),
                     remote: remote.clone(),
                     scope,
+                    branch: None,
+                    commit: None,
+                    overrides: None,
                 };
                 user.upsert(app.clone());
                 user.save_user()?;
@@ -170,6 +173,9 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
                     id: app_id.clone(),
                     remote: remote.clone(),
                     scope,
+                    branch: None,
+                    commit: None,
+                    overrides: None,
                 };
                 if install_flatpak(&app)? {
                     spinner.finish_success(format!("Installed {}", app_id));
@@ -189,6 +195,9 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
                     id: app_id.clone(),
                     remote: remote.clone(),
                     scope,
+                    branch: None,
+                    commit: None,
+                    overrides: None,
                 };
                 system_manifest.upsert(app_for_pr);
                 let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
@@ -505,12 +514,20 @@ pub struct InstalledFlatpak {
     pub id: String,
     /// The remote/origin (e.g., flathub)
     pub origin: String,
+    /// The branch (e.g. stable)
+    pub branch: String,
+    /// The commit hash
+    pub commit: String,
 }
 
 /// Get list of installed flatpaks from the system.
 fn get_installed_flatpaks() -> Vec<InstalledFlatpak> {
     let output = Command::new("flatpak")
-        .args(["list", "--app", "--columns=installation,application,origin"])
+        .args([
+            "list",
+            "--app",
+            "--columns=installation,application,origin,branch,commit",
+        ])
         .output();
 
     match output {
@@ -520,11 +537,14 @@ fn get_installed_flatpaks() -> Vec<InstalledFlatpak> {
 
             for line in stdout.lines() {
                 let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() >= 2 {
+                if parts.len() >= 4 {
+                    // At least installation, id, origin, branch
                     apps.push(InstalledFlatpak {
                         installation: parts.first().unwrap_or(&"system").to_string(),
                         id: parts.get(1).unwrap_or(&"").to_string(),
                         origin: parts.get(2).unwrap_or(&"flathub").to_string(),
+                        branch: parts.get(3).unwrap_or(&"stable").to_string(),
+                        commit: parts.get(4).unwrap_or(&"").to_string(),
                     });
                 }
             }
@@ -588,6 +608,13 @@ impl Plannable for FlatpakCaptureCommand {
                             flatpak.origin
                         },
                         scope,
+                        branch: Some(flatpak.branch),
+                        commit: if flatpak.commit.is_empty() {
+                            None
+                        } else {
+                            Some(flatpak.commit)
+                        },
+                        overrides: None,
                     },
                 });
             }
