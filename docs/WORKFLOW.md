@@ -51,11 +51,11 @@ git push
 
 ### What Gets Captured
 
-| Subsystem   | What's captured                |
-| ----------- | ------------------------------ |
-| `flatpak`   | User-installed Flatpak apps    |
-| `extension` | Enabled GNOME Shell extensions |
-| `dnf`       | rpm-ostree layered packages    |
+| Subsystem   | What's captured                                   |
+| ----------- | ------------------------------------------------- |
+| `flatpak`   | User-installed Flatpak apps (with pinned commits) |
+| `extension` | GNOME Shell extensions (enabled/disabled state)   |
+| `dnf`       | rpm-ostree layered packages                       |
 
 **Not auto-captured:**
 
