@@ -47,7 +47,7 @@ This directory contains declarative manifests for the bootc distribution.
 
 ### flatpak-apps.json
 
-**Purpose**: Flatpak applications to install on first boot.
+**Purpose**: Flatpak applications to install on first boot. Supports version pinning (branch/commit) and permission overrides.
 
 **Commands**:
 
@@ -61,7 +61,12 @@ This directory contains declarative manifests for the bootc distribution.
 
 ### gnome-extensions.json
 
-**Purpose**: GNOME Shell extensions to enable.
+**Purpose**: GNOME Shell extensions to manage. Supports both enabling and explicitly disabling extensions.
+
+**Format**:
+
+- String: `"uuid"` (implies enabled)
+- Object: `{ "id": "uuid", "enabled": false }`
 
 **Commands**:
 

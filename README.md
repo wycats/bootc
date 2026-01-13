@@ -132,6 +132,17 @@ bkt shim add nmcli
 └── upstream/                     # Pinned upstream versions
 ```
 
+## Development
+
+We use [Lefthook](https://github.com/evilmartians/lefthook) to manage git hooks for locally verifying formatting, linting, and schema synchronization.
+
+To set up your environment:
+
+1. Ensure `lefthook` is installed.
+2. Run `lefthook install` in the repository root.
+
+This ensures your commits remain compliant with CI checks.
+
 ## Documentation
 
 | Doc                               | Purpose                      |
