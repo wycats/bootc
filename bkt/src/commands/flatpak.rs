@@ -520,6 +520,41 @@ pub struct InstalledFlatpak {
     pub commit: String,
 }
 
+/// Parse flatpak list output into structured data.
+/// 
+/// This function accepts lines with as few as 2 columns (installation, id) and provides
+/// sensible defaults for missing columns:
+/// - origin: defaults to "flathub"
+/// - branch: defaults to "stable"
+/// - commit: defaults to empty string
+fn parse_flatpak_list(output: &str) -> Vec<InstalledFlatpak> {
+    let mut apps = Vec::new();
+
+    for line in output.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() >= 2 {
+            // At least installation and id
+            apps.push(InstalledFlatpak {
+                installation: parts.first().unwrap_or(&"system").to_string(),
+                id: parts.get(1).unwrap_or(&"").to_string(),
+                origin: parts
+                    .get(2)
+                    .map(|s| if s.is_empty() { "flathub" } else { s })
+                    .unwrap_or("flathub")
+                    .to_string(),
+                branch: parts
+                    .get(3)
+                    .map(|s| if s.is_empty() { "stable" } else { s })
+                    .unwrap_or("stable")
+                    .to_string(),
+                commit: parts.get(4).unwrap_or(&"").to_string(),
+            });
+        }
+    }
+
+    apps
+}
+
 /// Get list of installed flatpaks from the system.
 pub fn get_installed_flatpaks() -> Vec<InstalledFlatpak> {
     let output = Command::new("flatpak")
@@ -533,31 +568,7 @@ pub fn get_installed_flatpaks() -> Vec<InstalledFlatpak> {
     match output {
         Ok(o) if o.status.success() => {
             let stdout = String::from_utf8_lossy(&o.stdout);
-            let mut apps = Vec::new();
-
-            for line in stdout.lines() {
-                let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() >= 2 {
-                    // At least installation and id
-                    apps.push(InstalledFlatpak {
-                        installation: parts.first().unwrap_or(&"system").to_string(),
-                        id: parts.get(1).unwrap_or(&"").to_string(),
-                        origin: parts
-                            .get(2)
-                            .map(|s| if s.is_empty() { "flathub" } else { s })
-                            .unwrap_or("flathub")
-                            .to_string(),
-                        branch: parts
-                            .get(3)
-                            .map(|s| if s.is_empty() { "stable" } else { s })
-                            .unwrap_or("stable")
-                            .to_string(),
-                        commit: parts.get(4).unwrap_or(&"").to_string(),
-                    });
-                }
-            }
-
-            apps
+            parse_flatpak_list(&stdout)
         }
         _ => Vec::new(),
     }
@@ -676,5 +687,153 @@ impl Plan for FlatpakCapturePlan {
 
     fn is_empty(&self) -> bool {
         self.to_capture.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_flatpak_list_with_all_columns() {
+        let output = "system\torg.gnome.Calculator\tflathub\tstable\tabc123\n";
+        let apps = parse_flatpak_list(output);
+        
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].installation, "system");
+        assert_eq!(apps[0].id, "org.gnome.Calculator");
+        assert_eq!(apps[0].origin, "flathub");
+        assert_eq!(apps[0].branch, "stable");
+        assert_eq!(apps[0].commit, "abc123");
+    }
+
+    #[test]
+    fn test_parse_flatpak_list_with_minimum_columns() {
+        // Only installation and id
+        let output = "user\torg.mozilla.Firefox\n";
+        let apps = parse_flatpak_list(output);
+        
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].installation, "user");
+        assert_eq!(apps[0].id, "org.mozilla.Firefox");
+        assert_eq!(apps[0].origin, "flathub"); // default
+        assert_eq!(apps[0].branch, "stable");  // default
+        assert_eq!(apps[0].commit, "");        // default
+    }
+
+    #[test]
+    fn test_parse_flatpak_list_with_empty_origin() {
+        // Empty origin should default to "flathub"
+        let output = "system\torg.gnome.Epiphany\t\tstable\tdef456\n";
+        let apps = parse_flatpak_list(output);
+        
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].id, "org.gnome.Epiphany");
+        assert_eq!(apps[0].origin, "flathub"); // empty defaults to "flathub"
+        assert_eq!(apps[0].branch, "stable");
+        assert_eq!(apps[0].commit, "def456");
+    }
+
+    #[test]
+    fn test_parse_flatpak_list_with_empty_branch() {
+        // Empty branch should default to "stable"
+        let output = "system\tcom.example.App\tcustom-remote\t\tghi789\n";
+        let apps = parse_flatpak_list(output);
+        
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].id, "com.example.App");
+        assert_eq!(apps[0].origin, "custom-remote");
+        assert_eq!(apps[0].branch, "stable"); // empty defaults to "stable"
+        assert_eq!(apps[0].commit, "ghi789");
+    }
+
+    #[test]
+    fn test_parse_flatpak_list_with_three_columns() {
+        // installation, id, origin (no branch, no commit)
+        let output = "system\torg.kde.Kate\tflathub\n";
+        let apps = parse_flatpak_list(output);
+        
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].installation, "system");
+        assert_eq!(apps[0].id, "org.kde.Kate");
+        assert_eq!(apps[0].origin, "flathub");
+        assert_eq!(apps[0].branch, "stable"); // default
+        assert_eq!(apps[0].commit, "");       // default
+    }
+
+    #[test]
+    fn test_parse_flatpak_list_ignores_lines_with_one_column() {
+        // Lines with only 1 column should be ignored
+        let output = "system\n";
+        let apps = parse_flatpak_list(output);
+        
+        assert_eq!(apps.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_flatpak_list_ignores_empty_lines() {
+        let output = "\n\n";
+        let apps = parse_flatpak_list(output);
+        
+        assert_eq!(apps.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_flatpak_list_multiple_apps() {
+        let output = "system\torg.gnome.Calculator\tflathub\tstable\tabc123\nuser\torg.mozilla.Firefox\tflathub\n";
+        let apps = parse_flatpak_list(output);
+        
+        assert_eq!(apps.len(), 2);
+        
+        assert_eq!(apps[0].installation, "system");
+        assert_eq!(apps[0].id, "org.gnome.Calculator");
+        assert_eq!(apps[0].origin, "flathub");
+        assert_eq!(apps[0].branch, "stable");
+        assert_eq!(apps[0].commit, "abc123");
+        
+        assert_eq!(apps[1].installation, "user");
+        assert_eq!(apps[1].id, "org.mozilla.Firefox");
+        assert_eq!(apps[1].origin, "flathub");
+        assert_eq!(apps[1].branch, "stable"); // default
+        assert_eq!(apps[1].commit, "");       // default
+    }
+
+    #[test]
+    fn test_parse_flatpak_list_mixed_formats() {
+        // Simulates real-world scenario where some apps have all columns,
+        // some have missing columns due to various reasons
+        let output = concat!(
+            "system\torg.gnome.Calculator\tflathub\tstable\tabc123\n",
+            "user\torg.mozilla.Firefox\tflathub\n",
+            "system\tcom.valvesoftware.Steam\t\tstable\tdef456\n",
+            "user\torg.libreoffice.LibreOffice\tflathub\t\tghi789\n"
+        );
+        let apps = parse_flatpak_list(output);
+        
+        assert_eq!(apps.len(), 4);
+        
+        // Full columns
+        assert_eq!(apps[0].id, "org.gnome.Calculator");
+        assert_eq!(apps[0].origin, "flathub");
+        assert_eq!(apps[0].branch, "stable");
+        assert_eq!(apps[0].commit, "abc123");
+        
+        // Missing branch and commit
+        assert_eq!(apps[1].id, "org.mozilla.Firefox");
+        assert_eq!(apps[1].origin, "flathub");
+        assert_eq!(apps[1].branch, "stable"); // default
+        assert_eq!(apps[1].commit, "");       // default
+        
+        // Empty origin
+        assert_eq!(apps[2].id, "com.valvesoftware.Steam");
+        assert_eq!(apps[2].origin, "flathub"); // empty defaults to "flathub"
+        assert_eq!(apps[2].branch, "stable");
+        assert_eq!(apps[2].commit, "def456");
+        
+        // Empty branch
+        assert_eq!(apps[3].id, "org.libreoffice.LibreOffice");
+        assert_eq!(apps[3].origin, "flathub");
+        assert_eq!(apps[3].branch, "stable"); // empty defaults to "stable"
+        assert_eq!(apps[3].commit, "ghi789");
     }
 }
