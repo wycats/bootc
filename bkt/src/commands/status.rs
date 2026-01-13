@@ -22,6 +22,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use tracing::debug;
 
+use super::flatpak::get_installed_flatpaks;
+
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
 pub enum OutputFormat {
     /// Human-readable table output
@@ -210,22 +212,6 @@ fn get_os_status() -> Option<OsStatus> {
     })
 }
 
-/// Get list of installed flatpak app IDs
-fn get_installed_flatpaks() -> Vec<String> {
-    let output = Command::new("flatpak")
-        .args(["list", "--app", "--columns=application"])
-        .output();
-
-    match output {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
 /// Get list of enabled GNOME extension UUIDs
 fn get_enabled_extensions() -> Vec<String> {
     let output = Command::new("gnome-extensions")
@@ -308,7 +294,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     // Get installed flatpaks for drift detection (use HashSet for O(1) lookup)
     let installed_flatpaks: std::collections::HashSet<String> =
-        get_installed_flatpaks().into_iter().collect();
+        get_installed_flatpaks().into_iter().map(|f| f.id).collect();
 
     // Gather flatpak status
     let flatpak_status = {
