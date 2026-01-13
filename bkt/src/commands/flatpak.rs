@@ -521,7 +521,7 @@ pub struct InstalledFlatpak {
 }
 
 /// Get list of installed flatpaks from the system.
-fn get_installed_flatpaks() -> Vec<InstalledFlatpak> {
+pub fn get_installed_flatpaks() -> Vec<InstalledFlatpak> {
     let output = Command::new("flatpak")
         .args([
             "list",
@@ -537,13 +537,21 @@ fn get_installed_flatpaks() -> Vec<InstalledFlatpak> {
 
             for line in stdout.lines() {
                 let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() >= 4 {
-                    // At least installation, id, origin, branch
+                if parts.len() >= 2 {
+                    // At least installation and id
                     apps.push(InstalledFlatpak {
                         installation: parts.first().unwrap_or(&"system").to_string(),
                         id: parts.get(1).unwrap_or(&"").to_string(),
-                        origin: parts.get(2).unwrap_or(&"flathub").to_string(),
-                        branch: parts.get(3).unwrap_or(&"stable").to_string(),
+                        origin: parts
+                            .get(2)
+                            .map(|s| if s.is_empty() { "flathub" } else { s })
+                            .unwrap_or("flathub")
+                            .to_string(),
+                        branch: parts
+                            .get(3)
+                            .map(|s| if s.is_empty() { "stable" } else { s })
+                            .unwrap_or("stable")
+                            .to_string(),
                         commit: parts.get(4).unwrap_or(&"").to_string(),
                     });
                 }

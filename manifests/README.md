@@ -28,6 +28,7 @@ This directory contains declarative manifests for the bootc distribution.
 **Purpose**: System-level configuration baked into the image.
 
 **Includes**:
+
 - Kernel arguments (kargs)
 - Systemd unit states (enable/disable/mask)
 - SELinux booleans
