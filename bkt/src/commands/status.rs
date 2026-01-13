@@ -22,8 +22,10 @@ use std::path::PathBuf;
 use std::process::Command;
 use tracing::debug;
 
+use super::dnf::get_layered_packages;
 use super::extension::{get_enabled_extensions, is_installed as is_extension_installed};
 use super::flatpak::get_installed_flatpaks;
+use super::shim::get_installed_shims;
 
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
 pub enum OutputFormat {
@@ -182,17 +184,7 @@ fn get_os_status() -> Option<OsStatus> {
         checksum: s.get("checksum").and_then(|v| v.as_str()).map(String::from),
     });
 
-    // Get layered packages
-    let layered = booted
-        .get("requested-packages")
-        .or_else(|| booted.get("requested_packages"))
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
+    let layered = get_layered_packages();
 
     Some(OsStatus {
         image: booted
@@ -254,12 +246,6 @@ fn get_gsetting(schema: &str, key: &str) -> Option<String> {
         .ok()
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-}
-
-/// Get the shims directory.
-fn shims_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/home".to_string());
-    PathBuf::from(home).join(".local/bin")
 }
 
 pub fn run(args: StatusArgs) -> Result<()> {
@@ -373,12 +359,13 @@ pub fn run(args: StatusArgs) -> Result<()> {
         let user = ShimsManifest::load_user().unwrap_or_default();
         let merged = ShimsManifest::merged(&system, &user);
 
-        let shims_dir = shims_dir();
+        let installed_shims: std::collections::HashSet<String> =
+            get_installed_shims().into_iter().collect();
         let total = merged.shims.len();
         let synced = merged
             .shims
             .iter()
-            .filter(|s| shims_dir.join(&s.name).exists())
+            .filter(|s| installed_shims.contains(&s.name))
             .count();
 
         ShimStatus { total, synced }

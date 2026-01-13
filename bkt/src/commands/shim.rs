@@ -65,6 +65,27 @@ exec flatpak-spawn --host {quoted} "$@"
     ))
 }
 
+/// Get a list of shim names that are currently installed (exist as files in the shims directory).
+///
+/// This is useful for drift detection to compare what's on disk vs what's in the manifest.
+pub fn get_installed_shims() -> Vec<String> {
+    let shims_dir = ShimsManifest::shims_dir();
+    let mut installed = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(&shims_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file()
+                && let Some(name) = path.file_name() {
+                    installed.push(name.to_string_lossy().to_string());
+                }
+        }
+    }
+
+    installed.sort();
+    installed
+}
+
 /// Sync all shims from merged manifest to disk.
 fn sync_shims(dry_run: bool) -> Result<()> {
     let shims_dir = ShimsManifest::shims_dir();

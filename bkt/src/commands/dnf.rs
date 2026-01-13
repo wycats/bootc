@@ -1396,7 +1396,11 @@ impl Plan for DnfCapturePlan {
 }
 
 /// Get layered packages from rpm-ostree status.
-fn get_layered_packages() -> Vec<String> {
+/// Get layered packages from rpm-ostree status.
+///
+/// Returns a list of package names that have been explicitly layered
+/// on the current rpm-ostree deployment via `rpm-ostree install`.
+pub fn get_layered_packages() -> Vec<String> {
     let output = Command::new("rpm-ostree")
         .args(["status", "--json"])
         .output();
