@@ -188,11 +188,13 @@ impl GnomeExtensionsManifest {
     }
 
     /// Get details for an extension
+    #[allow(dead_code)]
     pub fn get(&self, uuid: &str) -> Option<&ExtensionItem> {
         self.extensions.iter().find(|ext| ext.id() == uuid)
     }
 
     /// List unique extension IDs.
+    #[allow(dead_code)]
     pub fn list(&self) -> Vec<String> {
         self.extensions.iter().map(|e| e.id().to_string()).collect()
     }
