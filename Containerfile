@@ -34,6 +34,10 @@ RUN set -eu; \
 # No COPR repositories configured
 # === END COPR_REPOS ===
 
+# === KERNEL_ARGUMENTS (managed by bkt) ===
+# No kernel arguments configured
+# === END KERNEL_ARGUMENTS ===
+
 # === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
     1password \
@@ -56,6 +60,10 @@ RUN dnf install -y \
     xorg-x11-server-Xvfb \
     && dnf clean all
 # === END SYSTEM_PACKAGES ===
+
+# === SYSTEMD_UNITS (managed by bkt) ===
+# No systemd units configured
+# === END SYSTEMD_UNITS ===
 
 # Relocate /opt to /usr/lib/opt for ostree compatibility
 # On ostree, /opt -> /var/opt which is persistent and NOT updated on upgrade.
