@@ -21,6 +21,7 @@
 //! - `HOST_SHIMS`: Host shim COPY and symlink commands
 
 use crate::manifest::Shim;
+use crate::manifest::system_config::SystemConfigManifest;
 use anyhow::{Context, Result, bail};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use std::fs;
@@ -44,6 +45,10 @@ pub enum Section {
     CoprRepos,
     /// Host shims (COPY and symlinks)
     HostShims,
+    /// Kernel arguments (rpm-ostree kargs)
+    KernelArguments,
+    /// Systemd unit configuration
+    SystemdUnits,
 }
 
 impl Section {
@@ -53,6 +58,8 @@ impl Section {
             Section::SystemPackages => "SYSTEM_PACKAGES",
             Section::CoprRepos => "COPR_REPOS",
             Section::HostShims => "HOST_SHIMS",
+            Section::KernelArguments => "KERNEL_ARGUMENTS",
+            Section::SystemdUnits => "SYSTEMD_UNITS",
         }
     }
 
@@ -88,6 +95,8 @@ impl Section {
             "SYSTEM_PACKAGES" => Some(Section::SystemPackages),
             "COPR_REPOS" => Some(Section::CoprRepos),
             "HOST_SHIMS" => Some(Section::HostShims),
+            "KERNEL_ARGUMENTS" => Some(Section::KernelArguments),
+            "SYSTEMD_UNITS" => Some(Section::SystemdUnits),
             _ => None,
         }
     }
@@ -659,4 +668,79 @@ COPY . /app
             last_line
         );
     }
+}
+
+/// Generate the KERNEL_ARGUMENTS section content from a manifest
+pub fn generate_kernel_arguments(manifest: &SystemConfigManifest) -> Vec<String> {
+    let kargs = match &manifest.kargs {
+        Some(k) => k,
+        None => return vec!["# No kernel arguments configured".to_string()],
+    };
+
+    if kargs.append.is_empty() && kargs.remove.is_empty() {
+        return vec!["# No kernel arguments configured".to_string()];
+    }
+
+    let mut args = Vec::new();
+    for arg in &kargs.remove {
+        args.push(format!("--delete={}", arg));
+    }
+    for arg in &kargs.append {
+        args.push(format!("--append={}", arg));
+    }
+
+    let mut lines = Vec::new();
+    lines.push("RUN rpm-ostree kargs \\".to_string());
+
+    for (i, arg) in args.iter().enumerate() {
+        if i < args.len() - 1 {
+            lines.push(format!("    {} \\", arg));
+        } else {
+            lines.push(format!("    {}", arg));
+        }
+    }
+
+    lines
+}
+
+/// Generate the SYSTEMD_UNITS section content from a manifest
+pub fn generate_systemd_units(manifest: &SystemConfigManifest) -> Vec<String> {
+    let systemd = match &manifest.systemd {
+        Some(s) => s,
+        None => return vec!["# No systemd units configured".to_string()],
+    };
+
+    if systemd.enable.is_empty() && systemd.disable.is_empty() && systemd.mask.is_empty() {
+        return vec!["# No systemd units configured".to_string()];
+    }
+
+    let mut commands = Vec::new();
+
+    if !systemd.enable.is_empty() {
+        let units = systemd.enable.join(" ");
+        commands.push(format!("systemctl enable {}", units));
+    }
+
+    if !systemd.disable.is_empty() {
+        let units = systemd.disable.join(" ");
+        commands.push(format!("systemctl disable {}", units));
+    }
+
+    if !systemd.mask.is_empty() {
+        let units = systemd.mask.join(" ");
+        commands.push(format!("systemctl mask {}", units));
+    }
+
+    let mut lines = Vec::new();
+    lines.push("RUN set -eu; \\".to_string());
+
+    for (i, cmd) in commands.iter().enumerate() {
+        if i < commands.len() - 1 {
+            lines.push(format!("    {}; \\", cmd));
+        } else {
+            lines.push(format!("    {}", cmd));
+        }
+    }
+
+    lines
 }

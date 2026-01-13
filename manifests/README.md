@@ -23,6 +23,21 @@ This directory contains declarative manifests for the bootc distribution.
 - `bkt base assume <pkg>` - Record that Bazzite provides a package
 - `bkt base unassume <pkg>` - Remove a package from tracking
 
+### system-config.json
+
+**Purpose**: System-level configuration baked into the image.
+
+**Includes**:
+- Kernel arguments (kargs)
+- Systemd unit states (enable/disable/mask)
+- SELinux booleans
+
+**Commands**:
+
+- `bkt admin kargs append <arg>` - Append persistent kernel argument
+- `bkt admin systemd enable <unit>` - Enable systemd unit
+- `bkt admin systemd list` - List configuration
+
 ### system-packages.json
 
 **Purpose**: Packages explicitly installed by the user on the host (layered via rpm-ostree).
@@ -96,6 +111,7 @@ The manifests are organized to maintain a clear separation of concerns:
 ```
 manifests/
 ├── base-image-assumptions.json  # What Bazzite provides (upstream reference)
+├── system-config.json           # System configuration (kargs, systemd)
 ├── system-packages.json         # Host packages YOU added (managed by bkt)
 ├── toolbox-packages.json        # Toolbox packages YOU added (managed by bkt)
 ├── flatpak-apps.json            # Apps to install at first login

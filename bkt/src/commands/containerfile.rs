@@ -6,8 +6,9 @@
 
 use crate::containerfile::{
     ContainerfileEditor, Section, generate_copr_repos, generate_host_shims,
-    generate_system_packages,
+    generate_kernel_arguments, generate_system_packages, generate_systemd_units,
 };
+use crate::manifest::system_config::SystemConfigManifest;
 use crate::manifest::{ShimsManifest, SystemPackagesManifest};
 use crate::output::Output;
 use anyhow::Result;
@@ -56,6 +57,7 @@ fn run_sync() -> Result<()> {
 
     let mut editor = ContainerfileEditor::load(containerfile_path)?;
     let manifest = load_merged_manifest()?;
+    let system_config = SystemConfigManifest::load()?;
 
     let mut any_changes = false;
 
@@ -67,6 +69,26 @@ fn run_sync() -> Result<()> {
         any_changes = true;
     } else {
         Output::warning("No SYSTEM_PACKAGES section found - skipping");
+    }
+
+    // Sync KERNEL_ARGUMENTS section
+    if editor.has_section(Section::KernelArguments) {
+        let new_content = generate_kernel_arguments(&system_config);
+        editor.update_section(Section::KernelArguments, new_content);
+        Output::success("Synced KERNEL_ARGUMENTS section");
+        any_changes = true;
+    } else {
+        Output::warning("No KERNEL_ARGUMENTS section found - skipping");
+    }
+
+    // Sync SYSTEMD_UNITS section
+    if editor.has_section(Section::SystemdUnits) {
+        let new_content = generate_systemd_units(&system_config);
+        editor.update_section(Section::SystemdUnits, new_content);
+        Output::success("Synced SYSTEMD_UNITS section");
+        any_changes = true;
+    } else {
+        Output::warning("No SYSTEMD_UNITS section found - skipping");
     }
 
     // Sync COPR_REPOS section
@@ -121,6 +143,7 @@ fn run_check() -> Result<()> {
 
     let editor = ContainerfileEditor::load(containerfile_path)?;
     let manifest = load_merged_manifest()?;
+    let system_config = SystemConfigManifest::load()?;
 
     let mut has_drift = false;
     let mut results: Vec<SectionSyncResult> = Vec::new();
@@ -175,6 +198,56 @@ fn run_check() -> Result<()> {
             changed,
             message: if changed {
                 format!("{} packages in manifest", manifest.packages.len())
+            } else {
+                "up to date".to_string()
+            },
+        });
+    }
+
+    // Check KERNEL_ARGUMENTS section
+    if editor.has_section(Section::KernelArguments) {
+        let expected = generate_kernel_arguments(&system_config);
+        let current = editor.get_section_content(Section::KernelArguments);
+
+        let changed = match current {
+            Some(c) => c != expected.as_slice(),
+            None => true,
+        };
+
+        if changed {
+            has_drift = true;
+        }
+
+        results.push(SectionSyncResult {
+            section_name: Section::KernelArguments.marker_name().to_string(),
+            changed,
+            message: if changed {
+                "drift detected".to_string()
+            } else {
+                "up to date".to_string()
+            },
+        });
+    }
+
+    // Check SYSTEMD_UNITS section
+    if editor.has_section(Section::SystemdUnits) {
+        let expected = generate_systemd_units(&system_config);
+        let current = editor.get_section_content(Section::SystemdUnits);
+
+        let changed = match current {
+            Some(c) => c != expected.as_slice(),
+            None => true,
+        };
+
+        if changed {
+            has_drift = true;
+        }
+
+        results.push(SectionSyncResult {
+            section_name: Section::SystemdUnits.marker_name().to_string(),
+            changed,
+            message: if changed {
+                "drift detected".to_string()
             } else {
                 "up to date".to_string()
             },

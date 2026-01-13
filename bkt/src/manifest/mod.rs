@@ -10,6 +10,7 @@ pub mod extension;
 pub mod flatpak;
 pub mod gsetting;
 pub mod shim;
+pub mod system_config;
 pub mod toolbox;
 pub mod upstream;
 
