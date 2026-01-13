@@ -258,17 +258,17 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
                         "system".dimmed().to_string()
                     };
                     let status = if is_enabled(uuid) {
-                         if item.enabled() {
+                        if item.enabled() {
                             format!("{} enabled", "✓".green())
-                         } else {
+                        } else {
                             format!("{} enabled (should be disabled)", "⚠".red())
-                         }
+                        }
                     } else if is_installed(uuid) {
-                         if item.enabled() {
+                        if item.enabled() {
                             format!("{} disabled", "○".yellow())
-                         } else {
+                        } else {
                             format!("{} disabled (config)", "○".dimmed())
-                         }
+                        }
                     } else {
                         format!("{} not installed", "✗".red())
                     };
@@ -434,7 +434,9 @@ impl Plan for ExtensionSyncPlan {
 
         let mut summary = PlanSummary::new(format!(
             "Extension Sync: {} to enable, {} to disable, {} checked",
-            installable, self.to_disable.len(), self.checked
+            installable,
+            self.to_disable.len(),
+            self.checked
         ));
 
         for ext in &self.to_enable {
@@ -456,10 +458,7 @@ impl Plan for ExtensionSyncPlan {
         }
 
         for uuid in &self.to_disable {
-            summary.add_operation(Operation::new(
-                Verb::Disable,
-                format!("extension:{}", uuid),
-            ));
+            summary.add_operation(Operation::new(Verb::Disable, format!("extension:{}", uuid)));
         }
 
         summary
@@ -497,23 +496,23 @@ impl Plan for ExtensionSyncPlan {
 
         for uuid in self.to_disable {
             match disable_extension(&uuid) {
-                 Ok(true) => {
-                     report.record_success(Verb::Disable, format!("extension:{}", uuid));
-                 }
-                 Ok(false) => {
-                        report.record_failure(
-                            Verb::Disable,
-                            format!("extension:{}", uuid),
-                            "gnome-extensions disable failed",
-                        );
-                 }
-                 Err(e) => {
-                        report.record_failure(
-                            Verb::Disable,
-                            format!("extension:{}", uuid),
-                            e.to_string(),
-                        );
-                 }
+                Ok(true) => {
+                    report.record_success(Verb::Disable, format!("extension:{}", uuid));
+                }
+                Ok(false) => {
+                    report.record_failure(
+                        Verb::Disable,
+                        format!("extension:{}", uuid),
+                        "gnome-extensions disable failed",
+                    );
+                }
+                Err(e) => {
+                    report.record_failure(
+                        Verb::Disable,
+                        format!("extension:{}", uuid),
+                        e.to_string(),
+                    );
+                }
             }
         }
 
@@ -522,11 +521,12 @@ impl Plan for ExtensionSyncPlan {
 
     fn is_empty(&self) -> bool {
         // Empty if no extensions need enabling (ignore not-installed ones) AND nothing to disable
-        let to_enable_count = self.to_enable
+        let to_enable_count = self
+            .to_enable
             .iter()
             .filter(|e| matches!(e.state, ExtensionState::Disabled))
             .count();
-        
+
         to_enable_count == 0 && self.to_disable.is_empty()
     }
 }
@@ -607,9 +607,9 @@ impl Plannable for ExtensionCaptureCommand {
             if merged.contains(&uuid) {
                 already_in_manifest += 1;
             } else {
-                to_capture.push(ExtensionToCapture { 
+                to_capture.push(ExtensionToCapture {
                     enabled: enabled.contains(&uuid),
-                    uuid 
+                    uuid,
                 });
             }
         }
@@ -654,10 +654,12 @@ impl Plan for ExtensionCapturePlan {
             let item = if ext.enabled {
                 crate::manifest::extension::ExtensionItem::Uuid(ext.uuid.clone())
             } else {
-                crate::manifest::extension::ExtensionItem::Object(crate::manifest::extension::ExtensionConfig {
-                    id: ext.uuid.clone(),
-                    enabled: false,
-                })
+                crate::manifest::extension::ExtensionItem::Object(
+                    crate::manifest::extension::ExtensionConfig {
+                        id: ext.uuid.clone(),
+                        enabled: false,
+                    },
+                )
             };
 
             if user.add(item) {
