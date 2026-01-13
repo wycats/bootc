@@ -293,6 +293,11 @@ pub fn run(args: StatusArgs) -> Result<()> {
     let os_status = if args.skip_os { None } else { get_os_status() };
 
     // Get installed flatpaks for drift detection (use HashSet for O(1) lookup)
+    // IMPORTANT: This uses the same get_installed_flatpaks() function from the flatpak
+    // module that is used by `bkt capture`. This ensures consistent detection of installed
+    // flatpaks across both commands, preventing `status` from reporting untracked apps that
+    // `capture` cannot see. The parsing logic tolerates missing columns (e.g., missing origin
+    // or commit) to handle various flatpak output formats.
     let installed_flatpaks: std::collections::HashSet<String> =
         get_installed_flatpaks().into_iter().map(|f| f.id).collect();
 

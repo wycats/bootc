@@ -596,7 +596,10 @@ impl Plannable for FlatpakCaptureCommand {
     type Plan = FlatpakCapturePlan;
 
     fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
-        // Get currently installed flatpaks on the system
+        // Get currently installed flatpaks on the system.
+        // This uses the same unified get_installed_flatpaks() function that is used by
+        // `bkt status`, ensuring both commands see the same set of installed applications.
+        // The function tolerates missing columns to handle various flatpak output formats.
         let installed = get_installed_flatpaks();
 
         // Load manifests to see what's already tracked
