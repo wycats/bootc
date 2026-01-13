@@ -31,7 +31,9 @@
 //! See [RFC-0009](../../../docs/rfcs/0009-privileged-operations.md) for design details.
 
 mod bootc;
+mod kargs;
 mod systemctl;
+mod systemd;
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
@@ -39,7 +41,9 @@ use clap::{Args, Subcommand};
 use crate::pipeline::ExecutionPlan;
 
 pub use bootc::BootcAction;
+pub use kargs::KargsAction;
 pub use systemctl::SystemctlAction;
+pub use systemd::SystemdAction;
 
 /// Arguments for the `admin` command.
 #[derive(Debug, Args)]
@@ -73,6 +77,18 @@ pub enum AdminAction {
         #[command(subcommand)]
         action: SystemctlAction,
     },
+
+    /// Manage persistent kernel arguments (image-time configuration)
+    Kargs {
+        #[command(subcommand)]
+        action: KargsAction,
+    },
+
+    /// Manage persistent systemd configuration (image-time configuration)
+    Systemd {
+        #[command(subcommand)]
+        action: SystemdAction,
+    },
 }
 
 /// Execute an admin subcommand.
@@ -80,5 +96,7 @@ pub fn run(args: AdminArgs, plan: &ExecutionPlan) -> Result<()> {
     match args.action {
         AdminAction::Bootc { action } => bootc::run(action, plan),
         AdminAction::Systemctl { action } => systemctl::run(action, plan),
+        AdminAction::Kargs { action } => action.execute(plan),
+        AdminAction::Systemd { action } => action.execute(plan),
     }
 }
