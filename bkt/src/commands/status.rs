@@ -22,6 +22,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use tracing::debug;
 
+use super::extension::{get_enabled_extensions, is_installed as is_extension_installed};
 use super::flatpak::get_installed_flatpaks;
 
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
@@ -212,22 +213,6 @@ fn get_os_status() -> Option<OsStatus> {
     })
 }
 
-/// Get list of enabled GNOME extension UUIDs
-fn get_enabled_extensions() -> Vec<String> {
-    let output = Command::new("gnome-extensions")
-        .args(["list", "--enabled"])
-        .output();
-
-    match output {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
 /// Get skel directory path.
 fn skel_dir() -> Option<PathBuf> {
     find_repo_path().ok().map(|p| p.join("skel"))
@@ -259,15 +244,6 @@ fn skel_differs(skel_path: &PathBuf, home_path: &PathBuf) -> bool {
     let skel_content = fs::read_to_string(skel_path).unwrap_or_default();
     let home_content = fs::read_to_string(home_path).unwrap_or_default();
     skel_content != home_content
-}
-
-/// Check if a GNOME extension is installed.
-fn is_extension_installed(uuid: &str) -> bool {
-    Command::new("gnome-extensions")
-        .args(["info", uuid])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
 }
 
 /// Get current value of a gsetting.

@@ -52,7 +52,7 @@ pub enum ExtensionAction {
 }
 
 /// Check if an extension is installed.
-fn is_installed(uuid: &str) -> bool {
+pub fn is_installed(uuid: &str) -> bool {
     Command::new("gnome-extensions")
         .args(["info", uuid])
         .output()
@@ -536,7 +536,7 @@ impl Plan for ExtensionSyncPlan {
 // ============================================================================
 
 /// Get list of enabled GNOME extension UUIDs from the system.
-fn get_enabled_extensions() -> Vec<String> {
+pub fn get_enabled_extensions() -> Vec<String> {
     let output = std::process::Command::new("gnome-extensions")
         .args(["list", "--enabled"])
         .output();
@@ -552,7 +552,7 @@ fn get_enabled_extensions() -> Vec<String> {
 }
 
 /// Get list of all installed GNOME extension UUIDs from the system.
-fn get_installed_extensions_list() -> Vec<String> {
+pub fn get_installed_extensions_list() -> Vec<String> {
     let output = std::process::Command::new("gnome-extensions")
         .arg("list")
         .output();
