@@ -604,14 +604,21 @@ impl Plannable for ExtensionCaptureCommand {
         let mut already_in_manifest = 0;
 
         for uuid in installed {
-            if merged.contains(&uuid) {
-                already_in_manifest += 1;
-            } else {
-                to_capture.push(ExtensionToCapture {
-                    enabled: enabled.contains(&uuid),
-                    uuid,
-                });
+            let is_enabled_physically = enabled.contains(&uuid);
+
+            if let Some(existing) = merged.get(&uuid) {
+                // If it's in the manifest and the state matches, skip it
+                if existing.enabled() == is_enabled_physically {
+                    already_in_manifest += 1;
+                    continue;
+                }
+                // If state differs, we fall through to capture (which will update the user manifest)
             }
+
+            to_capture.push(ExtensionToCapture {
+                enabled: is_enabled_physically,
+                uuid,
+            });
         }
 
         // Sort for consistent output
