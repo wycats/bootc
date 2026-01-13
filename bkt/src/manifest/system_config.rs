@@ -139,3 +139,39 @@ impl SystemConfigManifest {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_serialization_defaults() {
+        let manifest = SystemConfigManifest::default();
+        let json = serde_json::to_string(&manifest).unwrap();
+        assert_eq!(json, "{}");
+    }
+
+    #[test]
+    fn test_serialization_kargs() {
+        let mut manifest = SystemConfigManifest::default();
+        let mut kargs = KargsConfig::default();
+        kargs.append.push("foo".to_string());
+        manifest.kargs = Some(kargs);
+
+        let json = serde_json::to_string(&manifest).unwrap();
+        assert!(json.contains("\"kargs\":{"));
+        assert!(json.contains("\"append\":[\"foo\"]"));
+    }
+
+    #[test]
+    fn test_serialization_systemd() {
+        let mut manifest = SystemConfigManifest::default();
+        let mut systemd = SystemdConfig::default();
+        systemd.enable.push("foo.service".to_string());
+        manifest.systemd = Some(systemd);
+
+        let json = serde_json::to_string(&manifest).unwrap();
+        assert!(json.contains("\"systemd\":{"));
+        assert!(json.contains("\"enable\":[\"foo.service\"]"));
+    }
+}
