@@ -1,5 +1,6 @@
 //! Flatpak manifest types.
 
+use crate::component::Resource;
 use anyhow::{Context, Result};
 use directories::BaseDirs;
 use schemars::JsonSchema;
@@ -39,7 +40,7 @@ impl std::str::FromStr for FlatpakScope {
 }
 
 /// A Flatpak application entry.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FlatpakApp {
     /// Application ID (e.g., "org.gnome.Calculator")
     pub id: String,
@@ -56,6 +57,14 @@ pub struct FlatpakApp {
     /// Overrides (e.g. "--filesystem=home")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub overrides: Option<Vec<String>>,
+}
+
+impl Resource for FlatpakApp {
+    type Id = String;
+
+    fn id(&self) -> String {
+        self.id.clone()
+    }
 }
 
 /// The flatpak-apps.json manifest.

@@ -1,5 +1,6 @@
 //! Flatpak command implementation.
 
+use crate::component::SystemComponent;
 use crate::context::{CommandDomain, PrMode};
 use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{FlatpakApp, FlatpakAppsManifest, FlatpakScope};
@@ -676,5 +677,76 @@ impl Plan for FlatpakCapturePlan {
 
     fn is_empty(&self) -> bool {
         self.to_capture.is_empty()
+    }
+}
+
+// ============================================================================
+// SystemComponent Implementation
+// ============================================================================
+
+/// The Flatpak system component.
+///
+/// Provides a unified interface for Flatpak operations through the
+/// `SystemComponent` trait, enabling consistent behavior across
+/// `status`, `capture`, and `apply` commands.
+#[derive(Debug, Clone, Default)]
+pub struct FlatpakComponent;
+
+impl FlatpakComponent {
+    /// Create a new FlatpakComponent.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl SystemComponent for FlatpakComponent {
+    type Item = FlatpakApp;
+    type Manifest = FlatpakAppsManifest;
+    type CaptureFilter = ();
+
+    fn name(&self) -> &'static str {
+        "Flatpaks"
+    }
+
+    fn scan_system(&self) -> Result<Vec<Self::Item>> {
+        // Get installed flatpaks and convert to FlatpakApp
+        let installed = get_installed_flatpaks();
+        Ok(installed
+            .into_iter()
+            .map(|f| FlatpakApp {
+                id: f.id,
+                remote: f.origin,
+                scope: if f.installation == "user" {
+                    FlatpakScope::User
+                } else {
+                    FlatpakScope::System
+                },
+                branch: Some(f.branch).filter(|b| !b.is_empty() && b != "stable"),
+                commit: Some(f.commit).filter(|c| !c.is_empty()),
+                overrides: None,
+            })
+            .collect())
+    }
+
+    fn load_manifest(&self) -> Result<Self::Manifest> {
+        let system = FlatpakAppsManifest::load_system()?;
+        let user = FlatpakAppsManifest::load_user()?;
+        Ok(FlatpakAppsManifest::merged(&system, &user))
+    }
+
+    fn manifest_items(&self, manifest: &Self::Manifest) -> Vec<Self::Item> {
+        manifest.apps.clone()
+    }
+
+    fn capture(
+        &self,
+        system: &[Self::Item],
+        _filter: Self::CaptureFilter,
+    ) -> Option<Result<Self::Manifest>> {
+        // Capture all untracked items
+        Some(Ok(FlatpakAppsManifest {
+            schema: None,
+            apps: system.to_vec(),
+        }))
     }
 }

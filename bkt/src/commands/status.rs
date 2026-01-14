@@ -9,9 +9,8 @@
 //! 3. Act
 //! 4. Back to `bkt status`
 
-use crate::manifest::{
-    FlatpakAppsManifest, GSettingsManifest, GnomeExtensionsManifest, ShimsManifest,
-};
+use crate::component::SystemComponent;
+use crate::manifest::{GSettingsManifest, GnomeExtensionsManifest, ShimsManifest};
 use crate::output::Output;
 use crate::repo::find_repo_path;
 use anyhow::Result;
@@ -24,7 +23,7 @@ use tracing::debug;
 
 use super::dnf::get_layered_packages;
 use super::extension::{get_enabled_extensions, is_installed as is_extension_installed};
-use super::flatpak::get_installed_flatpaks;
+use super::flatpak::FlatpakComponent;
 use super::shim::get_installed_shims;
 
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
@@ -254,38 +253,18 @@ pub fn run(args: StatusArgs) -> Result<()> {
     // Gather OS status (unless skipped)
     let os_status = if args.skip_os { None } else { get_os_status() };
 
-    // Get installed flatpaks for drift detection (use HashSet for O(1) lookup)
-    let installed_flatpaks: std::collections::HashSet<String> =
-        get_installed_flatpaks().into_iter().map(|f| f.id).collect();
-
-    // Gather flatpak status
+    // Gather flatpak status using SystemComponent trait
     let flatpak_status = {
-        let system = FlatpakAppsManifest::load_system().unwrap_or_default();
-        let user = FlatpakAppsManifest::load_user().unwrap_or_default();
-        let merged = FlatpakAppsManifest::merged(&system, &user);
-
-        let manifest_ids: std::collections::HashSet<_> =
-            merged.apps.iter().map(|a| a.id.as_str()).collect();
-
-        let total = merged.apps.len();
-        let installed = merged
-            .apps
-            .iter()
-            .filter(|a| installed_flatpaks.contains(&a.id))
-            .count();
-        let pending = total - installed;
-
-        // Find untracked flatpaks (installed but not in manifest)
-        let untracked = installed_flatpaks
-            .iter()
-            .filter(|id| !manifest_ids.contains(id.as_str()))
-            .count();
+        let component = FlatpakComponent::new();
+        let system = component.scan_system()?;
+        let manifest = component.load_manifest()?;
+        let drift = component.diff(&system, &manifest);
 
         FlatpakStatus {
-            total,
-            installed,
-            pending,
-            untracked,
+            total: drift.synced_count + drift.to_install.len(),
+            installed: drift.synced_count,
+            pending: drift.to_install.len(),
+            untracked: drift.untracked.len(),
         }
     };
 
