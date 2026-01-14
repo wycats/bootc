@@ -607,14 +607,20 @@ impl Plannable for ExtensionCaptureCommand {
             let is_enabled_physically = enabled.contains(&uuid);
 
             if let Some(existing) = merged.get(&uuid) {
-                // If it's in the manifest and the state matches, skip it
+                // Check if the manifest state matches the physical system state.
+                // If both match, the extension is already correctly tracked - skip it.
                 if existing.enabled() == is_enabled_physically {
                     already_in_manifest += 1;
                     continue;
                 }
-                // If state differs, we fall through to capture (which will update the user manifest)
+                // If state differs (e.g., system manifest says enabled but physically disabled),
+                // we fall through to capture it. This will add/update the user manifest to
+                // explicitly record the desired state, overriding the system default.
             }
 
+            // Capture this extension:
+            // - Not in manifest yet, OR
+            // - In manifest but state differs from physical state
             to_capture.push(ExtensionToCapture {
                 enabled: is_enabled_physically,
                 uuid,

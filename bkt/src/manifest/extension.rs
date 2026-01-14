@@ -388,4 +388,52 @@ mod tests {
         let item = manifest.get("disabled@example.com").unwrap();
         assert!(!item.enabled());
     }
+
+    #[test]
+    fn manifest_state_can_differ_between_system_and_user() {
+        // Scenario: system manifest has extension enabled, user disables it
+        let mut system = GnomeExtensionsManifest::default();
+        system.add("system-enabled@example.com"); // defaults to enabled=true
+
+        let mut user = GnomeExtensionsManifest::default();
+        user.add(ExtensionItem::Object(ExtensionConfig {
+            id: "system-enabled@example.com".to_string(),
+            enabled: false, // user overrides to disabled
+        }));
+
+        // In merged manifest, user override should win
+        let merged = GnomeExtensionsManifest::merged(&system, &user);
+        let item = merged.get("system-enabled@example.com").unwrap();
+        assert!(
+            !item.enabled(),
+            "User manifest should override system manifest state"
+        );
+    }
+
+    #[test]
+    fn manifest_update_changes_state() {
+        // Test that add() can update the state of an existing extension
+        let mut manifest = GnomeExtensionsManifest::default();
+
+        // Initially add as enabled
+        manifest.add("test@example.com");
+        assert!(manifest.get("test@example.com").unwrap().enabled());
+
+        // Update to disabled
+        manifest.add(ExtensionItem::Object(ExtensionConfig {
+            id: "test@example.com".to_string(),
+            enabled: false,
+        }));
+
+        // Should now be disabled
+        assert!(
+            !manifest.get("test@example.com").unwrap().enabled(),
+            "add() should update existing extension state"
+        );
+        assert_eq!(
+            manifest.extensions.len(),
+            1,
+            "Should still have only one extension"
+        );
+    }
 }
