@@ -1,5 +1,6 @@
 //! Host shim manifest types.
 
+use crate::component::Resource;
 use anyhow::{Context, Result};
 use directories::BaseDirs;
 use schemars::JsonSchema;
@@ -12,7 +13,7 @@ use std::path::PathBuf;
 ///
 /// Shims are wrapper scripts that call commands on the host system
 /// via flatpak-spawn.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Shim {
     /// Name of the shim (command name in toolbox)
     pub name: String,
@@ -25,6 +26,14 @@ impl Shim {
     /// Get the host command name (defaults to shim name if not specified).
     pub fn host_cmd(&self) -> &str {
         self.host.as_deref().unwrap_or(&self.name)
+    }
+}
+
+impl Resource for Shim {
+    type Id = String;
+
+    fn id(&self) -> String {
+        self.name.clone()
     }
 }
 

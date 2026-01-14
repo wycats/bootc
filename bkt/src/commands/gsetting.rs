@@ -1,5 +1,6 @@
 //! GSettings command implementation.
 
+use crate::component::{DriftReport, SystemComponent};
 use crate::context::PrMode;
 use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{GSetting, GSettingsManifest};
@@ -633,5 +634,142 @@ impl Plan for GsettingCapturePlan {
 
     fn is_empty(&self) -> bool {
         self.to_capture.is_empty()
+    }
+}
+
+// ============================================================================
+// SystemComponent Implementation
+// ============================================================================
+
+/// The GSettings system component.
+///
+/// GSettings is unique in that we cannot enumerate "all settings" on the system.
+/// The `scan_system()` method returns current values for settings in the manifest.
+/// Capture requires explicit schema filtering (handled via `CaptureFilter`).
+#[derive(Debug, Clone, Default)]
+pub struct GSettingComponent;
+
+impl GSettingComponent {
+    /// Create a new GSettingComponent.
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Get current value of a gsetting from the system.
+    #[allow(dead_code)]
+    pub fn get_current_value(schema: &str, key: &str) -> Option<String> {
+        get_current_value(schema, key)
+    }
+}
+
+impl SystemComponent for GSettingComponent {
+    type Item = GSetting;
+    type Manifest = GSettingsManifest;
+    /// Capture filter: list of schema names to capture. Empty = capture nothing.
+    type CaptureFilter = Vec<String>;
+
+    fn name(&self) -> &'static str {
+        "GSettings"
+    }
+
+    fn scan_system(&self) -> Result<Vec<Self::Item>> {
+        // For GSettings, we scan the system values for items in our manifest
+        // (we can't enumerate all possible settings)
+        let manifest = self.load_manifest()?;
+
+        let mut system_values = Vec::new();
+        for setting in &manifest.settings {
+            if let Some(value) = get_current_value(&setting.schema, &setting.key) {
+                system_values.push(GSetting {
+                    schema: setting.schema.clone(),
+                    key: setting.key.clone(),
+                    value,
+                    comment: None,
+                });
+            }
+        }
+
+        Ok(system_values)
+    }
+
+    fn load_manifest(&self) -> Result<Self::Manifest> {
+        let system = GSettingsManifest::load_system()?;
+        let user = GSettingsManifest::load_user()?;
+        Ok(GSettingsManifest::merged(&system, &user))
+    }
+
+    fn manifest_items(&self, manifest: &Self::Manifest) -> Vec<Self::Item> {
+        manifest.settings.clone()
+    }
+
+    fn diff(&self, system: &[Self::Item], manifest: &Self::Manifest) -> DriftReport<Self::Item> {
+        let manifest_items = self.manifest_items(manifest);
+
+        // Build lookup map for system values
+        let system_map: std::collections::HashMap<String, &GSetting> =
+            system.iter().map(|s| (s.unique_key(), s)).collect();
+
+        let mut to_install = Vec::new(); // Settings with missing schema/key
+        let mut to_update = Vec::new(); // Settings with different values
+        let mut synced_count = 0;
+
+        for manifest_setting in &manifest_items {
+            match system_map.get(&manifest_setting.unique_key()) {
+                None => {
+                    // Schema/key not found on system
+                    to_install.push(manifest_setting.clone());
+                }
+                Some(sys_setting) => {
+                    if sys_setting.value != manifest_setting.value {
+                        to_update.push(((*sys_setting).clone(), manifest_setting.clone()));
+                    } else {
+                        synced_count += 1;
+                    }
+                }
+            }
+        }
+
+        // GSettings never has "untracked" items - we can't enumerate all settings
+        DriftReport {
+            to_install,
+            untracked: Vec::new(),
+            to_update,
+            synced_count,
+        }
+    }
+
+    fn supports_capture(&self) -> bool {
+        true
+    }
+
+    fn capture(
+        &self,
+        _system: &[Self::Item],
+        filter: Self::CaptureFilter,
+    ) -> Option<Result<Self::Manifest>> {
+        if filter.is_empty() {
+            return None; // Capture requires explicit schemas
+        }
+
+        // Capture all keys from specified schemas
+        let mut settings = Vec::new();
+        for schema in &filter {
+            let keys = get_schema_keys(schema);
+            for key in keys {
+                if let Some(value) = get_current_value(schema, &key) {
+                    settings.push(GSetting {
+                        schema: schema.clone(),
+                        key,
+                        value,
+                        comment: None,
+                    });
+                }
+            }
+        }
+
+        Some(Ok(GSettingsManifest {
+            schema: None,
+            settings,
+        }))
     }
 }

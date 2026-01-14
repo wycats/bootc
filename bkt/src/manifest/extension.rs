@@ -1,5 +1,6 @@
 //! GNOME extension manifest types.
 
+use crate::component::Resource;
 use anyhow::{Context, Result};
 use directories::BaseDirs;
 use schemars::JsonSchema;
@@ -55,6 +56,20 @@ impl ExtensionItem {
             ExtensionItem::Uuid(_) => true,
             ExtensionItem::Object(config) => config.enabled,
         }
+    }
+}
+
+impl Resource for ExtensionItem {
+    type Id = String;
+
+    fn id(&self) -> String {
+        self.id().to_string()
+    }
+
+    fn merge(&self, other: &Self) -> Self {
+        // User manifest (other) wins, but we preserve the object format
+        // if either side uses it
+        other.clone()
     }
 }
 

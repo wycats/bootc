@@ -1,8 +1,10 @@
 //! Shim command implementation.
 
+use crate::component::SystemComponent;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
+use std::collections::HashSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -76,9 +78,10 @@ pub fn get_installed_shims() -> Vec<String> {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_file()
-                && let Some(name) = path.file_name() {
-                    installed.push(name.to_string_lossy().to_string());
-                }
+                && let Some(name) = path.file_name()
+            {
+                installed.push(name.to_string_lossy().to_string());
+            }
         }
     }
 
@@ -486,5 +489,72 @@ impl Plan for ShimSyncPlan {
 
     fn is_empty(&self) -> bool {
         self.to_create.is_empty()
+    }
+}
+
+// ============================================================================
+// SystemComponent Implementation
+// ============================================================================
+
+/// The Shim system component.
+///
+/// Shims are **derived state** — they are entirely generated from the manifest
+/// and have no independent existence. The `scan_system()` returns shims that
+/// exist as files, but `supports_capture()` returns false since shims are
+/// not user-installed.
+#[derive(Debug, Clone, Default)]
+pub struct ShimComponent;
+
+impl ShimComponent {
+    /// Create a new ShimComponent.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl SystemComponent for ShimComponent {
+    type Item = Shim;
+    type Manifest = ShimsManifest;
+    type CaptureFilter = ();
+
+    fn name(&self) -> &'static str {
+        "Shims"
+    }
+
+    fn scan_system(&self) -> Result<Vec<Self::Item>> {
+        // Get names of shims that exist as files
+        let installed_names: HashSet<_> = get_installed_shims().into_iter().collect();
+
+        // Load manifest to get full Shim objects
+        let manifest = self.load_manifest()?;
+
+        // Return manifest items that are installed
+        Ok(manifest
+            .shims
+            .into_iter()
+            .filter(|s| installed_names.contains(&s.name))
+            .collect())
+    }
+
+    fn load_manifest(&self) -> Result<Self::Manifest> {
+        let system = ShimsManifest::load_system()?;
+        let user = ShimsManifest::load_user()?;
+        Ok(ShimsManifest::merged(&system, &user))
+    }
+
+    fn manifest_items(&self, manifest: &Self::Manifest) -> Vec<Self::Item> {
+        manifest.shims.clone()
+    }
+
+    fn supports_capture(&self) -> bool {
+        false // Shims are derived state, not user-installed
+    }
+
+    fn capture(
+        &self,
+        _system: &[Self::Item],
+        _filter: Self::CaptureFilter,
+    ) -> Option<Result<Self::Manifest>> {
+        None // Shims don't support capture
     }
 }

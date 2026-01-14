@@ -1179,6 +1179,210 @@ fn is_package_installed(pkg: &str) -> bool {
         .unwrap_or(false)
 }
 
+// =============================================================================
+// DnfComponent (SystemComponent implementation)
+// =============================================================================
+
+use crate::component::{DriftReport, Resource, SystemComponent};
+use crate::manifest::DnfItem;
+use std::collections::HashSet;
+
+/// The DNF component manages packages, groups, and COPR repositories.
+///
+/// This is a multi-resource component that uses `DnfItem` enum to unify
+/// the different resource types while preserving type-specific behavior.
+#[allow(dead_code)]
+pub struct DnfComponent {
+    /// Execution context (Host uses rpm-ostree, Dev uses dnf).
+    pub context: ExecutionContext,
+}
+
+#[allow(dead_code)]
+impl DnfComponent {
+    /// Create a new DnfComponent for the given context.
+    pub fn new(context: ExecutionContext) -> Self {
+        Self { context }
+    }
+
+    /// Get installed COPR repositories from system.
+    fn get_installed_coprs(&self) -> Vec<CoprRepo> {
+        // Check for .repo files in /etc/yum.repos.d that look like COPR repos
+        let repo_dir = std::path::Path::new("/etc/yum.repos.d");
+        let mut coprs = Vec::new();
+
+        if let Ok(entries) = std::fs::read_dir(repo_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    // COPR repos are named like _copr:copr.fedorainfracloud.org:user:repo.repo
+                    if name.starts_with("_copr:") && name.ends_with(".repo") {
+                        // Parse the COPR name from the file
+                        // Format: _copr:copr.fedorainfracloud.org:user:repo.repo
+                        let parts: Vec<&str> = name.trim_end_matches(".repo").split(':').collect();
+                        if parts.len() >= 4 {
+                            let user = parts[2];
+                            let repo = parts[3];
+                            coprs.push(CoprRepo::new(format!("{}/{}", user, repo)));
+                        }
+                    }
+                }
+            }
+        }
+
+        coprs
+    }
+
+    /// Check if a package group is installed.
+    fn is_group_installed(&self, group: &str) -> bool {
+        // Remove the @ prefix for dnf group info
+        let group_name = group.trim_start_matches('@');
+        Command::new("dnf5")
+            .args(["group", "info", "--installed", group_name])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+}
+
+impl SystemComponent for DnfComponent {
+    type Item = DnfItem;
+    type Manifest = SystemPackagesManifest;
+    type CaptureFilter = ();
+
+    fn name(&self) -> &'static str {
+        "DNF Packages"
+    }
+
+    fn scan_system(&self) -> Result<Vec<Self::Item>> {
+        let mut items = Vec::new();
+
+        // Get layered packages (for Host context) or just check installed (for Dev)
+        if self.context == ExecutionContext::Host {
+            // For host, we track layered packages specifically
+            for pkg in get_layered_packages() {
+                items.push(DnfItem::package(pkg));
+            }
+        } else {
+            // For Dev (toolbox), we'd need a different approach
+            // For now, just scan installed packages that are in manifest
+            // (full package enumeration is expensive)
+            let manifest = self.load_manifest()?;
+            for pkg in &manifest.packages {
+                if is_package_installed(pkg) {
+                    items.push(DnfItem::package(pkg.clone()));
+                }
+            }
+        }
+
+        // Get installed COPR repos
+        for copr in self.get_installed_coprs() {
+            items.push(DnfItem::copr(copr));
+        }
+
+        // Groups: check which manifest groups are installed
+        let manifest = self.load_manifest()?;
+        for group in &manifest.groups {
+            if self.is_group_installed(group) {
+                items.push(DnfItem::group(group.clone()));
+            }
+        }
+
+        Ok(items)
+    }
+
+    fn load_manifest(&self) -> Result<Self::Manifest> {
+        if self.context == ExecutionContext::Dev {
+            Ok(ToolboxPackagesManifest::load_user()?.as_system_manifest())
+        } else {
+            let system = SystemPackagesManifest::load_system()?;
+            let user = SystemPackagesManifest::load_user()?;
+            Ok(SystemPackagesManifest::merged(&system, &user))
+        }
+    }
+
+    fn manifest_items(&self, manifest: &Self::Manifest) -> Vec<Self::Item> {
+        let mut items = Vec::new();
+
+        for pkg in &manifest.packages {
+            items.push(DnfItem::package(pkg.clone()));
+        }
+
+        for group in &manifest.groups {
+            items.push(DnfItem::group(group.clone()));
+        }
+
+        for copr in &manifest.copr_repos {
+            items.push(DnfItem::copr(copr.clone()));
+        }
+
+        items
+    }
+
+    fn diff(&self, system: &[Self::Item], manifest: &Self::Manifest) -> DriftReport<Self::Item> {
+        let manifest_items = self.manifest_items(manifest);
+        let system_ids: HashSet<_> = system.iter().map(|i| i.id()).collect();
+        let manifest_ids: HashSet<_> = manifest_items.iter().map(|i| i.id()).collect();
+
+        DriftReport {
+            to_install: manifest_items
+                .iter()
+                .filter(|i| !system_ids.contains(&i.id()))
+                .cloned()
+                .collect(),
+            untracked: system
+                .iter()
+                .filter(|i| !manifest_ids.contains(&i.id()))
+                .cloned()
+                .collect(),
+            to_update: Vec::new(),
+            synced_count: manifest_items
+                .iter()
+                .filter(|i| system_ids.contains(&i.id()))
+                .count(),
+        }
+    }
+
+    fn supports_capture(&self) -> bool {
+        // Only host context supports meaningful capture (layered packages)
+        self.context == ExecutionContext::Host
+    }
+
+    fn capture(
+        &self,
+        system: &[Self::Item],
+        _filter: Self::CaptureFilter,
+    ) -> Option<Result<Self::Manifest>> {
+        if !self.supports_capture() {
+            return None;
+        }
+
+        // Extract items by type from system state
+        let mut packages = Vec::new();
+        let mut groups = Vec::new();
+        let mut copr_repos = Vec::new();
+
+        for item in system {
+            match item {
+                DnfItem::Package(name) => packages.push(name.clone()),
+                DnfItem::Group(name) => groups.push(name.clone()),
+                DnfItem::Copr(repo) => copr_repos.push(repo.clone()),
+            }
+        }
+
+        packages.sort();
+        groups.sort();
+        copr_repos.sort_by(|a, b| a.name.cmp(&b.name));
+
+        Some(Ok(SystemPackagesManifest {
+            schema: None,
+            packages,
+            groups,
+            excluded: Vec::new(),
+            copr_repos,
+        }))
+    }
+}
+
 // ============================================================================
 // Plan-based DNF Sync Implementation
 // ============================================================================

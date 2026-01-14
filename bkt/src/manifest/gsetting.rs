@@ -1,5 +1,6 @@
 //! GSettings manifest types.
 
+use crate::component::Resource;
 use anyhow::{Context, Result};
 use directories::BaseDirs;
 use schemars::JsonSchema;
@@ -9,7 +10,7 @@ use std::fs;
 use std::path::PathBuf;
 
 /// A GSettings entry.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct GSetting {
     /// Schema name (e.g., "org.gnome.settings-daemon.plugins.power")
     pub schema: String,
@@ -26,6 +27,14 @@ impl GSetting {
     /// Get a unique key for this setting (schema + key).
     pub fn unique_key(&self) -> String {
         format!("{}.{}", self.schema, self.key)
+    }
+}
+
+impl Resource for GSetting {
+    type Id = String;
+
+    fn id(&self) -> String {
+        self.unique_key()
     }
 }
 

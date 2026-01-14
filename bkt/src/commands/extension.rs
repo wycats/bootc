@@ -1,8 +1,10 @@
 //! GNOME extension command implementation.
 
+use crate::component::{DriftReport, SystemComponent};
 use crate::context::PrMode;
 use crate::manifest::GnomeExtensionsManifest;
 use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
+use crate::manifest::extension::{ExtensionConfig, ExtensionItem};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::plan::{
@@ -12,6 +14,7 @@ use crate::validation::validate_gnome_extension;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
+use std::collections::HashSet;
 use std::process::Command;
 
 #[derive(Debug, Args)]
@@ -694,5 +697,120 @@ impl Plan for ExtensionCapturePlan {
 
     fn is_empty(&self) -> bool {
         self.to_capture.is_empty()
+    }
+}
+
+// ============================================================================
+// SystemComponent Implementation
+// ============================================================================
+
+/// The Extension system component.
+///
+/// Provides a unified interface for GNOME extension operations through the
+/// `SystemComponent` trait. Extensions have rich state (installed vs enabled),
+/// so this component overrides `diff()` to handle state transitions.
+#[derive(Debug, Clone, Default)]
+pub struct ExtensionComponent;
+
+impl ExtensionComponent {
+    /// Create a new ExtensionComponent.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl SystemComponent for ExtensionComponent {
+    type Item = ExtensionItem;
+    type Manifest = GnomeExtensionsManifest;
+    type CaptureFilter = ();
+
+    fn name(&self) -> &'static str {
+        "Extensions"
+    }
+
+    fn scan_system(&self) -> Result<Vec<Self::Item>> {
+        // Get all installed extensions with their enabled state
+        let installed = get_installed_extensions_list();
+        let enabled: HashSet<_> = get_enabled_extensions().into_iter().collect();
+
+        Ok(installed
+            .into_iter()
+            .map(|uuid| {
+                let is_enabled = enabled.contains(&uuid);
+                if is_enabled {
+                    ExtensionItem::Uuid(uuid)
+                } else {
+                    ExtensionItem::Object(ExtensionConfig {
+                        id: uuid,
+                        enabled: false,
+                    })
+                }
+            })
+            .collect())
+    }
+
+    fn load_manifest(&self) -> Result<Self::Manifest> {
+        let system = GnomeExtensionsManifest::load_system()?;
+        let user = GnomeExtensionsManifest::load_user()?;
+        Ok(GnomeExtensionsManifest::merged(&system, &user))
+    }
+
+    fn manifest_items(&self, manifest: &Self::Manifest) -> Vec<Self::Item> {
+        manifest.extensions.clone()
+    }
+
+    fn diff(&self, system: &[Self::Item], manifest: &Self::Manifest) -> DriftReport<Self::Item> {
+        let manifest_items = self.manifest_items(manifest);
+
+        // Build lookup maps
+        let system_map: std::collections::HashMap<String, &ExtensionItem> =
+            system.iter().map(|i| (i.id().to_string(), i)).collect();
+        let manifest_ids: HashSet<_> = manifest_items.iter().map(|i| i.id().to_string()).collect();
+
+        let mut to_install = Vec::new();
+        let mut to_update = Vec::new();
+        let mut synced_count = 0;
+
+        for manifest_ext in &manifest_items {
+            match system_map.get(manifest_ext.id()) {
+                None => {
+                    // Extension not installed at all
+                    to_install.push(manifest_ext.clone());
+                }
+                Some(sys_ext) => {
+                    // Check if enabled state matches
+                    if sys_ext.enabled() != manifest_ext.enabled() {
+                        to_update.push(((*sys_ext).clone(), manifest_ext.clone()));
+                    } else {
+                        synced_count += 1;
+                    }
+                }
+            }
+        }
+
+        // Find untracked (installed but not in manifest)
+        let untracked: Vec<_> = system
+            .iter()
+            .filter(|s| !manifest_ids.contains(s.id()))
+            .cloned()
+            .collect();
+
+        DriftReport {
+            to_install,
+            untracked,
+            to_update,
+            synced_count,
+        }
+    }
+
+    fn capture(
+        &self,
+        system: &[Self::Item],
+        _filter: Self::CaptureFilter,
+    ) -> Option<Result<Self::Manifest>> {
+        Some(Ok(GnomeExtensionsManifest {
+            schema: None,
+            extensions: system.to_vec(),
+        }))
     }
 }

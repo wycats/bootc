@@ -33,6 +33,58 @@ impl CoprRepo {
     }
 }
 
+// =============================================================================
+// DnfItem Enum (for SystemComponent trait)
+// =============================================================================
+
+use crate::component::Resource;
+
+/// A unified item type for DNF component resources.
+///
+/// DNF manages multiple distinct resource types (packages, groups, COPR repos)
+/// with different lifecycles. This enum allows the SystemComponent trait to
+/// treat them uniformly while preserving type-specific behavior.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
+pub enum DnfItem {
+    /// An individual package (e.g., "htop")
+    Package(String),
+    /// A package group (e.g., "@development-tools")  
+    Group(String),
+    /// A COPR repository
+    Copr(CoprRepo),
+}
+
+#[allow(dead_code)]
+impl DnfItem {
+    /// Create a new package item.
+    pub fn package(name: impl Into<String>) -> Self {
+        DnfItem::Package(name.into())
+    }
+
+    /// Create a new group item.
+    pub fn group(name: impl Into<String>) -> Self {
+        DnfItem::Group(name.into())
+    }
+
+    /// Create a new COPR item.
+    pub fn copr(repo: CoprRepo) -> Self {
+        DnfItem::Copr(repo)
+    }
+}
+
+impl Resource for DnfItem {
+    type Id = String;
+
+    fn id(&self) -> String {
+        match self {
+            DnfItem::Package(name) => format!("pkg:{}", name),
+            DnfItem::Group(name) => format!("grp:{}", name),
+            DnfItem::Copr(repo) => format!("copr:{}", repo.name),
+        }
+    }
+}
+
 /// The system-packages.json manifest.
 ///
 /// Tracks RPM packages installed via rpm-ostree (host) or dnf (toolbox).

@@ -10,7 +10,6 @@
 //! 4. Back to `bkt status`
 
 use crate::component::SystemComponent;
-use crate::manifest::{GSettingsManifest, GnomeExtensionsManifest, ShimsManifest};
 use crate::output::Output;
 use crate::repo::find_repo_path;
 use anyhow::Result;
@@ -22,9 +21,10 @@ use std::process::Command;
 use tracing::debug;
 
 use super::dnf::get_layered_packages;
-use super::extension::{get_enabled_extensions, is_installed as is_extension_installed};
+use super::extension::ExtensionComponent;
 use super::flatpak::FlatpakComponent;
-use super::shim::get_installed_shims;
+use super::gsetting::GSettingComponent;
+use super::shim::ShimComponent;
 
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
 pub enum OutputFormat {
@@ -237,16 +237,6 @@ fn skel_differs(skel_path: &PathBuf, home_path: &PathBuf) -> bool {
     skel_content != home_content
 }
 
-/// Get current value of a gsetting.
-fn get_gsetting(schema: &str, key: &str) -> Option<String> {
-    Command::new("gsettings")
-        .args(["get", schema, key])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-}
-
 pub fn run(args: StatusArgs) -> Result<()> {
     debug!("Gathering status information");
 
@@ -268,86 +258,51 @@ pub fn run(args: StatusArgs) -> Result<()> {
         }
     };
 
-    // Get enabled extensions for drift detection (use HashSet for O(1) lookup)
-    let enabled_extensions: std::collections::HashSet<String> =
-        get_enabled_extensions().into_iter().collect();
-
-    // Gather extension status
+    // Gather extension status using SystemComponent trait
     let extension_status = {
-        let system = GnomeExtensionsManifest::load_system().unwrap_or_default();
-        let user = GnomeExtensionsManifest::load_user().unwrap_or_default();
-        let merged = GnomeExtensionsManifest::merged(&system, &user);
+        let component = ExtensionComponent::new();
+        let system = component.scan_system()?;
+        let manifest = component.load_manifest()?;
+        let drift = component.diff(&system, &manifest);
 
-        let manifest_uuids: std::collections::HashSet<_> =
-            merged.extensions.iter().map(|s| s.id()).collect();
-
-        let total = merged.extensions.len();
-        let installed = merged
-            .extensions
-            .iter()
-            .filter(|u| is_extension_installed(u.id()))
-            .count();
-        let enabled = merged
-            .extensions
-            .iter()
-            .filter(|u| enabled_extensions.contains(u.id()))
-            .count();
-
-        // Find untracked extensions (enabled but not in manifest)
-        let untracked = enabled_extensions
-            .iter()
-            .filter(|uuid| !manifest_uuids.contains(uuid.as_str()))
-            .count();
+        // For extensions, "installed" means present on system, "enabled" means in sync with manifest
+        let total = drift.synced_count + drift.to_install.len() + drift.to_update.len();
+        let installed = system.len();
+        let enabled = drift.synced_count; // Extensions that match manifest state
 
         ExtensionStatus {
             total,
             installed,
             enabled,
-            untracked,
+            untracked: drift.untracked.len(),
         }
     };
 
-    // Gather gsettings status
+    // Gather gsettings status using SystemComponent trait
     let gsetting_status = {
-        let system = GSettingsManifest::load_system().unwrap_or_default();
-        let user = GSettingsManifest::load_user().unwrap_or_default();
-        let merged = GSettingsManifest::merged(&system, &user);
-
-        let total = merged.settings.len();
-        let mut applied = 0;
-        let mut drifted = 0;
-
-        for s in &merged.settings {
-            match get_gsetting(&s.schema, &s.key) {
-                Some(current) if current == s.value => applied += 1,
-                Some(_) => drifted += 1, // Value differs from manifest
-                None => drifted += 1,    // Schema/key missing = needs sync
-            }
-        }
+        let component = GSettingComponent::new();
+        let system = component.scan_system()?;
+        let manifest = component.load_manifest()?;
+        let drift = component.diff(&system, &manifest);
 
         GSettingStatus {
-            total,
-            applied,
-            drifted,
+            total: drift.synced_count + drift.to_install.len() + drift.to_update.len(),
+            applied: drift.synced_count,
+            drifted: drift.to_install.len() + drift.to_update.len(),
         }
     };
 
-    // Gather shim status
+    // Gather shim status using SystemComponent trait
     let shim_status = {
-        let system = ShimsManifest::load_system().unwrap_or_default();
-        let user = ShimsManifest::load_user().unwrap_or_default();
-        let merged = ShimsManifest::merged(&system, &user);
+        let component = ShimComponent::new();
+        let system = component.scan_system()?;
+        let manifest = component.load_manifest()?;
+        let drift = component.diff(&system, &manifest);
 
-        let installed_shims: std::collections::HashSet<String> =
-            get_installed_shims().into_iter().collect();
-        let total = merged.shims.len();
-        let synced = merged
-            .shims
-            .iter()
-            .filter(|s| installed_shims.contains(&s.name))
-            .count();
-
-        ShimStatus { total, synced }
+        ShimStatus {
+            total: drift.synced_count + drift.to_install.len(),
+            synced: drift.synced_count,
+        }
     };
 
     // Gather skel status
