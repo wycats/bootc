@@ -107,8 +107,26 @@ apply_gnome_extensions() {
   count="$(jq -r '.extensions | length' "$file")"
 
   for ((i=0; i<count; i++)); do
-    local uuid
-    uuid="$(jq -r ".extensions[$i]" "$file")"
+    local uuid enabled
+    local item
+    item="$(jq -r ".extensions[$i]" "$file")"
+
+    # Handle both string format and object format
+    if [[ "$item" == "{"* ]]; then
+      # Object format: {"id": "...", "enabled": true/false}
+      uuid="$(jq -r ".extensions[$i].id" "$file")"
+      enabled="$(jq -r ".extensions[$i].enabled // true" "$file")"
+    else
+      # String format: just the UUID (implies enabled=true)
+      uuid="$item"
+      enabled="true"
+    fi
+
+    # Skip disabled extensions
+    if [[ "$enabled" != "true" ]]; then
+      log "Skipping disabled extension: ${uuid}"
+      continue
+    fi
 
     if gnome-extensions info "${uuid}" >/dev/null 2>&1; then
       log "Enabling GNOME extension: ${uuid}"

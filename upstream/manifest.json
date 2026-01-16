@@ -86,6 +86,26 @@
       }
     },
     {
+      "name": "noto-color-emoji",
+      "description": "Google Noto Color Emoji font (CBDT bitmap). Pinned to v2.047 due to Chromium bug #40815545 - oversized CBDT tables in v2.051+ cause rendering failures.",
+      "source": {
+        "type": "github",
+        "repo": "googlefonts/noto-emoji",
+        "file_path": "fonts/NotoColorEmoji.ttf"
+      },
+      "pinned": {
+        "version": "v2.047",
+        "commit": "60ac8a9e2f28a4749369cc7ee2a87ea9c4f8bd32",
+        "sha256": "f11db2928b6634a2255a58bba31f39f86f7c85c6c6646739c45c68500c35371b",
+        "pinned_at": "2026-01-16T19:00:00Z",
+        "pin_reason": "v2.051 doubled font size (5MB→10.6MB) with Unicode 17.0 multi-skin-tone sequences, breaking Chromium CBDT rendering"
+      },
+      "install": {
+        "type": "font",
+        "install_path": "/usr/share/fonts/noto-emoji/NotoColorEmoji.ttf"
+      }
+    },
+    {
       "name": "whitesur-icons",
       "description": "WhiteSur icon theme (macOS Big Sur style)",
       "source": {

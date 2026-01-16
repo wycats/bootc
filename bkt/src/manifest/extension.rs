@@ -187,6 +187,30 @@ impl GnomeExtensionsManifest {
         self.extensions.len() < len_before
     }
 
+    /// Set the enabled state for an extension.
+    /// Returns true if the extension was found and updated.
+    pub fn set_enabled(&mut self, uuid: &str, enabled: bool) -> bool {
+        if let Some(pos) = self.extensions.iter().position(|ext| ext.id() == uuid) {
+            // Replace with object format that has the enabled state
+            self.extensions[pos] = ExtensionItem::Object(ExtensionConfig {
+                id: uuid.to_string(),
+                enabled,
+            });
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Add an extension as disabled.
+    pub fn add_disabled(&mut self, uuid: String) {
+        self.extensions.push(ExtensionItem::Object(ExtensionConfig {
+            id: uuid,
+            enabled: false,
+        }));
+        self.extensions.sort_by(|a, b| a.id().cmp(b.id()));
+    }
+
     /// Get details for an extension
     #[allow(dead_code)]
     pub fn get(&self, uuid: &str) -> Option<&ExtensionItem> {

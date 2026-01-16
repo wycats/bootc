@@ -35,6 +35,16 @@ pub enum ExtensionAction {
         /// Extension UUID to remove
         uuid: String,
     },
+    /// Disable an extension in the manifest (keeps it but won't sync)
+    Disable {
+        /// Extension UUID to disable
+        uuid: String,
+    },
+    /// Enable a previously disabled extension in the manifest
+    Enable {
+        /// Extension UUID to enable
+        uuid: String,
+    },
     /// List all GNOME extensions in the manifest
     List {
         /// Output format (table, json)
@@ -225,6 +235,76 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
                     )?;
                 } else {
                     Output::info(format!("'{}' not in system manifest, no PR needed", uuid));
+                }
+            }
+        }
+        ExtensionAction::Disable { uuid } => {
+            let mut user = GnomeExtensionsManifest::load_user()?;
+            let system = GnomeExtensionsManifest::load_system()?;
+
+            // Check if extension exists in either manifest
+            if !user.contains(&uuid) && !system.contains(&uuid) {
+                Output::warning(format!("Extension '{}' not found in manifest", uuid));
+                return Ok(());
+            }
+
+            if plan.should_update_local_manifest() {
+                // Convert to disabled object format
+                if user.set_enabled(&uuid, false) {
+                    user.save_user()?;
+                    Output::success(format!("Disabled '{}' in manifest", uuid));
+                } else {
+                    // Not in user manifest, need to add as disabled
+                    user.add_disabled(uuid.clone());
+                    user.save_user()?;
+                    Output::success(format!(
+                        "Added '{}' as disabled (overrides system manifest)",
+                        uuid
+                    ));
+                }
+            } else if plan.dry_run {
+                Output::dry_run(format!("Would disable '{}' in manifest", uuid));
+            }
+
+            // Also disable the extension on the system if it's enabled
+            if plan.should_execute_locally() && is_enabled(&uuid) {
+                let spinner = Output::spinner(format!("Disabling {}...", uuid));
+                if disable_extension(&uuid)? {
+                    spinner.finish_success(format!("Disabled {}", uuid));
+                } else {
+                    spinner.finish_error(format!("Failed to disable {}", uuid));
+                }
+            }
+        }
+        ExtensionAction::Enable { uuid } => {
+            let mut user = GnomeExtensionsManifest::load_user()?;
+            let system = GnomeExtensionsManifest::load_system()?;
+
+            // Check if extension exists in either manifest
+            if !user.contains(&uuid) && !system.contains(&uuid) {
+                Output::warning(format!("Extension '{}' not found in manifest", uuid));
+                return Ok(());
+            }
+
+            if plan.should_update_local_manifest() {
+                // Set enabled=true (or remove disabled override)
+                if user.set_enabled(&uuid, true) {
+                    user.save_user()?;
+                    Output::success(format!("Enabled '{}' in manifest", uuid));
+                } else {
+                    Output::info(format!("'{}' is already enabled in manifest", uuid));
+                }
+            } else if plan.dry_run {
+                Output::dry_run(format!("Would enable '{}' in manifest", uuid));
+            }
+
+            // Also enable the extension on the system
+            if plan.should_execute_locally() && !is_enabled(&uuid) && is_installed(&uuid) {
+                let spinner = Output::spinner(format!("Enabling {}...", uuid));
+                if enable_extension(&uuid)? {
+                    spinner.finish_success(format!("Enabled {}", uuid));
+                } else {
+                    spinner.finish_error(format!("Failed to enable {}", uuid));
                 }
             }
         }

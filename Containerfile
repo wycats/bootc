@@ -148,13 +148,27 @@ RUN set -eu; \
     rm -f /tmp/JetBrainsMono.zip; \
     fc-cache -f
 
-# Fix emoji rendering in VS Code / Electron apps
-# The COLRv1 vector font is incompatible with Electron's Skia renderer.
-# Remove it and install the legacy bitmap version instead.
-RUN dnf remove -y google-noto-emoji-fonts google-noto-color-emoji-fonts || true; \
+# Fix emoji rendering in VS Code / Electron / Chromium apps
+#
+# Background: Chromium has issues with oversized CBDT bitmap tables in emoji fonts.
+# See: https://issues.chromium.org/issues/40815545
+#
+# The v2.051 NotoColorEmoji.ttf (10.6MB) added Unicode 17.0 with many multi-skin-tone
+# sequences, doubling the CBDT table size. Chromium fails to render these oversized fonts.
+# The v2.047 version (5MB) from October 2024 works correctly.
+#
+# We also remove the COLRv1 vector font packages from the base image, as those have
+# separate Skia renderer compatibility issues in Electron.
+#
+# Pin version is tracked in upstream/manifest.json for update management.
+RUN set -eu; \
+    dnf remove -y google-noto-emoji-fonts google-noto-color-emoji-fonts || true; \
+    commit="$(jq -r '.upstreams[] | select(.name == "noto-color-emoji") | .pinned.commit' /tmp/upstream-manifest.json)"; \
+    expected_sha="$(jq -r '.upstreams[] | select(.name == "noto-color-emoji") | .pinned.sha256' /tmp/upstream-manifest.json)"; \
     mkdir -p /usr/share/fonts/noto-emoji; \
-    curl -fsSL "https://github.com/googlefonts/noto-emoji/raw/main/fonts/NotoColorEmoji.ttf" \
+    curl -fsSL "https://github.com/googlefonts/noto-emoji/raw/${commit}/fonts/NotoColorEmoji.ttf" \
         -o /usr/share/fonts/noto-emoji/NotoColorEmoji.ttf; \
+    echo "${expected_sha}  /usr/share/fonts/noto-emoji/NotoColorEmoji.ttf" | sha256sum -c -; \
     fc-cache -f
 
 COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf

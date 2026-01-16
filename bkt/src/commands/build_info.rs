@@ -1,7 +1,7 @@
 //! Build info command implementation.
 //!
 //! This module provides commands for generating and rendering build descriptions
-//! as specified in RFC-0013.
+//! as specified in internal RFC-0013, which defines the build-info format and rendering rules.
 
 use anyhow::{Context, Result, bail};
 use chrono::Utc;
