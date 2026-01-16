@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Scope for Flatpak apps and remotes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, JsonSchema)]
@@ -71,7 +71,7 @@ impl FlatpakAppsManifest {
     pub const SYSTEM_PATH: &'static str = "/usr/share/bootc-bootstrap/flatpak-apps.json";
 
     /// Load a manifest from a path.
-    pub fn load(path: &PathBuf) -> Result<Self> {
+    pub fn load(path: &Path) -> Result<Self> {
         if !path.exists() {
             return Ok(Self::default());
         }
@@ -167,7 +167,6 @@ impl FlatpakAppsManifest {
 }
 
 /// A Flatpak remote entry.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct FlatpakRemote {
     /// Remote name
@@ -182,12 +181,59 @@ pub struct FlatpakRemote {
 }
 
 /// The flatpak-remotes.json manifest.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
 pub struct FlatpakRemotesManifest {
     #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,
     pub remotes: Vec<FlatpakRemote>,
+}
+
+impl FlatpakRemotesManifest {
+    /// System manifest path (baked into image).
+    #[allow(dead_code)]
+    pub const SYSTEM_PATH: &'static str = "/usr/share/bootc-bootstrap/flatpak-remotes.json";
+
+    /// Load a manifest from a path.
+    pub fn load(path: &Path) -> Result<Self> {
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let content = fs::read_to_string(path).with_context(|| {
+            format!(
+                "Failed to read flatpak remotes manifest from {}",
+                path.display()
+            )
+        })?;
+        let manifest: Self = serde_json::from_str(&content).with_context(|| {
+            format!(
+                "Failed to parse flatpak remotes manifest from {}",
+                path.display()
+            )
+        })?;
+        Ok(manifest)
+    }
+
+    /// Load the system manifest.
+    #[allow(dead_code)]
+    pub fn load_system() -> Result<Self> {
+        Self::load(&PathBuf::from(Self::SYSTEM_PATH))
+    }
+
+    /// Load from current working directory (for manifest repos).
+    pub fn load_cwd() -> Result<Self> {
+        Self::load(&PathBuf::from("manifests/flatpak-remotes.json"))
+    }
+
+    /// Check if a remote name is managed by this manifest.
+    pub fn has_remote(&self, name: &str) -> bool {
+        self.remotes.iter().any(|r| r.name == name)
+    }
+
+    /// Get all remote names.
+    #[allow(dead_code)]
+    pub fn remote_names(&self) -> Vec<&str> {
+        self.remotes.iter().map(|r| r.name.as_str()).collect()
+    }
 }
 
 #[cfg(test)]

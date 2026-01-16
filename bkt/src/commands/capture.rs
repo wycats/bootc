@@ -10,6 +10,7 @@ use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::plan::{CompositePlan, ExecuteContext, Plan, PlanContext, Plannable};
 
+use super::appimage::{AppImageCaptureCommand, AppImageCapturePlan};
 use super::dnf::{DnfCaptureCommand, DnfCapturePlan};
 use super::extension::{ExtensionCaptureCommand, ExtensionCapturePlan};
 use super::flatpak::{FlatpakCaptureCommand, FlatpakCapturePlan};
@@ -24,6 +25,8 @@ pub enum CaptureSubsystem {
     Flatpak,
     /// DNF/RPM packages (rpm-ostree layered)
     Dnf,
+    /// AppImage applications (via GearLever)
+    AppImage,
 }
 
 impl std::fmt::Display for CaptureSubsystem {
@@ -32,6 +35,7 @@ impl std::fmt::Display for CaptureSubsystem {
             CaptureSubsystem::Extension => write!(f, "extension"),
             CaptureSubsystem::Flatpak => write!(f, "flatpak"),
             CaptureSubsystem::Dnf => write!(f, "dnf"),
+            CaptureSubsystem::AppImage => write!(f, "appimage"),
         }
     }
 }
@@ -105,6 +109,12 @@ impl Plannable for CaptureCommand {
         if self.should_include(CaptureSubsystem::Dnf) {
             let dnf_plan: DnfCapturePlan = DnfCaptureCommand.plan(ctx)?;
             composite.add(dnf_plan);
+        }
+
+        // AppImage capture (via GearLever)
+        if self.should_include(CaptureSubsystem::AppImage) {
+            let appimage_plan: AppImageCapturePlan = AppImageCaptureCommand.plan(ctx)?;
+            composite.add(appimage_plan);
         }
 
         Ok(composite)

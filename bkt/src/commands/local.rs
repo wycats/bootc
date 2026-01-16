@@ -35,8 +35,8 @@ use owo_colors::OwoColorize;
 
 use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{
-    FlatpakApp, FlatpakAppsManifest, FlatpakScope, GSetting, GSettingsManifest,
-    GnomeExtensionsManifest, Shim, ShimsManifest, SystemPackagesManifest,
+    AppImageApp, AppImageAppsManifest, FlatpakApp, FlatpakAppsManifest, FlatpakScope, GSetting,
+    GSettingsManifest, GnomeExtensionsManifest, Shim, ShimsManifest, SystemPackagesManifest,
 };
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
@@ -116,8 +116,9 @@ fn parse_domain_filter(domain: &str) -> Result<ChangeDomain> {
         "gsetting" | "gs" => Ok(ChangeDomain::Gsetting),
         "shim" => Ok(ChangeDomain::Shim),
         "dnf" | "rpm" => Ok(ChangeDomain::Dnf),
+        "appimage" | "ai" => Ok(ChangeDomain::AppImage),
         _ => bail!(
-            "Unknown domain: '{}'. Valid domains: flatpak, extension, gsetting, shim, dnf",
+            "Unknown domain: '{}'. Valid domains: flatpak, extension, gsetting, shim, dnf, appimage",
             domain
         ),
     }
@@ -333,6 +334,10 @@ fn run_commit_workflow(
                 let change = apply_dnf_changes(domain_changes, &manifests_dir)?;
                 manifest_changes.insert("system-packages.json".to_string(), change);
             }
+            ChangeDomain::AppImage => {
+                let change = apply_appimage_changes(domain_changes, &manifests_dir)?;
+                manifest_changes.insert("appimage-apps.json".to_string(), change);
+            }
         }
     }
 
@@ -536,6 +541,52 @@ fn apply_dnf_changes(
             }
             ChangeAction::Remove => {
                 manifest.remove_package(&change.identifier);
+            }
+        }
+    }
+
+    let content = serde_json::to_string_pretty(&manifest)?;
+    Ok(ManifestChange { content })
+}
+
+/// Apply appimage changes to the manifest.
+fn apply_appimage_changes(
+    changes: &[&EphemeralChange],
+    manifests_dir: &std::path::Path,
+) -> Result<ManifestChange> {
+    let mut manifest = AppImageAppsManifest::load_from_dir(manifests_dir)?;
+
+    for change in changes {
+        match change.action {
+            ChangeAction::Add | ChangeAction::Update => {
+                // Get repo and asset from metadata
+                let repo = change
+                    .metadata
+                    .get("repo")
+                    .cloned()
+                    .unwrap_or_else(|| format!("{0}/{0}", change.identifier));
+                let asset = change
+                    .metadata
+                    .get("asset")
+                    .cloned()
+                    .unwrap_or_else(|| "*.AppImage".to_string());
+                let prereleases = change
+                    .metadata
+                    .get("prereleases")
+                    .map(|s| s == "true")
+                    .unwrap_or(false);
+
+                let app = AppImageApp {
+                    name: change.identifier.clone(),
+                    repo,
+                    asset,
+                    prereleases,
+                    disabled: false,
+                };
+                manifest.upsert(app);
+            }
+            ChangeAction::Remove => {
+                manifest.remove(&change.identifier);
             }
         }
     }

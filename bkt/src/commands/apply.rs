@@ -8,8 +8,9 @@ use clap::Args;
 
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
-use crate::plan::{CompositePlan, ExecuteContext, Plan, PlanContext, Plannable};
+use crate::plan::{CompositePlan, ExecuteContext, OperationProgress, Plan, PlanContext, Plannable};
 
+use super::appimage::{AppImageSyncCommand, AppImageSyncPlan};
 use super::dnf::{DnfSyncCommand, DnfSyncPlan};
 use super::extension::{ExtensionSyncCommand, ExtensionSyncPlan};
 use super::flatpak::{FlatpakSyncCommand, FlatpakSyncPlan};
@@ -29,6 +30,8 @@ pub enum Subsystem {
     Flatpak,
     /// DNF/rpm-ostree packages
     Dnf,
+    /// AppImages via GearLever
+    AppImage,
 }
 
 impl std::fmt::Display for Subsystem {
@@ -39,6 +42,7 @@ impl std::fmt::Display for Subsystem {
             Subsystem::Extension => write!(f, "extension"),
             Subsystem::Flatpak => write!(f, "flatpak"),
             Subsystem::Dnf => write!(f, "dnf"),
+            Subsystem::AppImage => write!(f, "appimage"),
         }
     }
 }
@@ -126,6 +130,15 @@ impl Plannable for ApplyCommand {
             composite.add(dnf_plan);
         }
 
+        // AppImage sync via GearLever
+        if self.should_include(Subsystem::AppImage) {
+            let appimage_plan: AppImageSyncPlan = AppImageSyncCommand {
+                keep_unmanaged: false, // Prune by default
+            }
+            .plan(ctx)?;
+            composite.add(appimage_plan);
+        }
+
         Ok(composite)
     }
 }
@@ -144,19 +157,55 @@ pub fn run(args: ApplyArgs, exec_plan: &ExecutionPlan) -> Result<()> {
     }
 
     // Always show the plan
-    print!("{}", plan.describe());
+    let summary = plan.describe();
+    print!("{}", summary);
 
     if exec_plan.dry_run {
         Output::info("Run without --dry-run to apply these changes.");
         return Ok(());
     }
 
-    // Execute the plan
+    // Print hint that we're executing
+    Output::info("Applying changes...");
+    println!();
+
+    // Execute the plan with progress tracking
+    let total_ops = summary.action_count();
     let mut exec_ctx = ExecuteContext::new(exec_plan.clone());
+    exec_ctx.set_total_ops(total_ops);
+    exec_ctx.set_progress_callback(print_progress);
+
     let report = plan.execute(&mut exec_ctx)?;
+
+    // Print final summary (only failures, since progress showed successes)
+    println!();
     print!("{}", report);
 
     Ok(())
+}
+
+/// Print progress for a single operation.
+fn print_progress(progress: &OperationProgress) {
+    use owo_colors::OwoColorize;
+
+    let index_str = format!("[{}/{}]", progress.current, progress.total);
+    let result = &progress.result;
+
+    if result.success {
+        println!(
+            "{} {} {}",
+            index_str.dimmed(),
+            "✓".green().bold(),
+            result.operation
+        );
+    } else {
+        println!(
+            "{} {} {}",
+            index_str.dimmed(),
+            "✗".red().bold(),
+            result.operation
+        );
+    }
 }
 
 #[cfg(test)]

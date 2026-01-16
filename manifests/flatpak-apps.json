@@ -132,11 +132,6 @@
       "scope": "user"
     },
     {
-      "id": "io.github.softfever.OrcaSlicer",
-      "remote": "orcaslicer-origin",
-      "scope": "system"
-    },
-    {
       "id": "io.github.tntwise.REAL-Video-Enhancer",
       "remote": "flathub",
       "scope": "system"

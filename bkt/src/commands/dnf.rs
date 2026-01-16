@@ -1263,7 +1263,7 @@ impl Plan for DnfSyncPlan {
         summary
     }
 
-    fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
+    fn execute(self, ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
         let mut report = ExecutionReport::new();
 
         if self.to_install.is_empty() {
@@ -1284,13 +1284,22 @@ impl Plan for DnfSyncPlan {
             Ok(()) => {
                 // Record success for all packages
                 for pkg in self.to_install {
-                    report.record_success(Verb::Install, format!("package:{}", pkg));
+                    report.record_success_and_notify(
+                        ctx,
+                        Verb::Install,
+                        format!("package:{}", pkg),
+                    );
                 }
             }
             Err(e) => {
                 // Record failure for all packages
                 for pkg in self.to_install {
-                    report.record_failure(Verb::Install, format!("package:{}", pkg), e.to_string());
+                    report.record_failure_and_notify(
+                        ctx,
+                        Verb::Install,
+                        format!("package:{}", pkg),
+                        e.to_string(),
+                    );
                 }
             }
         }

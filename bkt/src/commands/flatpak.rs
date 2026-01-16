@@ -2,11 +2,12 @@
 
 use crate::context::{CommandDomain, PrMode};
 use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
-use crate::manifest::{FlatpakApp, FlatpakAppsManifest, FlatpakScope};
+use crate::manifest::{FlatpakApp, FlatpakAppsManifest, FlatpakRemotesManifest, FlatpakScope};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::plan::{
-    ExecuteContext, ExecutionReport, Operation, Plan, PlanContext, PlanSummary, Plannable, Verb,
+    ExecuteContext, ExecutionReport, Operation, Plan, PlanContext, PlanSummary, PlanWarning,
+    Plannable, Verb,
 };
 use crate::validation::validate_flatpak_app;
 use anyhow::{Context, Result};
@@ -468,23 +469,29 @@ impl Plan for FlatpakSyncPlan {
         summary
     }
 
-    fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
+    fn execute(self, ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
         let mut report = ExecutionReport::new();
 
         for item in self.to_install {
             match install_flatpak(&item.app) {
                 Ok(true) => {
-                    report.record_success(Verb::Install, format!("flatpak:{}", item.app.id));
+                    report.record_success_and_notify(
+                        ctx,
+                        Verb::Install,
+                        format!("flatpak:{}", item.app.id),
+                    );
                 }
                 Ok(false) => {
-                    report.record_failure(
+                    report.record_failure_and_notify(
+                        ctx,
                         Verb::Install,
                         format!("flatpak:{}", item.app.id),
                         "flatpak install failed",
                     );
                 }
                 Err(e) => {
-                    report.record_failure(
+                    report.record_failure_and_notify(
+                        ctx,
                         Verb::Install,
                         format!("flatpak:{}", item.app.id),
                         e.to_string(),
@@ -568,6 +575,10 @@ pub fn get_installed_flatpaks() -> Vec<InstalledFlatpak> {
 pub struct FlatpakToCapture {
     /// The flatpak app to add.
     pub app: FlatpakApp,
+    /// Whether the remote is unmanaged (not in flatpak-remotes.json).
+    /// Used for warning display; will be used for filtering in future.
+    #[allow(dead_code)]
+    pub unmanaged_remote: bool,
 }
 
 /// Command to capture installed flatpaks to manifest.
@@ -579,6 +590,8 @@ pub struct FlatpakCapturePlan {
     pub to_capture: Vec<FlatpakToCapture>,
     /// Flatpaks already in manifest.
     pub already_in_manifest: usize,
+    /// Warnings about unmanaged remotes.
+    pub warnings: Vec<PlanWarning>,
 }
 
 impl Plannable for FlatpakCaptureCommand {
@@ -593,8 +606,12 @@ impl Plannable for FlatpakCaptureCommand {
         let user = FlatpakAppsManifest::load_user()?;
         let merged = FlatpakAppsManifest::merged(&system, &user);
 
+        // Load remotes manifest to check for unmanaged remotes
+        let remotes = FlatpakRemotesManifest::load_cwd().unwrap_or_default();
+
         let mut to_capture = Vec::new();
         let mut already_in_manifest = 0;
+        let mut warnings = Vec::new();
 
         for flatpak in installed {
             if merged.find(&flatpak.id).is_some() {
@@ -607,14 +624,29 @@ impl Plannable for FlatpakCaptureCommand {
                     FlatpakScope::System
                 };
 
+                let remote = if flatpak.origin.is_empty() {
+                    "flathub".to_string()
+                } else {
+                    flatpak.origin
+                };
+
+                // Check if the remote is managed
+                let unmanaged_remote = !remotes.has_remote(&remote);
+                if unmanaged_remote {
+                    warnings.push(PlanWarning::new(
+                        format!("flatpak:{}", flatpak.id),
+                        format!(
+                            "remote '{}' is not in flatpak-remotes.json; \
+                             this app may have been installed from a .flatpak bundle",
+                            remote
+                        ),
+                    ));
+                }
+
                 to_capture.push(FlatpakToCapture {
                     app: FlatpakApp {
                         id: flatpak.id,
-                        remote: if flatpak.origin.is_empty() {
-                            "flathub".to_string()
-                        } else {
-                            flatpak.origin
-                        },
+                        remote,
                         scope,
                         branch: Some(flatpak.branch),
                         commit: if flatpak.commit.is_empty() {
@@ -624,6 +656,7 @@ impl Plannable for FlatpakCaptureCommand {
                         },
                         overrides: None,
                     },
+                    unmanaged_remote,
                 });
             }
         }
@@ -634,6 +667,7 @@ impl Plannable for FlatpakCaptureCommand {
         Ok(FlatpakCapturePlan {
             to_capture,
             already_in_manifest,
+            warnings,
         })
     }
 }
@@ -652,6 +686,11 @@ impl Plan for FlatpakCapturePlan {
                 format!("flatpak:{}", item.app.id),
                 format!("{} ({})", item.app.remote, item.app.scope),
             ));
+        }
+
+        // Add warnings about unmanaged remotes
+        for warning in &self.warnings {
+            summary.add_warning(warning.clone());
         }
 
         summary

@@ -113,6 +113,10 @@ pub enum Commands {
     #[command(alias = "fp")]
     Flatpak(commands::flatpak::FlatpakArgs),
 
+    /// Manage AppImages via GearLever
+    #[command(name = "appimage", alias = "ai")]
+    AppImage(commands::appimage::AppImageArgs),
+
     /// Manage host shims for toolbox
     Shim(commands::shim::ShimArgs),
 
@@ -157,6 +161,10 @@ pub enum Commands {
     /// Track what the upstream Bazzite image provides (for drift detection)
     Base(commands::base::BaseArgs),
 
+    /// Generate and render build descriptions for container images
+    #[command(name = "build-info")]
+    BuildInfo(commands::build_info::BuildInfoArgs),
+
     /// Manage Containerfile managed sections
     Containerfile(commands::containerfile::ContainerfileArgs),
 
@@ -177,6 +185,7 @@ impl Commands {
         match self {
             // Host-only commands
             Commands::Flatpak(_) => CommandTarget::Host,
+            Commands::AppImage(_) => CommandTarget::Host,
             Commands::Extension(_) => CommandTarget::Host,
             Commands::Gsetting(_) => CommandTarget::Host,
             Commands::Shim(_) => CommandTarget::Host,
@@ -199,6 +208,7 @@ impl Commands {
             Commands::Changelog(_) => CommandTarget::Either,
             Commands::Drift(_) => CommandTarget::Either,
             Commands::Base(_) => CommandTarget::Either,
+            Commands::BuildInfo(_) => CommandTarget::Either,
             Commands::Skel(_) => CommandTarget::Either,
             Commands::Containerfile(_) => CommandTarget::Either,
             Commands::Local(_) => CommandTarget::Either,
@@ -245,6 +255,7 @@ fn main() -> Result<()> {
         Commands::Dnf(args) => commands::dnf::run(args, &plan),
         Commands::Dev(args) => commands::dev::run(args, &plan),
         Commands::Flatpak(args) => commands::flatpak::run(args, &plan),
+        Commands::AppImage(args) => commands::appimage::run(args, &plan),
         Commands::Shim(args) => commands::shim::run(args, &plan),
         Commands::Extension(args) => commands::extension::run(args, &plan),
         Commands::Gsetting(args) => commands::gsetting::run(args, &plan),
@@ -259,6 +270,7 @@ fn main() -> Result<()> {
         Commands::Changelog(args) => commands::changelog::run(args),
         Commands::Drift(args) => commands::drift::run(args),
         Commands::Base(args) => commands::base::run(args),
+        Commands::BuildInfo(args) => commands::build_info::run(args),
         Commands::Containerfile(args) => commands::containerfile::run(args),
         Commands::Local(args) => commands::local::run(args, &plan),
     }

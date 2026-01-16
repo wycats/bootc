@@ -246,6 +246,62 @@ jobs:
           chmod +x target/x86_64-unknown-linux-gnu/release/bkt
           cp target/x86_64-unknown-linux-gnu/release/bkt ../scripts/bkt
 
+      - name: Generate build info
+        id: build-info
+        run: |
+          set -euo pipefail
+
+          # Get the previous commit (from last successful build)
+          PREV_COMMIT="${{ github.event.before }}"
+          CURR_COMMIT="${{ github.sha }}"
+
+          # For scheduled runs, we need to find the previous build commit
+          if [[ "${{ github.event_name }}" == "schedule" || -z "$PREV_COMMIT" || "$PREV_COMMIT" == "0000000000000000000000000000000000000000" ]]; then
+            # Get commit from HEAD~1
+            PREV_COMMIT=$(git rev-list --max-count=1 HEAD~1 2>/dev/null || echo "$CURR_COMMIT")
+          fi
+
+          # Generate build info JSON
+          ./scripts/bkt build-info generate \
+            --from "$PREV_COMMIT" \
+            --to "$CURR_COMMIT" \
+            --output build-info.json || {
+            echo "Build info generation failed, creating empty placeholder"
+            echo '{"schema_version":"1.0.0","build":{"commit":"'"$CURR_COMMIT"'","timestamp":"'"$(date -Iseconds)"'"},"manifests":{}}' > build-info.json
+          }
+
+          # Render to markdown
+          ./scripts/bkt build-info render build-info.json --output build-info.md || {
+            echo "Markdown rendering failed, creating placeholder"
+            echo "# Build Info" > build-info.md
+            echo "" >> build-info.md
+            echo "Commit: $CURR_COMMIT" >> build-info.md
+          }
+
+          # Generate 512-char summary for OCI annotation
+          RELEASE_TAG="sha-${CURR_COMMIT:0:7}"
+          SUMMARY=$(./scripts/bkt build-info summary build-info.json --max-length 400 2>/dev/null || echo "Build update")
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG}"
+          SUMMARY="${SUMMARY} ⮕ ${RELEASE_URL}"
+
+          echo "summary<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$SUMMARY" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release with build info
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.build-info.outputs.release_tag }}
+          name: "Build ${{ steps.build-info.outputs.release_tag }}"
+          body_path: build-info.md
+          files: |
+            build-info.json
+            build-info.md
+          make_latest: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Free disk space
         shell: bash
         run: |
@@ -290,6 +346,7 @@ jobs:
             ${{ steps.meta.outputs.labels }}
             org.wycats.bootc.base.image=${{ env.BASE_IMAGE }}
             org.wycats.bootc.base.digest=${{ needs.check-upstream.outputs.upstream_digest }}
+            org.opencontainers.image.description=${{ steps.build-info.outputs.summary }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
