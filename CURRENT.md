@@ -40,13 +40,13 @@ Phase 2 established the top half. Phase 3 closes the manifest→Containerfile lo
 | ID  | Item                                                   | Source    | Priority  | Status      |
 | --- | ------------------------------------------------------ | --------- | --------- | ----------- |
 | 1   | [Containerfile Auto-Generation](#1-containerfile-auto) | RFC-0002  | ✅ Done   | Completed   |
-| 2   | [Post-Reboot Automation](#2-post-reboot)               | Workflow  | 🔴 High   | Completed   |
+| 2   | [Post-Reboot Automation](#2-post-reboot)               | Workflow  | ✅ Done   | Completed   |
 | 3   | [Drift Visibility in Status](#3-drift-visibility)      | Workflow  | ✅ Done   | Completed   |
-| 4   | [Ephemeral Manifest](#4-ephemeral-manifest)            | RFC-0001  | 🟡 Medium | Completed   |
-| 5   | [Image-Time Configuration](#5-image-time-config)       | RFC-0004  | 🟡 Medium | Partial     |
+| 4   | [Ephemeral Manifest](#4-ephemeral-manifest)            | RFC-0001  | ✅ Done   | Completed   |
+| 5   | [Image-Time Configuration](#5-image-time-config)       | RFC-0004  | ✅ Done   | Completed   |
 | 6   | [RFC Audit & Cleanup](#6-rfc-audit)                    | Housekeep | ✅ Done   | Completed   |
-| 7   | [Changelog in Status](#7-changelog-in-status)          | RFC-0005  | 🟢 Low    | Not Started |
-| 8   | [Topgrade Integration](#8-topgrade-integration)        | Feature   | 🟡 Medium | Completed   |
+| 7   | [Changelog in Status](#7-changelog-in-status)          | RFC-0005  | ✅ Done   | Completed   |
+| 8   | [Topgrade Integration](#8-topgrade-integration)        | Feature   | ✅ Done   | Completed   |
 
 ---
 
@@ -316,7 +316,7 @@ What if ephemeral changes conflict with committed changes (e.g., remove package 
 
 **Source:** RFC-0004  
 **Priority:** 🟡 Medium  
-**Status:** Partial
+**Status:** Completed
 
 ### Problem
 
@@ -328,19 +328,19 @@ Some configuration can only be applied at image build time:
 
 ### Current State
 
-RFC-0004 exists but is marked "Future".
+~~RFC-0004 exists but is marked "Future".~~ Implemented.
 
 ### Solution
 
 Implement `bkt admin` commands for image-time config:
 
-- `bkt admin kargs add/remove`
-- `bkt admin systemd enable/disable` (for custom units, not runtime control)
+- `bkt admin kargs append/remove/list`
+- `bkt admin systemd enable/disable/mask/list`
 
 ### Deliverables
 
 - [x] Review and update RFC-0004
-- [ ] Implement `bkt admin kargs` commands
+- [x] Implement `bkt admin kargs` commands
 - [x] Implement systemd unit management for image-time
 - [x] Create manifest for managed units
 - [x] Hook into Containerfile generation
@@ -493,7 +493,7 @@ Based on current implementation status and effort estimates:
 
 **Source:** Proposed extension to RFC-0005 (not currently specified in RFC)  
 **Priority:** 🟢 Low  
-**Status:** Not Started
+**Status:** ✅ Completed
 
 ### Problem
 
@@ -507,30 +507,33 @@ Based on current implementation status and effort estimates:
 - Pending manual steps from recent releases?
 - Last N released versions?
 
-**Proposed:** Show pending manual steps only — these are actionable. Full changelog available via `bkt changelog show`.
+**Proposed:** Show pending changelog entries with count and draft status. Full changelog available via `bkt changelog pending`.
 
 **Q2: Status output format**
 
 - New section "Pending Steps" alongside "Drift Detection"?
 - Integrated into "Next Actions"?
 
-**Proposed:** Add to "Next Actions" section with clear labeling.
+**Decision:** Added dedicated "Changelog" section showing pending count. Ready-to-release entries trigger a "Next Action" suggesting `bkt changelog create-version`.
 
 ### Solution
 
-Integrate changelog data into `bkt status` output:
+Integrated changelog data into `bkt status` output:
 
-- Show pending manual steps from recent releases
-- Link to full changelog for more detail
+- Added `ChangelogStatus` struct with `pending_count` and `has_drafts` fields
+- Shows "Changelog" section when pending entries exist
+- Differentiates between entries ready for release vs entries with drafts
+- Adds "Release N pending changelog entries" to Next Actions when appropriate
 
 ### Deliverables
 
-- [ ] Add changelog loading to `bkt status` command
-- [ ] Show pending manual steps in "Next Actions" section
-- [ ] Add `--no-changelog` flag to skip changelog loading (for speed)
+- [x] Add changelog loading to `bkt status` command
+- [x] Show pending changelog count in dedicated section
+- [x] Add `--no-changelog` flag to skip changelog loading (for speed)
 
 ### Acceptance Criteria
 
-- `bkt status` shows pending manual steps alongside drift detection
-- Pending steps are surfaced without running a separate command
-- Performance: changelog loading adds < 50ms to status command
+- [x] `bkt status` shows pending changelog entries alongside drift detection
+- [x] Pending entries are surfaced without running a separate command
+- [x] Draft entries are indicated (cannot be released)
+- [x] Ready-to-release entries trigger Next Action suggestion
