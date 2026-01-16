@@ -185,6 +185,8 @@ fn extension_help_shows_subcommands() {
         .success()
         .stdout(predicate::str::contains("add"))
         .stdout(predicate::str::contains("remove"))
+        .stdout(predicate::str::contains("disable"))
+        .stdout(predicate::str::contains("enable"))
         .stdout(predicate::str::contains("list"))
         .stdout(predicate::str::contains("sync"))
         .stdout(predicate::str::contains("capture"));
