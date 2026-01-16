@@ -37,16 +37,16 @@ Phase 2 established the top half. Phase 3 closes the manifest→Containerfile lo
 
 ## Overview
 
-| ID  | Item                                                   | Source    | Priority  | Status      |
-| --- | ------------------------------------------------------ | --------- | --------- | ----------- |
-| 1   | [Containerfile Auto-Generation](#1-containerfile-auto) | RFC-0002  | ✅ Done   | Completed   |
-| 2   | [Post-Reboot Automation](#2-post-reboot)               | Workflow  | ✅ Done   | Completed   |
-| 3   | [Drift Visibility in Status](#3-drift-visibility)      | Workflow  | ✅ Done   | Completed   |
-| 4   | [Ephemeral Manifest](#4-ephemeral-manifest)            | RFC-0001  | ✅ Done   | Completed   |
-| 5   | [Image-Time Configuration](#5-image-time-config)       | RFC-0004  | ✅ Done   | Completed   |
-| 6   | [RFC Audit & Cleanup](#6-rfc-audit)                    | Housekeep | ✅ Done   | Completed   |
-| 7   | [Changelog in Status](#7-changelog-in-status)          | RFC-0005  | ✅ Done   | Completed   |
-| 8   | [Topgrade Integration](#8-topgrade-integration)        | Feature   | ✅ Done   | Completed   |
+| ID  | Item                                                   | Source    | Priority | Status    |
+| --- | ------------------------------------------------------ | --------- | -------- | --------- |
+| 1   | [Containerfile Auto-Generation](#1-containerfile-auto) | RFC-0002  | ✅ Done  | Completed |
+| 2   | [Post-Reboot Automation](#2-post-reboot)               | Workflow  | ✅ Done  | Completed |
+| 3   | [Drift Visibility in Status](#3-drift-visibility)      | Workflow  | ✅ Done  | Completed |
+| 4   | [Ephemeral Manifest](#4-ephemeral-manifest)            | RFC-0001  | ✅ Done  | Completed |
+| 5   | [Image-Time Configuration](#5-image-time-config)       | RFC-0004  | ✅ Done  | Completed |
+| 6   | [RFC Audit & Cleanup](#6-rfc-audit)                    | Housekeep | ✅ Done  | Completed |
+| 7   | [Changelog in Status](#7-changelog-in-status)          | RFC-0005  | ✅ Done  | Completed |
+| 8   | [Topgrade Integration](#8-topgrade-integration)        | Feature   | ✅ Done  | Completed |
 
 ---
 
@@ -514,7 +514,7 @@ Based on current implementation status and effort estimates:
 - New section "Pending Steps" alongside "Drift Detection"?
 - Integrated into "Next Actions"?
 
-**Decision:** Added dedicated "Changelog" section showing pending count. Ready-to-release entries trigger a "Next Action" suggesting `bkt changelog create-version`.
+**Decision:** Added dedicated "Changelog" section showing pending count. Ready-to-release entries trigger a "Next Action" suggesting `bkt changelog release`.
 
 ### Solution
 
