@@ -537,7 +537,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
                     "entries"
                 }
             ),
-            command: "bkt changelog create-version".to_string(),
+            command: "bkt changelog release".to_string(),
             priority: 5, // Lower priority than drift sync
         });
     }
