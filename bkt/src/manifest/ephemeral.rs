@@ -37,6 +37,8 @@ pub enum ChangeDomain {
     Shim,
     /// DNF/RPM package (via rpm-ostree overlay)
     Dnf,
+    /// AppImage application (via GearLever)
+    AppImage,
 }
 
 impl std::fmt::Display for ChangeDomain {
@@ -47,6 +49,7 @@ impl std::fmt::Display for ChangeDomain {
             ChangeDomain::Gsetting => write!(f, "gsetting"),
             ChangeDomain::Shim => write!(f, "shim"),
             ChangeDomain::Dnf => write!(f, "dnf"),
+            ChangeDomain::AppImage => write!(f, "appimage"),
         }
     }
 }

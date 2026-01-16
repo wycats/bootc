@@ -395,7 +395,7 @@ impl Plan for ShimSyncPlan {
         summary
     }
 
-    fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
+    fn execute(self, ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
         let mut report = ExecutionReport::new();
 
         // Create shims directory
@@ -425,7 +425,8 @@ impl Plan for ShimSyncPlan {
             match generate_shim_script(shim.host_cmd()) {
                 Ok(content) => {
                     if let Err(e) = fs::write(&shim_path, &content) {
-                        report.record_failure(
+                        report.record_failure_and_notify(
+                            ctx,
                             Verb::Create,
                             format!("shim:{}", shim.name),
                             e.to_string(),
@@ -440,7 +441,8 @@ impl Plan for ShimSyncPlan {
                         fs::set_permissions(&shim_path, perms)?;
                         Ok(())
                     })() {
-                        report.record_failure(
+                        report.record_failure_and_notify(
+                            ctx,
                             Verb::Create,
                             format!("shim:{}", shim.name),
                             format!("chmod failed: {}", e),
@@ -448,10 +450,15 @@ impl Plan for ShimSyncPlan {
                         continue;
                     }
 
-                    report.record_success(Verb::Create, format!("shim:{}", shim.name));
+                    report.record_success_and_notify(
+                        ctx,
+                        Verb::Create,
+                        format!("shim:{}", shim.name),
+                    );
                 }
                 Err(e) => {
-                    report.record_failure(
+                    report.record_failure_and_notify(
+                        ctx,
                         Verb::Create,
                         format!("shim:{}", shim.name),
                         e.to_string(),

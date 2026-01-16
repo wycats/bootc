@@ -109,6 +109,44 @@ impl PlanContext {
     }
 }
 
+// ============================================================================
+// Progress Tracking
+// ============================================================================
+//
+// Progress tracking enables real-time feedback during plan execution.
+// The flow works as follows:
+//
+// 1. Before execution, `ExecuteContext` is configured with the total
+//    operation count and a callback function.
+// 2. During execution, each `record_*_and_notify()` call increments
+//    the current operation counter and invokes the callback.
+// 3. The callback receives an `OperationProgress` with the current
+//    index, total count, and the operation result.
+//
+// This design allows the UI layer (e.g., `apply.rs`) to display
+// progress like `[3/10] ✓ flatpak:com.example.App` without the
+// plan execution code knowing about display concerns.
+
+/// Progress information for an operation.
+///
+/// Passed to the progress callback after each operation completes.
+/// Contains the operation index, total count, and the result.
+#[derive(Debug, Clone)]
+pub struct OperationProgress {
+    /// Current operation index (1-based).
+    pub current: usize,
+    /// Total number of operations.
+    pub total: usize,
+    /// The result of this operation.
+    pub result: OperationResult,
+}
+
+/// Callback type for receiving progress updates during execution.
+///
+/// The callback is invoked once per operation, after it completes.
+/// Implementations should be lightweight to avoid slowing execution.
+pub type ProgressCallback = Box<dyn Fn(&OperationProgress) + Send + Sync>;
+
 /// Context for the execution phase.
 ///
 /// Provides controlled access to side effects via the `Executor`.
@@ -117,6 +155,12 @@ pub struct ExecuteContext {
     executor: Executor,
     /// Execution plan with mode settings.
     execution_plan: ExecutionPlan,
+    /// Optional progress callback.
+    progress_callback: Option<ProgressCallback>,
+    /// Current operation index (0-based, incremented before each callback).
+    current_op: usize,
+    /// Total number of operations.
+    total_ops: usize,
 }
 
 impl ExecuteContext {
@@ -125,6 +169,45 @@ impl ExecuteContext {
         Self {
             executor: Executor::new(execution_plan.dry_run),
             execution_plan,
+            progress_callback: None,
+            current_op: 0,
+            total_ops: 0,
+        }
+    }
+
+    /// Set the progress callback and total operation count.
+    pub fn with_progress(
+        mut self,
+        total: usize,
+        callback: impl Fn(&OperationProgress) + Send + Sync + 'static,
+    ) -> Self {
+        self.total_ops = total;
+        self.progress_callback = Some(Box::new(callback));
+        self
+    }
+
+    /// Set just the total operations (for use when context is already created).
+    pub fn set_total_ops(&mut self, total: usize) {
+        self.total_ops = total;
+    }
+
+    /// Set the progress callback.
+    pub fn set_progress_callback(
+        &mut self,
+        callback: impl Fn(&OperationProgress) + Send + Sync + 'static,
+    ) {
+        self.progress_callback = Some(Box::new(callback));
+    }
+
+    /// Notify progress for an operation result.
+    pub fn notify_progress(&mut self, result: OperationResult) {
+        self.current_op += 1;
+        if let Some(ref callback) = self.progress_callback {
+            callback(&OperationProgress {
+                current: self.current_op,
+                total: self.total_ops,
+                result,
+            });
         }
     }
 
@@ -253,6 +336,31 @@ impl fmt::Display for Operation {
 // Plan Summary
 // ============================================================================
 
+/// A warning message generated during planning.
+#[derive(Debug, Clone)]
+pub struct PlanWarning {
+    /// The target this warning relates to (e.g., "flatpak:com.example.App").
+    pub target: String,
+    /// The warning message.
+    pub message: String,
+}
+
+impl PlanWarning {
+    /// Create a new warning.
+    pub fn new(target: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            target: target.into(),
+            message: message.into(),
+        }
+    }
+}
+
+impl fmt::Display for PlanWarning {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.target, self.message)
+    }
+}
+
 /// Structured description of a plan for display.
 #[derive(Debug, Clone)]
 pub struct PlanSummary {
@@ -260,6 +368,8 @@ pub struct PlanSummary {
     pub summary: String,
     /// List of operations to perform.
     pub operations: Vec<Operation>,
+    /// Non-blocking warnings discovered during planning.
+    pub warnings: Vec<PlanWarning>,
 }
 
 impl PlanSummary {
@@ -268,6 +378,7 @@ impl PlanSummary {
         Self {
             summary: summary.into(),
             operations: Vec::new(),
+            warnings: Vec::new(),
         }
     }
 
@@ -279,6 +390,16 @@ impl PlanSummary {
     /// Add multiple operations.
     pub fn add_operations(&mut self, ops: impl IntoIterator<Item = Operation>) {
         self.operations.extend(ops);
+    }
+
+    /// Add a warning to the summary.
+    pub fn add_warning(&mut self, warning: PlanWarning) {
+        self.warnings.push(warning);
+    }
+
+    /// Add multiple warnings.
+    pub fn add_warnings(&mut self, warnings: impl IntoIterator<Item = PlanWarning>) {
+        self.warnings.extend(warnings);
     }
 
     /// Get count of non-skip operations.
@@ -293,6 +414,11 @@ impl PlanSummary {
     pub fn has_actions(&self) -> bool {
         self.action_count() > 0
     }
+
+    /// Check if there are any warnings.
+    pub fn has_warnings(&self) -> bool {
+        !self.warnings.is_empty()
+    }
 }
 
 impl fmt::Display for PlanSummary {
@@ -304,6 +430,15 @@ impl fmt::Display for PlanSummary {
         } else {
             for op in &self.operations {
                 writeln!(f, "  ▸ {}", op)?;
+            }
+        }
+
+        // Display warnings if any
+        if !self.warnings.is_empty() {
+            writeln!(f)?;
+            writeln!(f, "{}:", "Warnings".yellow())?;
+            for warning in &self.warnings {
+                writeln!(f, "  {} {}", "⚠".yellow(), warning)?;
             }
         }
 
@@ -394,6 +529,45 @@ impl ExecutionReport {
             Operation::new(verb, target),
             error,
         ));
+    }
+
+    /// Record a successful operation and notify progress.
+    pub fn record_success_and_notify(
+        &mut self,
+        ctx: &mut ExecuteContext,
+        verb: Verb,
+        target: impl Into<String>,
+    ) {
+        let result = OperationResult::success(Operation::new(verb, target));
+        ctx.notify_progress(result.clone());
+        self.results.push(result);
+    }
+
+    /// Record a successful operation with details and notify progress.
+    pub fn record_success_with_details_and_notify(
+        &mut self,
+        ctx: &mut ExecuteContext,
+        verb: Verb,
+        target: impl Into<String>,
+        details: impl Into<String>,
+    ) {
+        let result = OperationResult::success(Operation::with_details(verb, target, details));
+        ctx.notify_progress(result.clone());
+        self.results.push(result);
+    }
+
+    /// Record a failed operation and notify progress.
+    pub fn record_failure_and_notify(
+        &mut self,
+        ctx: &mut ExecuteContext,
+        verb: Verb,
+        target: impl Into<String>,
+        error: impl Into<String>,
+    ) {
+        let error_str = error.into();
+        let result = OperationResult::failure(Operation::new(verb, target), error_str);
+        ctx.notify_progress(result.clone());
+        self.results.push(result);
     }
 
     /// Merge another report into this one.
@@ -496,6 +670,7 @@ impl Plan for CompositePlan {
         for plan in &self.plans {
             let sub = plan.describe_dyn();
             summary.add_operations(sub.operations);
+            summary.add_warnings(sub.warnings);
         }
 
         summary

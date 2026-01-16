@@ -79,7 +79,11 @@ fn capture_help_shows_options() {
 
 #[test]
 fn capture_dry_run_succeeds() {
-    bkt().args(["capture", "--dry-run"]).assert().success();
+    // Exclude app-image since GearLever may not be installed in CI
+    bkt()
+        .args(["capture", "--dry-run", "--exclude", "app-image"])
+        .assert()
+        .success();
 }
 
 // ============================================================================

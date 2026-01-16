@@ -464,24 +464,30 @@ impl Plan for ExtensionSyncPlan {
         summary
     }
 
-    fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
+    fn execute(self, ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
         let mut report = ExecutionReport::new();
 
         for ext in self.to_enable {
             match ext.state {
                 ExtensionState::Disabled => match enable_extension(&ext.uuid) {
                     Ok(true) => {
-                        report.record_success(Verb::Enable, format!("extension:{}", ext.uuid));
+                        report.record_success_and_notify(
+                            ctx,
+                            Verb::Enable,
+                            format!("extension:{}", ext.uuid),
+                        );
                     }
                     Ok(false) => {
-                        report.record_failure(
+                        report.record_failure_and_notify(
+                            ctx,
                             Verb::Enable,
                             format!("extension:{}", ext.uuid),
                             "gnome-extensions enable failed",
                         );
                     }
                     Err(e) => {
-                        report.record_failure(
+                        report.record_failure_and_notify(
+                            ctx,
                             Verb::Enable,
                             format!("extension:{}", ext.uuid),
                             e.to_string(),
@@ -497,17 +503,23 @@ impl Plan for ExtensionSyncPlan {
         for uuid in self.to_disable {
             match disable_extension(&uuid) {
                 Ok(true) => {
-                    report.record_success(Verb::Disable, format!("extension:{}", uuid));
+                    report.record_success_and_notify(
+                        ctx,
+                        Verb::Disable,
+                        format!("extension:{}", uuid),
+                    );
                 }
                 Ok(false) => {
-                    report.record_failure(
+                    report.record_failure_and_notify(
+                        ctx,
                         Verb::Disable,
                         format!("extension:{}", uuid),
                         "gnome-extensions disable failed",
                     );
                 }
                 Err(e) => {
-                    report.record_failure(
+                    report.record_failure_and_notify(
+                        ctx,
                         Verb::Disable,
                         format!("extension:{}", uuid),
                         e.to_string(),

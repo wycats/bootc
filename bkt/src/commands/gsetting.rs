@@ -476,7 +476,7 @@ impl Plan for GsettingApplyPlan {
         summary
     }
 
-    fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
+    fn execute(self, ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
         let mut report = ExecutionReport::new();
 
         for item in self.to_apply {
@@ -484,17 +484,27 @@ impl Plan for GsettingApplyPlan {
 
             match set_gsetting(&item.setting.schema, &item.setting.key, &item.setting.value) {
                 Ok(true) => {
-                    report.record_success(Verb::Set, format!("gsetting:{}", target));
+                    report.record_success_and_notify(
+                        ctx,
+                        Verb::Set,
+                        format!("gsetting:{}", target),
+                    );
                 }
                 Ok(false) => {
-                    report.record_failure(
+                    report.record_failure_and_notify(
+                        ctx,
                         Verb::Set,
                         format!("gsetting:{}", target),
                         "gsettings command failed",
                     );
                 }
                 Err(e) => {
-                    report.record_failure(Verb::Set, format!("gsetting:{}", target), e.to_string());
+                    report.record_failure_and_notify(
+                        ctx,
+                        Verb::Set,
+                        format!("gsetting:{}", target),
+                        e.to_string(),
+                    );
                 }
             }
         }
