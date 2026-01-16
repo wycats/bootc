@@ -1,7 +1,7 @@
 //! Status command implementation.
 //!
 //! The **Daily Loop Hub**: shows system status, manifest status, drift detection,
-//! and next actions in a single unified view.
+//! changelog status, and next actions in a single unified view.
 //!
 //! This is the entry point for the workflow:
 //! 1. `bkt status` - See where you are
@@ -11,6 +11,7 @@
 
 use crate::manifest::{
     FlatpakAppsManifest, GSettingsManifest, GnomeExtensionsManifest, ShimsManifest,
+    changelog::ChangelogManager,
 };
 use crate::output::Output;
 use crate::repo::find_repo_path;
@@ -46,6 +47,10 @@ pub struct StatusArgs {
     /// Skip OS status (faster, useful in toolbox)
     #[arg(long)]
     skip_os: bool,
+
+    /// Skip changelog loading (faster)
+    #[arg(long)]
+    no_changelog: bool,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -57,8 +62,20 @@ pub struct StatusReport {
     pub manifests: ManifestStatus,
     /// Drift detection results
     pub drift: DriftStatus,
+    /// Changelog status
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub changelog: Option<ChangelogStatus>,
     /// Suggested next actions
     pub next_actions: Vec<NextAction>,
+}
+
+/// Changelog status information
+#[derive(Debug, serde::Serialize)]
+pub struct ChangelogStatus {
+    /// Number of pending (unreleased) changelog entries
+    pub pending_count: usize,
+    /// Whether there are draft entries (cannot be released)
+    pub has_drafts: bool,
 }
 
 /// OS-level status from bootc/rpm-ostree
@@ -453,6 +470,29 @@ pub fn run(args: StatusArgs) -> Result<()> {
         pending_capture,
     };
 
+    // Gather changelog status (unless skipped)
+    let changelog_status = if args.no_changelog {
+        None
+    } else {
+        find_repo_path().ok().and_then(|repo_path| {
+            let manager = ChangelogManager::new(&repo_path);
+            match manager.load_pending() {
+                Ok(entries) if entries.is_empty() => None,
+                Ok(entries) => {
+                    let has_drafts = entries.iter().any(|e| e.draft);
+                    Some(ChangelogStatus {
+                        pending_count: entries.len(),
+                        has_drafts,
+                    })
+                }
+                Err(e) => {
+                    debug!("Failed to load changelog: {}", e);
+                    None
+                }
+            }
+        })
+    };
+
     // Generate next actions
     let mut next_actions = Vec::new();
 
@@ -482,6 +522,26 @@ pub fn run(args: StatusArgs) -> Result<()> {
         });
     }
 
+    // Add changelog action if there are pending entries ready for release
+    if let Some(ref changelog) = changelog_status
+        && changelog.pending_count > 0
+        && !changelog.has_drafts
+    {
+        next_actions.push(NextAction {
+            description: format!(
+                "Release {} pending changelog {}",
+                changelog.pending_count,
+                if changelog.pending_count == 1 {
+                    "entry"
+                } else {
+                    "entries"
+                }
+            ),
+            command: "bkt changelog create-version".to_string(),
+            priority: 5, // Lower priority than drift sync
+        });
+    }
+
     // Sort by priority
     next_actions.sort_by_key(|a| a.priority);
 
@@ -489,6 +549,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
         os: os_status,
         manifests: manifest_status,
         drift: drift_status,
+        changelog: changelog_status,
         next_actions,
     };
 
@@ -726,6 +787,36 @@ fn print_table_output(report: &StatusReport, verbose: bool) {
         );
     }
 
+    // Changelog Section
+    if let Some(ref changelog) = report.changelog {
+        Output::blank();
+        println!("{}", "  Changelog".bold());
+
+        let entry_word = if changelog.pending_count == 1 {
+            "entry"
+        } else {
+            "entries"
+        };
+
+        if changelog.has_drafts {
+            println!(
+                "    {} pending {} (includes drafts)",
+                changelog.pending_count.to_string().yellow().bold(),
+                entry_word
+            );
+            println!(
+                "    Run {} to see pending entries.",
+                "bkt changelog pending".cyan().bold()
+            );
+        } else {
+            println!(
+                "    {} pending {} ready for release",
+                changelog.pending_count.to_string().green().bold(),
+                entry_word
+            );
+        }
+    }
+
     // Next Actions Section
     if !report.next_actions.is_empty() {
         Output::blank();
@@ -919,6 +1010,7 @@ mod tests {
                 pending_sync: 0,
                 pending_capture: 0,
             },
+            changelog: None,
             next_actions: vec![],
         };
 
@@ -928,5 +1020,78 @@ mod tests {
         assert!(json.contains("next_actions"));
         // os should be omitted when None
         assert!(!json.contains("\"os\""));
+        // changelog should be omitted when None
+        assert!(!json.contains("\"changelog\""));
+    }
+
+    #[test]
+    fn test_changelog_status_serialization() {
+        let changelog = ChangelogStatus {
+            pending_count: 3,
+            has_drafts: false,
+        };
+
+        let json = serde_json::to_string(&changelog).unwrap();
+        assert!(json.contains("\"pending_count\":3"));
+        assert!(json.contains("\"has_drafts\":false"));
+    }
+
+    #[test]
+    fn test_changelog_status_with_drafts() {
+        let changelog = ChangelogStatus {
+            pending_count: 5,
+            has_drafts: true,
+        };
+
+        assert!(changelog.has_drafts);
+        assert_eq!(changelog.pending_count, 5);
+    }
+
+    #[test]
+    fn test_status_report_with_changelog() {
+        let report = StatusReport {
+            os: None,
+            manifests: ManifestStatus {
+                flatpaks: FlatpakStatus {
+                    total: 0,
+                    installed: 0,
+                    pending: 0,
+                    untracked: 0,
+                },
+                extensions: ExtensionStatus {
+                    total: 0,
+                    installed: 0,
+                    enabled: 0,
+                    untracked: 0,
+                },
+                gsettings: GSettingStatus {
+                    total: 0,
+                    applied: 0,
+                    drifted: 0,
+                },
+                shims: ShimStatus {
+                    total: 0,
+                    synced: 0,
+                },
+                skel: SkelStatus {
+                    total: 0,
+                    differs: 0,
+                },
+            },
+            drift: DriftStatus {
+                has_drift: false,
+                pending_sync: 0,
+                pending_capture: 0,
+            },
+            changelog: Some(ChangelogStatus {
+                pending_count: 2,
+                has_drafts: false,
+            }),
+            next_actions: vec![],
+        };
+
+        let json = serde_json::to_string_pretty(&report).unwrap();
+        assert!(json.contains("\"changelog\""));
+        assert!(json.contains("\"pending_count\": 2"));
     }
 }
