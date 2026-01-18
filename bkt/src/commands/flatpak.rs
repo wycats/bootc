@@ -527,15 +527,34 @@ pub struct InstalledFlatpak {
     pub commit: String,
 }
 
+/// Check if running inside a toolbox container.
+fn is_in_toolbox() -> bool {
+    std::env::var("TOOLBOX_PATH").is_ok() || std::path::Path::new("/run/.toolboxenv").exists()
+}
+
 /// Get list of installed flatpaks from the system.
+///
+/// When running inside a toolbox, this delegates to the host via flatpak-spawn.
 pub fn get_installed_flatpaks() -> Vec<InstalledFlatpak> {
-    let output = Command::new("flatpak")
-        .args([
-            "list",
-            "--app",
-            "--columns=installation,application,origin,branch,commit",
-        ])
-        .output();
+    let output = if is_in_toolbox() {
+        Command::new("flatpak-spawn")
+            .args([
+                "--host",
+                "flatpak",
+                "list",
+                "--app",
+                "--columns=installation,application,origin,branch,commit",
+            ])
+            .output()
+    } else {
+        Command::new("flatpak")
+            .args([
+                "list",
+                "--app",
+                "--columns=installation,application,origin,branch,commit",
+            ])
+            .output()
+    };
 
     match output {
         Ok(o) if o.status.success() => {
