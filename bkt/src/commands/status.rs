@@ -25,6 +25,22 @@ use tracing::debug;
 
 use super::flatpak::get_installed_flatpaks;
 
+/// Check if running inside a toolbox container.
+fn is_in_toolbox() -> bool {
+    std::env::var("TOOLBOX_PATH").is_ok() || std::path::Path::new("/run/.toolboxenv").exists()
+}
+
+/// Run a command on the host (delegates via flatpak-spawn if in toolbox).
+fn host_command(program: &str, args: &[&str]) -> std::io::Result<std::process::Output> {
+    if is_in_toolbox() {
+        let mut cmd = Command::new("flatpak-spawn");
+        cmd.arg("--host").arg(program).args(args);
+        cmd.output()
+    } else {
+        Command::new(program).args(args).output()
+    }
+}
+
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
 pub enum OutputFormat {
     /// Human-readable table output
@@ -171,10 +187,7 @@ pub struct NextAction {
 
 /// Get OS status from rpm-ostree
 fn get_os_status() -> Option<OsStatus> {
-    let output = Command::new("rpm-ostree")
-        .args(["status", "--json"])
-        .output()
-        .ok()?;
+    let output = host_command("rpm-ostree", &["status", "--json"]).ok()?;
 
     if !output.status.success() {
         return None;
@@ -231,9 +244,7 @@ fn get_os_status() -> Option<OsStatus> {
 
 /// Get list of enabled GNOME extension UUIDs
 fn get_enabled_extensions() -> Vec<String> {
-    let output = Command::new("gnome-extensions")
-        .args(["list", "--enabled"])
-        .output();
+    let output = host_command("gnome-extensions", &["list", "--enabled"]);
 
     match output {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
@@ -280,18 +291,14 @@ fn skel_differs(skel_path: &PathBuf, home_path: &PathBuf) -> bool {
 
 /// Check if a GNOME extension is installed.
 fn is_extension_installed(uuid: &str) -> bool {
-    Command::new("gnome-extensions")
-        .args(["info", uuid])
-        .output()
+    host_command("gnome-extensions", &["info", uuid])
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
 
 /// Get current value of a gsetting.
 fn get_gsetting(schema: &str, key: &str) -> Option<String> {
-    Command::new("gsettings")
-        .args(["get", schema, key])
-        .output()
+    host_command("gsettings", &["get", schema, key])
         .ok()
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
