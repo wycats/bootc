@@ -12,6 +12,7 @@ Implement `bkt dev` commands for managing the development toolbox environment, i
 ## Motivation
 
 Development environments need:
+
 1. **Language runtimes**: Node.js, Rust, Go, Python with specific versions
 2. **Build tools**: compilers, linkers, cmake, meson
 3. **CLI utilities**: git, gh, jq, ripgrep
@@ -305,10 +306,7 @@ bkt dev source ~/.bashrc.d/bkt.sh
   "environment": {
     "EDITOR": "nvim"
   },
-  "path_additions": [
-    "~/.cargo/bin",
-    "~/.local/bin"
-  ]
+  "path_additions": ["~/.cargo/bin", "~/.local/bin"]
 }
 ```
 
@@ -317,6 +315,7 @@ bkt dev source ~/.bashrc.d/bkt.sh
 The Containerfile is **always generated** from `manifest.json`. Users should never edit it directly.
 
 Generation happens:
+
 - After any `bkt dev` mutating command
 - On `bkt dev rebuild`
 - On `bkt dev generate` (explicit regeneration)
@@ -372,6 +371,377 @@ bkt dev destroy
 # List available toolboxes
 bkt dev list
 ```
+
+## Execution Semantics
+
+Commands like `bkt dev dnf install gcc` are **execution-first** - they actually run the install, then update the manifest on success.
+
+### Execute First, Record on Success
+
+```
+bkt dev dnf install gcc
+         |
+         v
++------------------------+
+| 1. Execute in toolbox: |
+|    dnf install gcc     |
++------------------------+
+         |
+    Success?
+    /      \
+   Yes      No
+   |         |
+   v         v
++--------+ +------------------+
+| Update | | Error: Install   |
+| mani-  | | failed.          |
+| fest   | | Manifest NOT     |
++--------+ | updated.         |
+   |       +------------------+
+   v
++---------------------+
+| Regenerate          |
+| Containerfile       |
++---------------------+
+```
+
+This ensures the manifest always reflects the **actual state** of the toolbox - not what we _tried_ to install.
+
+### Flags for Controlling Behavior
+
+| Flag              | Effect                                                                                                |
+| ----------------- | ----------------------------------------------------------------------------------------------------- |
+| `--local`         | Stage the change in ephemeral manifest without execution. Use `bkt local commit` to create PR later. |
+| `--no-pr`         | Skip PR creation (for `bkt dnf` commands that would normally create PRs).                             |
+| `--dry-run`       | Show what would be executed and recorded, but do nothing.                                             |
+
+#### Staging Changes with `--local`
+
+The `--local` flag stages changes in the ephemeral manifest (see RFC-0001) without executing them. This is useful for:
+
+- Planning changes to commit later as a batch
+- Working offline and committing when connected
+- Staging removals without immediately affecting the system
+
+```bash
+# Stage an addition (doesn't install yet)
+bkt dev dnf install gcc --local
+
+# Stage a removal (doesn't uninstall yet)  
+bkt dev dnf remove cmake --local
+
+# View staged changes
+bkt local list
+
+# Create PR with all staged changes
+bkt local commit
+```
+
+**Why not `--manifest-only`?**
+
+A `--manifest-only` flag would create ambiguity with drift detection. If manifest says "no gcc" but system has gcc, is that:
+- User installed gcc outside bkt (drift to capture)?
+- User staged a removal (intent to remove)?
+
+Using the ephemeral manifest for staging keeps the committed manifest as the source of truth, making drift detection unambiguous.
+
+#### Examples
+
+```bash
+# Normal: Execute install, then update manifest
+bkt dev dnf install gcc
+
+# Stage for later commit (uses ephemeral manifest)
+bkt dev dnf install gcc --local
+
+# Skip PR creation (for dev commands this is usually the default)
+bkt dev dnf install gcc --no-pr
+
+# Preview changes
+bkt dev dnf install gcc --dry-run
+```
+
+### Error Handling
+
+#### Installation Failure
+
+```bash
+$ bkt dev dnf install nonexistent-package
+Error: Package 'nonexistent-package' not found in repositories.
+Manifest NOT updated.
+```
+
+#### Partial Failure
+
+When installing multiple packages, if any fail:
+
+```bash
+$ bkt dev dnf install gcc nonexistent cmake
+Error: Package 'nonexistent' not found in repositories.
+Successfully installed: gcc, cmake
+Partially updated manifest (only successful packages added).
+```
+
+The manifest is updated with only the packages that succeeded. This atomic-per-package approach prevents losing successful installations.
+
+#### Rollback Semantics
+
+If execution fails **completely**, the manifest is unchanged. If execution **partially** succeeds, the manifest reflects what actually got installed.
+
+```
++--------------------------------------------------+
+|  Execution Result    |  Manifest Update          |
++--------------------------------------------------+
+|  Full success        |  All packages added       |
+|  Partial success     |  Only successful added    |
+|  Complete failure    |  No changes               |
++--------------------------------------------------+
+```
+
+### Execution Context
+
+All `bkt dev` commands execute inside the toolbox container:
+
+```bash
+# This runs `dnf install gcc` INSIDE the toolbox, not on the host
+bkt dev dnf install gcc
+
+# Equivalent to:
+toolbox run -- sudo dnf install gcc
+# + update manifest
+# + regenerate Containerfile
+```
+
+## Toolchain Management Details
+
+### Rust Toolchain (`bkt dev rustup`)
+
+#### Subcommand Structure
+
+`bkt dev rustup` mirrors `rustup` commands:
+
+```bash
+# Set default toolchain
+bkt dev rustup default stable
+bkt dev rustup default nightly-2025-01-15
+
+# Add components
+bkt dev rustup component add rust-analyzer
+bkt dev rustup component add clippy rustfmt
+
+# Add targets
+bkt dev rustup target add wasm32-unknown-unknown
+bkt dev rustup target add x86_64-unknown-linux-musl
+```
+
+#### Execution Flow
+
+```bash
+bkt dev rustup default stable
+```
+
+1. **Execute**: Run `rustup default stable` in toolbox
+2. **On success**: Update `manifest.json` → `rust.default_toolchain = "stable"`
+3. **Regenerate**: Update Containerfile
+
+#### Manifest Storage
+
+```json
+{
+  "rust": {
+    "default_toolchain": "stable",
+    "components": ["rust-analyzer", "clippy", "rustfmt"],
+    "targets": ["wasm32-unknown-unknown", "x86_64-unknown-linux-musl"]
+  }
+}
+```
+
+#### Containerfile Generation
+
+```dockerfile
+# === RUST TOOLCHAIN (managed by bkt) ===
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV CARGO_HOME=/usr/local/cargo
+ENV PATH=/usr/local/cargo/bin:$PATH
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    --default-toolchain stable \
+    --component rust-analyzer,clippy,rustfmt \
+    --target wasm32-unknown-unknown,x86_64-unknown-linux-musl
+# === END RUST TOOLCHAIN ===
+```
+
+#### Special Cases
+
+```bash
+# Install rustup itself (if not present)
+bkt dev rustup init
+
+# Update all toolchains
+bkt dev rustup update
+# Note: This executes but does NOT update manifest (versions are floating)
+```
+
+### Node.js Packages (`bkt dev npm`)
+
+#### Subcommand Structure
+
+`bkt dev npm` handles global package installations:
+
+```bash
+# Install global packages
+bkt dev npm install -g typescript
+bkt dev npm install -g typescript prettier eslint
+
+# Remove global packages
+bkt dev npm uninstall -g typescript
+```
+
+#### Execution Flow
+
+```bash
+bkt dev npm install -g typescript
+```
+
+1. **Execute**: Run `npm install -g typescript` in toolbox
+2. **On success**: Update `manifest.json` → append to `node.global_packages`
+3. **Regenerate**: Update Containerfile
+
+#### Manifest Storage
+
+```json
+{
+  "node": {
+    "version": "20",
+    "manager": "fnm",
+    "global_packages": [
+      "typescript",
+      "prettier",
+      "eslint",
+      "typescript-language-server"
+    ]
+  }
+}
+```
+
+#### Containerfile Generation
+
+```dockerfile
+# === NODE.JS (managed by bkt) ===
+ENV NODE_VERSION=20
+ENV FNM_DIR=/usr/local/fnm
+ENV PATH=/usr/local/fnm:$PATH
+
+RUN curl -fsSL https://fnm.vercel.app/install | bash -s -- --install-dir /usr/local/fnm
+RUN fnm install $NODE_VERSION && fnm default $NODE_VERSION
+
+RUN npm install -g \
+    typescript \
+    prettier \
+    eslint \
+    typescript-language-server
+# === END NODE.JS ===
+```
+
+#### Version Pinning (Future)
+
+```bash
+# Future: pin specific versions
+bkt dev npm install -g typescript@5.3.0
+```
+
+This would store versions in manifest and generate versioned npm commands.
+
+### Verified Scripts (`bkt dev script`)
+
+#### SHA256 Verification Process
+
+```bash
+bkt dev script add https://starship.rs/install.sh
+```
+
+**First run:**
+
+1. Fetch script from URL
+2. Display content for review
+3. Prompt: "Execute this script? [y/N]"
+4. If approved:
+   - Compute SHA256 hash
+   - Execute script
+   - Store URL + hash in manifest
+
+**Subsequent runs (during rebuild):**
+
+1. Fetch script from URL
+2. Compute SHA256 hash
+3. Compare against stored hash
+4. If **match**: Execute silently
+5. If **mismatch**: Show diff, prompt for re-approval
+
+#### Manifest Storage
+
+```json
+{
+  "scripts": [
+    {
+      "name": "starship",
+      "url": "https://starship.rs/install.sh",
+      "sha256": "a1b2c3d4e5f6...",
+      "args": ["-y"],
+      "first_approved": "2025-01-02T10:30:00Z",
+      "last_verified": "2025-01-15T08:00:00Z"
+    },
+    {
+      "name": "mise",
+      "url": "https://mise.run",
+      "sha256": "f6e5d4c3b2a1...",
+      "args": [],
+      "first_approved": "2025-01-05T14:20:00Z",
+      "last_verified": "2025-01-15T08:00:00Z"
+    }
+  ]
+}
+```
+
+#### Script Management Commands
+
+```bash
+# Add a new script
+bkt dev script add https://starship.rs/install.sh
+
+# Add with arguments
+bkt dev script add https://starship.rs/install.sh -- -y
+
+# List verified scripts
+bkt dev script list
+
+# Re-verify a script (check for updates)
+bkt dev script verify starship
+
+# Remove a script from manifest
+bkt dev script remove starship
+```
+
+#### Containerfile Generation
+
+```dockerfile
+# === SCRIPTS (managed by bkt) ===
+# starship (approved: 2025-01-02, sha256: a1b2c3d4...)
+RUN curl -fsSL https://starship.rs/install.sh | sh -s -- -y
+
+# mise (approved: 2025-01-05, sha256: f6e5d4c3...)
+RUN curl -fsSL https://mise.run | sh
+# === END SCRIPTS ===
+```
+
+#### Security Considerations
+
+| Risk                           | Mitigation                                     |
+| ------------------------------ | ---------------------------------------------- |
+| Script changes maliciously     | SHA256 verification catches changes            |
+| Script removed from URL        | Containerfile generation fails loudly          |
+| MITM during fetch              | HTTPS required, TLS verification               |
+| User approves malicious script | Display full script, require explicit approval |
 
 ## Drawbacks
 

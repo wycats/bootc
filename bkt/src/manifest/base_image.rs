@@ -10,6 +10,7 @@
 //! host but not in toolbox. When running from toolbox, commands are automatically
 //! delegated to the host via `flatpak-spawn --host`.
 
+use crate::context::{is_in_toolbox, run_host_command};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -68,27 +69,6 @@ pub struct ImagePackageList {
     pub digest: String,
     /// Map of package name → full version (for diffing)
     pub packages: BTreeMap<String, String>,
-}
-
-/// Check if we're running in a toolbox and need to delegate to host.
-fn is_in_toolbox() -> bool {
-    // Toolbox sets this environment variable
-    std::env::var("TOOLBOX_PATH").is_ok() || std::path::Path::new("/run/.toolboxenv").exists()
-}
-
-/// Run a host command, delegating via flatpak-spawn if in toolbox.
-fn run_host_command(command: &str, args: &[&str]) -> Result<std::process::Output> {
-    if is_in_toolbox() {
-        let mut cmd = Command::new("flatpak-spawn");
-        cmd.arg("--host").arg(command).args(args);
-        cmd.output()
-            .with_context(|| format!("Failed to run {} via flatpak-spawn", command))
-    } else {
-        Command::new(command)
-            .args(args)
-            .output()
-            .with_context(|| format!("Failed to run {}", command))
-    }
 }
 
 /// Get the digest of an image using skopeo.
