@@ -219,6 +219,150 @@ RUN --mount=type=cache,target=/var/cache/dnf \
 
 This caches the DNF package cache across builds, speeding up rebuilds. The generated Containerfile optionally includes this when `bkt` is configured with `cache_strategy: buildkit`.
 
+### Host Package Management
+
+Running `bkt dnf install` directly on the host system (outside a toolbox) triggers a unified workflow that updates both the manifest and Containerfile atomically.
+
+#### Host vs Toolbox Detection
+
+`bkt` automatically detects whether it's running on the host or inside a toolbox using `is_in_toolbox()` from `context.rs`. This enables context-aware behavior:
+
+```rust
+// From bkt/src/context.rs
+pub fn is_in_toolbox() -> bool {
+    // Checks for toolbox-specific environment markers:
+    // - TOOLBOX_PATH environment variable
+    // - /run/.containerenv file exists
+    // - container=toolbox in /run/.containerenv
+    ...
+}
+```
+
+| Context | Detection                      | Command Behavior                 |
+| ------- | ------------------------------ | -------------------------------- |
+| Host    | No toolbox markers present     | Updates manifest + Containerfile |
+| Toolbox | `TOOLBOX_PATH` or containerenv | Updates toolbox manifest only    |
+
+#### Host Package Workflow
+
+When `bkt dnf install htop` runs **on the host**:
+
+1. **Immediate Installation**: Runs `rpm-ostree install htop` (optionally with `--now`)
+2. **Manifest Update**: Adds `htop` to `manifests/system-packages.json`
+3. **Containerfile Regeneration**: Regenerates the `SYSTEM_PACKAGES` section in `Containerfile`
+4. **Atomic Commit**: Creates a single commit containing both file changes
+5. **PR Creation**: Opens a PR with the unified change
+
+```bash
+# Example: Install htop on host
+$ bkt dnf install htop
+
+Installing htop via rpm-ostree...
+✓ Package installed (reboot required)
+
+Updating manifests/system-packages.json...
+✓ Added: htop
+
+Regenerating Containerfile SYSTEM_PACKAGES section...
+✓ Containerfile updated
+
+Creating PR...
+✓ PR #42: Add system package: htop
+  Files changed:
+    - manifests/system-packages.json
+    - Containerfile
+```
+
+For removal, the inverse workflow applies:
+
+```bash
+# Example: Remove htop on host
+$ bkt dnf remove htop
+
+Removing htop via rpm-ostree...
+✓ Package removed (reboot required)
+
+Updating manifests/system-packages.json...
+✓ Removed: htop
+
+Regenerating Containerfile SYSTEM_PACKAGES section...
+✓ Containerfile updated
+
+Creating PR...
+✓ PR #43: Remove system package: htop
+```
+
+#### Atomic Updates
+
+**Critical invariant**: The manifest and Containerfile must always be updated together. This prevents drift between the declarative manifest and the generated Containerfile.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Atomic Commit                        │
+├─────────────────────────────────────────────────────────┤
+│  manifests/system-packages.json  │  Containerfile       │
+│  ─────────────────────────────── │  ───────────────     │
+│  + "htop"                        │  + htop \            │
+└─────────────────────────────────────────────────────────┘
+```
+
+The PR contains exactly one commit with both changes. This ensures:
+
+- **Reviewers see the full picture**: Manifest change and its Containerfile effect together
+- **Bisecting remains reliable**: Any commit represents a consistent state
+- **Rollback is atomic**: Reverting one commit undoes both changes
+
+#### Control Flags
+
+For advanced use cases, users can control which files are updated:
+
+| Flag                   | Manifest Updated | Containerfile Updated | Use Case                                |
+| ---------------------- | ---------------- | --------------------- | --------------------------------------- |
+| (default)              | ✓                | ✓                     | Normal workflow                         |
+| `--manifest-only`      | ✓                | ✗                     | Batch changes, sync Containerfile later |
+| `--containerfile-only` | ✗                | ✓                     | Manual manifest edits already made      |
+
+```bash
+# Update only the manifest (skip Containerfile regeneration)
+bkt dnf install htop --manifest-only
+
+# Update only the Containerfile (manifest already edited manually)
+bkt dnf install htop --containerfile-only
+```
+
+**Warning**: Using these flags can create drift between manifest and Containerfile. After using `--manifest-only`, run `bkt containerfile sync` to reconcile.
+
+#### Help Text
+
+The help text clarifies the context-dependent behavior:
+
+```
+$ bkt dnf install --help
+
+USAGE:
+    bkt dnf install [OPTIONS] <PACKAGES>...
+
+DESCRIPTION:
+    Install RPM packages and update manifests.
+
+    CONTEXT-DEPENDENT BEHAVIOR:
+      • On host: Uses rpm-ostree, updates manifests/system-packages.json
+                 AND regenerates Containerfile SYSTEM_PACKAGES section
+      • In toolbox: Use 'bkt dev dnf install' instead
+
+OPTIONS:
+    --now                  Apply immediately without reboot (host only)
+    --manifest-only        Update manifest but skip Containerfile regeneration
+    --containerfile-only   Update Containerfile but skip manifest update
+    --repo <REPO>          Install from specific repository
+    -y, --assumeyes        Answer yes to all prompts
+
+EXAMPLES:
+    bkt dnf install htop           # Install htop, update both files
+    bkt dnf install htop --now     # Install and apply immediately
+    bkt dnf install htop neovim    # Install multiple packages
+```
+
 ## Reference-level Explanation
 
 ### Manifest Location and Format

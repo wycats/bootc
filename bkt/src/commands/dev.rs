@@ -20,7 +20,7 @@
 //! bkt dev update
 //! ```
 
-use crate::context::{CommandDomain, ExecutionContext};
+use crate::context::{CommandDomain, ExecutionContext, is_in_toolbox};
 use crate::manifest::ToolboxPackagesManifest;
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
@@ -371,14 +371,6 @@ fn handle_diff(plan: &ExecutionPlan) -> Result<()> {
 // Helper Functions
 // =============================================================================
 
-/// Check if we're running inside a toolbox container.
-fn is_in_toolbox() -> bool {
-    // Toolbox sets TOOLBOX_PATH environment variable
-    std::env::var("TOOLBOX_PATH").is_ok() ||
-    // Also check for container file that toolbox creates
-    std::path::Path::new("/run/.containerenv").exists()
-}
-
 /// Check if a package is installed (uses rpm).
 fn is_package_installed(package: &str) -> bool {
     Command::new("rpm")
@@ -393,7 +385,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_is_in_toolbox_false_by_default() {
+    fn test_is_in_toolbox_returns() {
         // In test environment, we're typically not in a toolbox
         // This is just a sanity check that the function doesn't crash
         let _ = is_in_toolbox();

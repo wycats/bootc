@@ -9,6 +9,7 @@
 //! 3. Act
 //! 4. Back to `bkt status`
 
+use crate::context::run_host_command;
 use crate::manifest::{
     FlatpakAppsManifest, GSettingsManifest, GnomeExtensionsManifest, ShimsManifest,
     changelog::ChangelogManager,
@@ -20,7 +21,6 @@ use clap::{Args, ValueEnum};
 use owo_colors::OwoColorize;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 use tracing::debug;
 
 use super::flatpak::get_installed_flatpaks;
@@ -171,10 +171,7 @@ pub struct NextAction {
 
 /// Get OS status from rpm-ostree
 fn get_os_status() -> Option<OsStatus> {
-    let output = Command::new("rpm-ostree")
-        .args(["status", "--json"])
-        .output()
-        .ok()?;
+    let output = run_host_command("rpm-ostree", &["status", "--json"]).ok()?;
 
     if !output.status.success() {
         return None;
@@ -231,9 +228,7 @@ fn get_os_status() -> Option<OsStatus> {
 
 /// Get list of enabled GNOME extension UUIDs
 fn get_enabled_extensions() -> Vec<String> {
-    let output = Command::new("gnome-extensions")
-        .args(["list", "--enabled"])
-        .output();
+    let output = run_host_command("gnome-extensions", &["list", "--enabled"]);
 
     match output {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
@@ -280,18 +275,14 @@ fn skel_differs(skel_path: &PathBuf, home_path: &PathBuf) -> bool {
 
 /// Check if a GNOME extension is installed.
 fn is_extension_installed(uuid: &str) -> bool {
-    Command::new("gnome-extensions")
-        .args(["info", uuid])
-        .output()
+    run_host_command("gnome-extensions", &["info", uuid])
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
 
 /// Get current value of a gsetting.
 fn get_gsetting(schema: &str, key: &str) -> Option<String> {
-    Command::new("gsettings")
-        .args(["get", schema, key])
-        .output()
+    run_host_command("gsettings", &["get", schema, key])
         .ok()
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())

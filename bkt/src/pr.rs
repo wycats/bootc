@@ -372,6 +372,41 @@ pub fn ensure_repo() -> Result<PathBuf> {
     if repo_path.exists() {
         // Pull latest
         println!("Updating existing checkout at {}", repo_path.display());
+
+        // Check for uncommitted changes and commit them first
+        let status_output = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(&repo_path)
+            .output()
+            .context("Failed to check git status")?;
+
+        if !status_output.status.success() {
+            bail!("git status failed");
+        }
+
+        if !status_output.stdout.is_empty() {
+            println!("Committing local changes before pull...");
+            // Stage all changes
+            let add_status = Command::new("git")
+                .args(["add", "-A"])
+                .current_dir(&repo_path)
+                .status()
+                .context("Failed to stage changes")?;
+            if !add_status.success() {
+                bail!("git add failed");
+            }
+
+            // Commit with auto-message
+            let commit_status = Command::new("git")
+                .args(["commit", "-m", "Auto-commit local changes before sync"])
+                .current_dir(&repo_path)
+                .status()
+                .context("Failed to commit changes")?;
+            if !commit_status.success() {
+                bail!("git commit failed");
+            }
+        }
+
         let status = Command::new("git")
             .args(["pull", "--rebase"])
             .current_dir(&repo_path)

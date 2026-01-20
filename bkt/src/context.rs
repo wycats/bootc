@@ -3,10 +3,12 @@
 //! Determines where commands should execute (host, toolbox, or image-only)
 //! and validates that command/context combinations are valid.
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::ValueEnum;
 use std::fmt;
 use std::path::Path;
+use std::process::{Command, Output};
+use tracing::warn;
 
 /// Execution context for bkt commands.
 ///
@@ -209,6 +211,65 @@ pub fn detect_environment() -> RuntimeEnvironment {
     }
 
     RuntimeEnvironment::Host
+}
+
+/// Check if we're running inside a toolbox or container environment.
+///
+/// This is the canonical function for toolbox detection. Use this instead of
+/// duplicating the detection logic in individual modules.
+///
+/// Checks for:
+/// - TOOLBOX_PATH environment variable (set by toolbox)
+/// - /run/.toolboxenv (toolbox-specific marker)
+/// - /run/.containerenv (generic podman container marker)
+pub fn is_in_toolbox() -> bool {
+    // Allow override for testing
+    if std::env::var("BKT_FORCE_HOST").is_ok() {
+        return false;
+    }
+
+    std::env::var("TOOLBOX_PATH").is_ok()
+        || Path::new("/run/.toolboxenv").exists()
+        || Path::new("/run/.containerenv").exists()
+}
+
+/// Run a command on the host, delegating via flatpak-spawn if in a toolbox/container.
+///
+/// Returns a Result with the command output. If the command fails to execute
+/// (e.g., flatpak-spawn not available), logs a warning and returns the error.
+///
+/// # Arguments
+/// * `program` - The program to run (e.g., "flatpak", "gnome-extensions")
+/// * `args` - Arguments to pass to the program
+///
+/// # Example
+/// ```ignore
+/// let output = run_host_command("flatpak", &["list", "--app"])?;
+/// ```
+pub fn run_host_command(program: &str, args: &[&str]) -> Result<Output> {
+    if is_in_toolbox() {
+        let mut cmd = Command::new("flatpak-spawn");
+        cmd.arg("--host").arg(program).args(args);
+        let output = cmd.output().with_context(|| {
+            format!(
+                "Failed to run '{}' via flatpak-spawn --host. \
+                 This is required when running inside a toolbox/container.",
+                program
+            )
+        });
+        if output.is_err() {
+            warn!(
+                "flatpak-spawn failed for command: {} {:?}. Is flatpak-spawn available?",
+                program, args
+            );
+        }
+        output
+    } else {
+        Command::new(program)
+            .args(args)
+            .output()
+            .with_context(|| format!("Failed to run '{}'", program))
+    }
 }
 
 /// Determine the effective execution context.

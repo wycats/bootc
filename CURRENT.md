@@ -1,539 +1,467 @@
-# Current Work: Phase 3 — Complete the Loop
+# Current Work: Phase 4 — Manifest Fidelity & Workflow Gaps
 
-This document tracks Phase 3 of the bootc distribution development. Phase 2 is archived at [docs/history/002-phase2-distribution-management.md](docs/history/002-phase2-distribution-management.md).
+This document tracks Phase 4 of the bootc distribution development. Phase 3 is archived at [docs/history/003-phase3-complete-the-loop.md](docs/history/003-phase3-complete-the-loop.md).
 
 ---
 
 ## Vision
 
-**Phase 2** established the bidirectional sync infrastructure: `bkt apply` and `bkt capture` work, command punning is implemented, and the Plan/Execute architecture provides a clean foundation.
+**Phase 3** closed the manifest→Containerfile loop: auto-generation, post-reboot automation, drift visibility, and ephemeral tracking all work.
 
-**Phase 3** closes the remaining gaps between intention and automation:
+**Phase 4** addresses the gaps between what users expect and what `bkt` actually captures:
 
-1. **Containerfile Auto-Generation**: When you run `bkt dnf install htop`, the Containerfile updates automatically
-2. **Post-Reboot Automation**: Manifest changes apply without manual intervention after image deployment
-3. **Drift Visibility**: ✅ `bkt status` shows exactly what's out of sync (completed in Phase 2)
-4. **Ephemeral Tracking**: `--local` changes are tracked and promotable to PRs
+1. **Manifest Fidelity**: Capture the _full_ configuration state, not just "is it installed?"
+2. **Command Punning Completion**: `bkt dnf install` should work for host packages, not just toolbox
+3. **Development Environment**: `bkt dev` commands should actually execute, not just update manifests
+4. **Upstream Dependencies**: Track themes, icons, fonts with pinned versions
 
-The guiding principle: **Install things however you want, and `bkt` keeps the distribution in sync.**
+The guiding principle: **If you configured it, `bkt` should capture it.**
 
-### The Complete Loop
+### The Fidelity Gap
 
 ```
-┌─────────────────┐                    ┌─────────────────┐
-│   MANIFESTS     │ ──── bkt apply ──→ │     SYSTEM      │
-│  (git-tracked)  │ ←── bkt capture ── │  (live state)   │
-└────────┬────────┘                    └─────────────────┘
-         │
-         ▼ auto-generate
-┌─────────────────┐
-│  CONTAINERFILE  │ ──── podman build ──→ New Image
-└─────────────────┘
+What the system knows          What bkt captures
+─────────────────────          ─────────────────
+Extension: installed ✓         ✅ Captured
+Extension: enabled/disabled    ❌ Not captured ← Gap
+Flatpak: installed ✓           ✅ Captured
+Flatpak: permissions (Flatseal)❌ Not captured ← Gap
+GSettings: current values      ⚠️ Manual schema only
+Themes/Icons/Fonts             ❌ Not tracked  ← Gap
 ```
 
-Phase 2 established the top half. Phase 3 closes the manifest→Containerfile loop.
+Phase 4 closes these fidelity gaps.
 
 ---
 
 ## Overview
 
-| ID  | Item                                                   | Source    | Priority | Status    |
-| --- | ------------------------------------------------------ | --------- | -------- | --------- |
-| 1   | [Containerfile Auto-Generation](#1-containerfile-auto) | RFC-0002  | ✅ Done  | Completed |
-| 2   | [Post-Reboot Automation](#2-post-reboot)               | Workflow  | ✅ Done  | Completed |
-| 3   | [Drift Visibility in Status](#3-drift-visibility)      | Workflow  | ✅ Done  | Completed |
-| 4   | [Ephemeral Manifest](#4-ephemeral-manifest)            | RFC-0001  | ✅ Done  | Completed |
-| 5   | [Image-Time Configuration](#5-image-time-config)       | RFC-0004  | ✅ Done  | Completed |
-| 6   | [RFC Audit & Cleanup](#6-rfc-audit)                    | Housekeep | ✅ Done  | Completed |
-| 7   | [Changelog in Status](#7-changelog-in-status)          | RFC-0005  | ✅ Done  | Completed |
-| 8   | [Topgrade Integration](#8-topgrade-integration)        | Feature   | ✅ Done  | Completed |
+| ID  | Item                                                            | Size | Deps | Status      |
+| --- | --------------------------------------------------------------- | ---- | ---- | ----------- |
+| 1   | [Extension Enabled State](#1-extension-enabled-state)           | M    | —    | Not Started |
+| 2   | [Flatpak Override Capture](#2-flatpak-override-capture)         | M    | —    | Not Started |
+| 3   | [Host Package Install](#3-host-package-install)                 | L    | —    | Not Started |
+| 4   | [Dev Command Execution](#4-dev-command-execution)               | M    | —    | Not Started |
+| 5   | [GSettings Auto-Discovery](#5-gsettings-auto-discovery)         | M    | —    | Not Started |
+| 6   | [Upstream Dependency Tracking](#6-upstream-dependency-tracking) | XL   | —    | Not Started |
+| 7   | [Drift Resolution](#7-drift-resolution)                         | M    | 1, 2 | Not Started |
+| 8   | [Dev Toolchain Management](#8-dev-toolchain-management)         | L    | 4    | Not Started |
+
+**Size Legend:** S = Small, M = Medium, L = Large, XL = Extra Large
 
 ---
 
-## 1. Containerfile Auto-Generation
+## 1. Extension Enabled State
 
-**Source:** RFC-0002  
-**Priority:** ✅ Done  
-**Status:** Completed (PR #31)
+**Source:** Gap Analysis  
+**Size:** M  
+**Dependencies:** None  
+**Status:** Not Started
 
 ### Problem
 
-`bkt dnf install htop` updates `manifests/system-packages.json` but does NOT update the Containerfile. Users must manually sync these, breaking the command punning promise.
+Extensions track installation but not enabled/disabled state. When you disable an extension via Extension Manager, `bkt capture` doesn't notice. On next `bkt apply`, disabled extensions get re-enabled.
+
+### Current Behavior
+
+```bash
+# User disables extension via Extension Manager
+gnome-extensions disable blur-my-shell@aunetx
+
+# bkt capture sees it's still installed, does nothing
+bkt extension capture  # No change detected
+
+# bkt apply re-enables it (not what user wanted)
+bkt apply
+```
 
 ### Solution
 
-Add section markers to Containerfile and auto-regenerate managed sections:
+1. Schema already supports `enabled` field via `ExtensionConfig` object
+2. Update capture to query `gnome-extensions list --enabled`
+3. Store extensions as objects with `enabled: true/false`
+4. Update apply to respect enabled state
 
-```dockerfile
-# === SYSTEM_PACKAGES (managed by bkt) ===
-RUN dnf install -y \
-    htop \
-    neovim \
-    && dnf clean all
-# === END SYSTEM_PACKAGES ===
-```
+### Deliverables
 
-### Implementation Progress
-
-✅ **Module Structure** (`bkt/src/containerfile.rs` - 497 lines)
-
-```rust
-pub enum Section {
-    SystemPackages,  // dnf install packages
-    CoprRepos,       // dnf copr enable commands
-    HostShims,       // COPY and symlink commands
-}
-
-pub struct ContainerfileEditor {
-    pub fn load(path: &Path) -> Result<Self>;
-    pub fn update_section(&mut self, section: Section, content: Vec<String>);
-    pub fn has_section(&self, section: Section) -> bool;
-    pub fn get_section_content(&self, section: Section) -> Option<&[String]>;
-    pub fn write(&self) -> Result<()>;
-    pub fn render(&self) -> String;
-}
-
-pub fn generate_system_packages(packages: &[String]) -> Vec<String>;
-pub fn generate_copr_repos(repos: &[String]) -> Vec<String>;
-```
-
-✅ **Section Markers in Containerfile**
-
-The Containerfile now has `# === SYSTEM_PACKAGES (managed by bkt) ===` markers around the dnf install block.
-
-✅ **Integration with dnf commands**
-
-The `sync_all_containerfile_sections()` function in `dnf.rs` is called during PR creation, syncing ALL managed Containerfile sections (SYSTEM_PACKAGES, COPR_REPOS) atomically with manifest changes.
-
-**Architecture Decision:** Always sync all sections together rather than syncing individual sections separately. This ensures the Containerfile is always fully consistent with manifests after any change, avoiding partial sync bugs.
-
-✅ **Tests** (11 tests)
-
-- `test_section_markers` - Verifies marker format
-- `test_parse_start_marker` - Validates marker parsing
-- `test_parse_containerfile_with_sections` - Full parsing test
-- `test_update_section` - Section replacement
-- `test_generate_system_packages` - Package list generation
-- `test_generate_system_packages_empty` - Empty package edge case
-- `test_generate_system_packages_format` - Output format verification
-- `test_generate_copr_repos` - COPR generation
-- `test_generate_copr_repos_empty` - Empty repos edge case
-- `test_render_preserves_unmanaged` - Unmanaged content preserved
-- `test_parse_unclosed_section_error` - Error handling
-
-### Remaining Deliverables
-
-- [x] Unified sync function that updates all sections atomically
-- [x] Hook into `bkt dnf copr enable/disable` commands (via unified sync)
-- [x] Add `bkt containerfile sync` command for manual sync
-- [x] Add `bkt containerfile check` command for drift detection
-- [x] Implement HOST_SHIMS section generation
-  - ✅ Added `# === HOST_SHIMS (managed by bkt) ===` markers to Containerfile
-  - ✅ Created `generate_host_shims()` in `containerfile.rs`
-  - ✅ Generates flatpak-spawn delegation scripts at build time
-  - ✅ Hooked into `sync_all_containerfile_sections()`
+- [ ] Update `bkt extension capture` to detect enabled/disabled state
+- [ ] Store captured extensions as `ExtensionConfig` objects (not just UUID strings)
+- [ ] Update `bkt extension sync` to enable/disable based on manifest
+- [ ] Update `bkt extension enable/disable` to update manifest enabled state
+- [ ] Add tests for enabled state round-trip
 
 ### Acceptance Criteria
 
-- ✅ Containerfile has managed section markers
-- ✅ `bkt dnf install htop` updates both manifest AND Containerfile (via PR)
-- ✅ `bkt dnf copr enable atim/starship` updates both manifest AND Containerfile (via unified sync)
-- ✅ Manual Containerfile edits outside markers are preserved
-- ✅ `bkt containerfile check` shows drift without modifying
+- Disabling extension via Extension Manager → captured as `enabled: false`
+- `bkt apply` respects enabled state (doesn't re-enable disabled extensions)
+- `bkt extension disable blur-my-shell` updates manifest AND disables on system
 
 ---
 
-## 2. Post-Reboot Automation
+## 2. Flatpak Override Capture
 
-**Source:** Workflow gap  
-**Priority:** 🔴 High  
-**Status:** Completed
+**Source:** Gap Analysis  
+**Size:** M  
+**Dependencies:** None  
+**Status:** Not Started
 
 ### Problem
 
-After rebooting into a new image, users must manually run `bkt apply` and `bkt dnf sync`. This is easy to forget.
+Flatseal changes (filesystem access, device permissions, environment variables) are stored in `~/.local/share/flatpak/overrides/` but not captured by `bkt`. These changes are lost on image rebuild.
+
+### Current Behavior
+
+```bash
+# User grants Discord microphone access via Flatseal
+# Creates ~/.local/share/flatpak/overrides/com.discordapp.Discord
+
+# bkt capture sees Discord is installed, but ignores overrides
+bkt flatpak capture  # Overrides not captured
+
+# After image rebuild, Flatseal changes are gone
+```
+
+### Solution
+
+1. Schema already supports `overrides` field in `FlatpakApp`
+2. Read override files from `~/.local/share/flatpak/overrides/`
+3. Parse and store in manifest
+4. Apply overrides during `bkt flatpak sync`
+
+### Deliverables
+
+- [ ] Add `parse_flatpak_overrides(app_id: &str) -> Option<FlatpakOverrides>`
+- [ ] Update `bkt flatpak capture` to include overrides
+- [ ] Update `bkt flatpak sync` to write override files
+- [ ] Add `bkt flatpak override show <app>` command
+- [ ] Add tests for override round-trip
+
+### Acceptance Criteria
+
+- Flatseal permission changes → captured in manifest overrides field
+- `bkt apply` restores Flatseal permissions
+- Override changes create proper PR diff
+
+---
+
+## 3. Host Package Install
+
+**Source:** RFC-0002, Gap Analysis  
+**Size:** L  
+**Dependencies:** None  
+**Status:** Not Started
+
+### Problem
+
+`bkt dnf install htop` only works in toolbox context. For host packages, users must manually edit the Containerfile, violating the command punning promise.
+
+### Current Behavior
+
+```bash
+# In toolbox: works
+bkt dnf install htop  # Updates toolbox manifest
+
+# On host: doesn't work as expected
+bkt dnf install htop  # Updates system-packages.json but NOT Containerfile
+                      # User must manually edit Containerfile
+```
+
+### Solution
+
+When running on host (not toolbox):
+
+1. Update `manifests/system-packages.json`
+2. Regenerate Containerfile SYSTEM_PACKAGES section
+3. Create PR with both changes
+
+### Deliverables
+
+- [ ] Detect host vs toolbox context in `bkt dnf install`
+- [ ] For host: update system-packages.json AND Containerfile
+- [ ] Integrate with PR workflow (both files in same commit)
+- [ ] Add `--containerfile-only` flag to skip manifest (for manual use)
+- [ ] Update help text to clarify host vs toolbox behavior
+
+### Acceptance Criteria
+
+- `bkt dnf install htop` (on host) updates manifest + Containerfile + creates PR
+- `bkt dnf remove htop` (on host) removes from both
+- PR contains atomic commit with both changes
+
+---
+
+## 4. Dev Command Execution
+
+**Source:** RFC-0003, Gap Analysis  
+**Size:** M  
+**Dependencies:** None  
+**Status:** Not Started
+
+### Problem
+
+`bkt dev dnf install gcc` updates `toolbox-packages.json` but doesn't actually execute the install in the toolbox. User must manually run the install.
+
+### Current Behavior
+
+```bash
+bkt dev dnf install gcc
+# Output: Added gcc to toolbox-packages.json
+# But gcc is NOT installed in toolbox!
+# User must also run: dnf install gcc
+```
+
+### Solution
+
+Execute the package installation in addition to updating the manifest:
+
+1. Run `dnf install` in current toolbox
+2. Update `toolbox-packages.json`
+3. Optionally create PR
+
+### Deliverables
+
+- [ ] Execute `dnf install` when `bkt dev dnf install` is run
+- [ ] Handle install failures gracefully (rollback manifest change?)
+- [ ] Add `--manifest-only` flag to skip execution
+- [ ] Add `--no-pr` flag to skip PR creation
+- [ ] Update error messages for failed installs
+
+### Acceptance Criteria
+
+- `bkt dev dnf install gcc` installs gcc AND updates manifest
+- Failed install doesn't corrupt manifest
+- `--manifest-only` skips execution (current behavior, for scripting)
+
+---
+
+## 5. GSettings Auto-Discovery
+
+**Source:** Gap Analysis  
+**Size:** M  
+**Dependencies:** None  
+**Status:** Not Started
+
+### Problem
+
+`bkt gsetting capture` requires knowing the exact schema and key. Users can't discover which settings have drifted from defaults.
+
+### Current Behavior
+
+```bash
+# User changes font size in Settings app
+# Which schema was that? User doesn't know.
+
+# Must guess the schema:
+bkt gsetting capture org.gnome.desktop.interface text-scaling-factor
+
+# No way to find all changed settings
+```
+
+### Solution
+
+1. Dump current dconf state
+2. Compare against baseline (GNOME defaults or saved baseline)
+3. Show changed schemas/keys
+4. Allow selective capture
+
+### Deliverables
+
+- [ ] Add `bkt gsetting diff` command to show changed settings
+- [ ] Create baseline snapshot on first run (`~/.local/share/bkt/gsettings-baseline.txt`)
+- [ ] Add `bkt gsetting capture --all-changed` to capture all drifted settings
+- [ ] Filter out transient/unimportant schemas (window positions, recent files, etc.)
+
+### Acceptance Criteria
+
+- `bkt gsetting diff` shows settings that differ from baseline
+- `bkt gsetting capture --all-changed` captures all meaningful changes
+- Baseline can be reset with `bkt gsetting baseline reset`
+
+---
+
+## 6. Upstream Dependency Tracking
+
+**Source:** RFC-0006, Gap Analysis  
+**Size:** XL  
+**Dependencies:** None  
+**Status:** Not Started
+
+### Problem
+
+Themes, icons, fonts, and external tools are not tracked or versioned. Users manually download these, and they're lost on image rebuild.
 
 ### Current State
 
-- `bootc-bootstrap.service` runs on first login (user-level)
-- Handles flatpaks, extensions, gsettings, shims
-- Does NOT handle system-level package sync
+- `upstream/manifest.json` exists but is unused
+- `bkt upstream` command exists as stub
+- No implementation
 
 ### Solution
 
-Add system-level service that runs after image deployment:
+Full implementation of RFC-0006:
 
-```ini
-# systemd/system/bootc-apply.service
-[Unit]
-Description=Apply bkt manifests after image deployment
-After=local-fs.target network-online.target
-ConditionPathExists=/usr/bin/bkt
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/bkt dnf sync --now
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### Design Questions
-
-**Q1: Boot Detection Strategy**
-
-How do we detect "first boot on new image" vs. regular reboot?
-
-Options:
-
-1. **Deployment checksum comparison**: Check rpm-ostree deployment checksum vs last-recorded
-2. **Marker file**: Create `/var/lib/bkt/last-applied-deployment` after apply
-3. **Always run**: Apply is idempotent, so run on every boot (wastes time but simple)
-
-**Recommendation**: Option 2 (marker file) - simple, reliable, and avoids unnecessary work.
-
-**Q2: Double-Reboot Prevention**
-
-If `bkt dnf sync` installs packages, it may require a reboot, but we're already post-reboot.
-
-Options:
-
-1. **`--now` flag**: Use `rpm-ostree install --apply-live` to avoid second reboot
-2. **Skip if layered**: Only sync Containerfile packages, skip rpm-ostree changes
-3. **Notify only**: Just notify user that packages need sync, don't auto-install
-
-**Recommendation**: Option 1 with `--now` flag for seamless experience.
+1. `bkt upstream add github:vinceliuice/Colloid-gtk-theme`
+2. Pin to specific release/commit
+3. SHA256 verification
+4. Containerfile generation for downloads
+5. Update checking
 
 ### Deliverables
 
-- [x] Create `systemd/system/bootc-apply.service`
-- [x] Add to Containerfile installation
-- [x] Implement deployment tracking marker file (`scripts/bootc-apply`)
-- [x] Add `--now` flag to `bkt dnf sync` for apply-live
-- [x] Test full reboot workflow
+- [ ] Implement `bkt upstream add <source>` with GitHub support
+- [ ] Implement version pinning (release tag or commit SHA)
+- [ ] Implement SHA256 verification
+- [ ] Generate Containerfile UPSTREAM section with curl/extract commands
+- [ ] Implement `bkt upstream check` for available updates
+- [ ] Implement `bkt upstream update <name>` to bump versions
+- [ ] Add tests for GitHub API integration
 
 ### Acceptance Criteria
 
-- After reboot with new image, packages sync automatically
-- No manual `bkt dnf sync` required
+- `bkt upstream add github:vinceliuice/Colloid-gtk-theme` pins and downloads
+- Theme installed in image at build time
+- `bkt upstream check` shows available updates
+- SHA256 verification prevents tampered downloads
 
 ---
 
-## 3. Drift Visibility in Status
+## 7. Drift Resolution
 
-**Status:** ✅ Completed
-
-Implemented in PR #28. `bkt status` now shows:
-
-```
-⚠️ Drift Detected
-    3 flatpaks installed but not in manifest
-    1 extension enabled but not in manifest
-
-    Run bkt capture to import these changes.
-```
-
----
-
-## 4. Ephemeral Manifest
-
-**Source:** RFC-0001  
-**Priority:** 🟡 Medium  
-**Status:** Completed
+**Source:** RFC-0007, Gap Analysis  
+**Size:** M  
+**Dependencies:** 1 (Extension Enabled State), 2 (Flatpak Override Capture)  
+**Status:** Not Started
 
 ### Problem
 
-`--local` flag exists but changes aren't tracked. Users can't see what they've done locally or promote those changes to PRs.
+`bkt drift check` exists (via Python script) but there's no `bkt drift resolve` for interactive resolution. Users must manually decide what to capture vs apply.
 
 ### Solution
 
-Implement ephemeral manifest from RFC-0001:
-
-```
-~/.local/share/bkt/ephemeral.json
-```
-
-Track all `--local` changes with boot_id validation.
-
-### Design Questions
-
-**Q1: Data Structure**
-
-What does `ephemeral.json` contain?
-
-```json
-{
-  "boot_id": "abc123...",
-  "created_at": "2026-01-06T12:00:00Z",
-  "changes": [
-    {
-      "timestamp": "2026-01-06T12:05:00Z",
-      "command": "bkt flatpak add --local org.gnome.Boxes",
-      "subsystem": "flatpak",
-      "action": "add",
-      "item": "org.gnome.Boxes"
-    }
-  ]
-}
-```
-
-**Q2: Aggregation Strategy**
-
-Should ephemeral track each command separately, or aggregate into a single state?
-
-- **Per-command**: Preserves history, can show exact commands to reproduce
-- **Aggregated**: Simpler, mirrors manifest structure, easier to commit
-
-**Recommendation**: Per-command with aggregation on commit.
-
-**Q3: Conflict Handling**
-
-What if ephemeral changes conflict with committed changes (e.g., remove package that manifest says to install)?
-
-**Recommendation**: Ephemeral overrides during local session, `bkt local commit` requires resolution.
+1. Rewrite drift detection in Rust (using existing manifest types)
+2. Add `bkt drift resolve` with interactive prompts
+3. For each drift item: capture to manifest, apply from manifest, or skip
 
 ### Deliverables
 
-- [x] Create `bkt/src/manifest/ephemeral.rs`
-- [x] Implement `EphemeralManifest` struct with boot_id tracking
-- [x] Record `--local` changes to ephemeral.json
-- [x] Implement `bkt local list` command
-- [x] Implement `bkt local commit` command (creates PR from accumulated changes)
-- [x] Implement `bkt local clear` command
-- [x] Clear ephemeral manifest on reboot (boot_id mismatch)
+- [ ] Rewrite drift detection in Rust (replace Python script)
+- [ ] Implement `bkt drift resolve` with interactive mode
+- [ ] Show clear diff for each item (system state vs manifest)
+- [ ] Support batch operations (capture all, apply all)
+- [ ] Add `--dry-run` flag
 
 ### Acceptance Criteria
 
-- `bkt flatpak add --local org.gnome.Boxes` records to ephemeral.json
-- `bkt local list` shows local-only changes
-- `bkt local commit` creates PR with accumulated changes
-- Reboot invalidates ephemeral manifest
+- `bkt drift resolve` walks through each drifted item
+- User can choose: capture, apply, skip for each
+- Batch mode: `bkt drift resolve --capture-all`
 
 ---
 
-## 5. Image-Time Configuration
+## 8. Dev Toolchain Management
 
-**Source:** RFC-0004  
-**Priority:** 🟡 Medium  
-**Status:** Completed
+**Source:** RFC-0003, Gap Analysis  
+**Size:** L  
+**Dependencies:** 4 (Dev Command Execution)  
+**Status:** Not Started
 
 ### Problem
 
-Some configuration can only be applied at image build time:
-
-- Kernel arguments (`kargs`)
-- Systemd unit enable/disable
-- Custom systemd units
-
-### Current State
-
-~~RFC-0004 exists but is marked "Future".~~ Implemented.
+`bkt dev rustup` and `bkt dev npm` don't exist. Rust toolchains and global npm packages aren't managed declaratively.
 
 ### Solution
 
-Implement `bkt admin` commands for image-time config:
+Extend `bkt dev` with toolchain-specific subcommands:
 
-- `bkt admin kargs append/remove/list`
-- `bkt admin systemd enable/disable/mask/list`
-
-### Deliverables
-
-- [x] Review and update RFC-0004
-- [x] Implement `bkt admin kargs` commands
-- [x] Implement systemd unit management for image-time
-- [x] Create manifest for managed units
-- [x] Hook into Containerfile generation
-
-### Acceptance Criteria
-
-- `bkt admin kargs add rd.driver.blacklist=nouveau` updates manifest and Containerfile
-- `bkt admin systemd enable my-service.service` adds unit and enables in Containerfile
-
----
-
-## 6. RFC Audit & Cleanup
-
-**Status:** ✅ Completed
-
-Completed in PR #25. All RFC statuses now reflect implementation reality:
-
-- RFC-0001 through RFC-0003: Implemented
-- RFC-0005 through RFC-0009: Implemented
-- RFC-0010: Implemented (Transparent Delegation)
-- RFC-0011: Implemented (Testing Strategy)
-
-## 8. Topgrade Integration
-
-**Source:** Feature Request  
-**Priority:** 🟡 Medium  
-**Status:** Completed
-
-### Problem
-
-The `topgrade` utility (used by Bazzite's `ujust update`) has no awareness of `bkt` or `bootc` by default, leading to potential drift or missed updates.
-
-### Solution
-
-Inject a custom configuration file (`/etc/topgrade.toml`) into the image that:
-
-1.  Enables `bootc` support explicitly.
-2.  Adds a custom step to run `ujust bootc-bootstrap` post-update.
-3.  Adds a custom step to run `check-drift`.
+1. `bkt dev rustup default stable` - Sets default toolchain
+2. `bkt dev npm install -g typescript` - Installs global npm package
+3. Update toolbox Containerfile accordingly
 
 ### Deliverables
 
-- [x] Create `system/etc/topgrade.toml`
-- [x] Add TOML file to Containerfile
-- [x] Create `ujust bootc-bootstrap` recipe
-- [x] Verify integration via `topgrade` dry-run
+- [ ] Implement `bkt dev rustup` subcommand
+- [ ] Implement `bkt dev npm` subcommand
+- [ ] Store toolchain config in `toolbox-packages.json` or new manifest
+- [ ] Generate toolbox Containerfile with toolchain setup
+- [ ] Add `bkt dev script add <url>` with SHA256 verification (curl-pipe scripts)
 
 ### Acceptance Criteria
 
-- `ujust update` runs `bootc upgrade`
-- `ujust update` runs `bootc-bootstrap`
-- `ujust update` checks for drift
+- `bkt dev rustup default stable` installs stable Rust and updates manifest
+- `bkt dev npm install -g typescript` installs and tracks in manifest
+- Toolbox Containerfile includes toolchain setup commands
 
 ---
 
-## Implementation Order
+## Dependency Graph
 
 ```
-Phase 3a: Close the Loop (Weeks 1-2)
-├── 1. Containerfile Auto-Generation 🔴 HIGH IMPACT
-└── Review user experience so far
+┌──────────────────┐
+│ 1. Extension     │
+│    Enabled State │──────┐
+└──────────────────┘      │
+                          ▼
+┌──────────────────┐   ┌──────────────────┐
+│ 2. Flatpak       │──▶│ 7. Drift         │
+│    Overrides     │   │    Resolution    │
+└──────────────────┘   └──────────────────┘
 
-Phase 3b: Automation (Week 3)
-├── 2. Post-Reboot Automation
-└── Test full workflow end-to-end
+┌──────────────────┐   ┌──────────────────┐
+│ 4. Dev Command   │──▶│ 8. Dev Toolchain │
+│    Execution     │   │    Management    │
+└──────────────────┘   └──────────────────┘
 
-Phase 3c: Polish (Weeks 4+)
-├── 4. Ephemeral Manifest
-└── 5. Image-Time Configuration (if time permits)
+Independent:
+┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
+│ 3. Host Package  │   │ 5. GSettings     │   │ 6. Upstream      │
+│    Install       │   │    Discovery     │   │    Dependencies  │
+└──────────────────┘   └──────────────────┘   └──────────────────┘
 ```
 
 ---
 
-## User Workflow After Phase 3
+## Suggested Implementation Order
 
-### Daily Usage (The Dream)
+### Wave 1: Daily Pain Points (No Dependencies)
 
-1. **Install something**: Use GNOME Software, `dnf install`, Extension Manager — whatever
-2. **See drift**: `bkt status` shows "3 items not in manifest"
-3. **Capture**: `bkt capture` imports everything
-4. **Auto-update Containerfile**: Manifests automatically sync to Containerfile
-5. **Commit**: Changes create a PR to your distribution
-6. **Rebuild**: CI builds new image
-7. **Reboot**: `bkt admin bootc upgrade` or automatic
-8. **Done**: Everything syncs automatically
+Start with items that fix daily workflow friction:
 
-### Key Difference from Phase 2
+1. **Item 1: Extension Enabled State** (M) — Fixes re-enabling disabled extensions
+2. **Item 2: Flatpak Override Capture** (M) — Fixes losing Flatseal changes
+3. **Item 3: Host Package Install** (L) — Fixes manual Containerfile editing
 
-- No manual Containerfile editing
-- No forgetting to capture (status reminds you)
-- No forgetting to apply after reboot (automated)
+### Wave 2: Development Workflow
+
+4. **Item 4: Dev Command Execution** (M) — Fixes `bkt dev dnf` not executing
+5. **Item 5: GSettings Auto-Discovery** (M) — Reduces guesswork for settings
+
+### Wave 3: Dependent Features
+
+6. **Item 7: Drift Resolution** (M) — Requires 1, 2 for full fidelity
+7. **Item 8: Dev Toolchain Management** (L) — Requires 4 for execution pattern
+
+### Wave 4: Large Feature
+
+8. **Item 6: Upstream Dependency Tracking** (XL) — Independent but large scope
+
+---
+
+## Deferred to Phase 5+
+
+- Multi-machine sync
+- Interactive TUI mode
+- `bkt init` command for new distributions
+- Plugin system
+- Remote management
+- Automatic changelog generation (RFC-0005)
+- Build descriptions for GHCR (RFC-0013)
+- Monitoring via systemd timer
 
 ---
 
 ## Questions to Resolve
 
-1. ~~**Containerfile location**: Should we support custom Containerfile paths?~~ — Using `Containerfile` in repo root
-2. ~~**Section marker format**: Exact syntax for managed sections?~~ — Resolved: `# === SECTION_NAME (managed by bkt) ===`
-3. **COPR in Containerfile**: Separate section or inline with packages? — Separate `COPR_REPOS` section
-4. ~~**Boot detection**: How to detect "first boot on new image" reliably?~~ — Resolved: Marker file approach
-5. **Ephemeral scope**: Should ephemeral manifest survive image updates?
-
----
-
-## Immediate Next Steps (Prioritized)
-
-Based on current implementation status and effort estimates:
-
-### This Week (5-6 hours)
-
-1. **Implement HOST_SHIMS section generation** (~3-4 hours)
-
-- Add a `HOST_SHIMS` managed section in Containerfile (markers)
-- Generate from `manifests/host-shims.json`
-- Sync via the unified Containerfile sync pipeline
-
-2. **Open/merge the Containerfile auto-generation PR** (~30-60 min)
-
-- Ensure CI passes and the PR includes both manifest + Containerfile updates
-- Merge once CI is green
-
-### Next Week (3-4 hours + design session)
-
-1. **Design session**: Boot detection strategy (30 min)
-2. **Create `systemd/system/bootc-apply.service`** (~1 hour)
-3. **Add `--now` flag to `bkt dnf sync`** (~1 hour)
-4. **Test full reboot workflow** (~1 hour)
-
-### Later (8-10 hours + design session)
-
-1. **Design session**: Ephemeral manifest data structure (1 hour)
-2. **Implement ephemeral manifest tracking** (~4 hours)
-3. **Implement `bkt local` commands** (~4 hours)
-
----
-
-## Deferred to Phase 4+
-
-- Multi-machine sync
-- Interactive TUI mode
-- `bkt init` command
-- Plugin system
-- Remote management
-- Semver update policies for upstream
-- Item 5: Image-Time Configuration (RFC-0004)
-
----
-
-## 7. Changelog in Status
-
-**Source:** Proposed extension to RFC-0005 (not currently specified in RFC)  
-**Priority:** 🟢 Low  
-**Status:** ✅ Completed
-
-### Problem
-
-`bkt status` shows drift (flatpaks, extensions, packages) but doesn't surface changelog information. Users can't see pending manual steps or recent changes from the status dashboard.
-
-### Design Questions
-
-**Q1: What changelog data to show?**
-
-- Pending (unreleased) changelog entries?
-- Pending manual steps from recent releases?
-- Last N released versions?
-
-**Proposed:** Show pending changelog entries with count and draft status. Full changelog available via `bkt changelog pending`.
-
-**Q2: Status output format**
-
-- New section "Pending Steps" alongside "Drift Detection"?
-- Integrated into "Next Actions"?
-
-**Decision:** Added dedicated "Changelog" section showing pending count. Ready-to-release entries trigger a "Next Action" suggesting `bkt changelog release`.
-
-### Solution
-
-Integrated changelog data into `bkt status` output:
-
-- Added `ChangelogStatus` struct with `pending_count` and `has_drafts` fields
-- Shows "Changelog" section when pending entries exist
-- Differentiates between entries ready for release vs entries with drafts
-- Adds "Release N pending changelog entries" to Next Actions when appropriate
-
-### Deliverables
-
-- [x] Add changelog loading to `bkt status` command
-- [x] Show pending changelog count in dedicated section
-- [x] Add `--no-changelog` flag to skip changelog loading (for speed)
-
-### Acceptance Criteria
-
-- [x] `bkt status` shows pending changelog entries alongside drift detection
-- [x] Pending entries are surfaced without running a separate command
-- [x] Draft entries are indicated (cannot be released)
-- [x] Ready-to-release entries trigger Next Action suggestion
+1. **Override format**: Should we use Flatpak's native override format or normalize to JSON?
+2. **GSettings baseline**: Ship a baseline with the image, or create on first run?
+3. **Toolchain manifests**: Separate `rustup.json`/`npm.json` or extend `toolbox-packages.json`?
+4. **Upstream verification**: SHA256 of archive or individual files?

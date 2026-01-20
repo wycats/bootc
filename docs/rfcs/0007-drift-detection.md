@@ -35,12 +35,12 @@ Users interact with manifests via `bkt` commands. The Containerfile is regenerat
 
 ### Types of Drift
 
-| Type | Example | Detection |
-|------|---------|-----------|
-| **Additive** | Extra Flatpak installed | Compare installed vs manifest |
-| **Subtractive** | Package removed locally | Compare manifest vs installed |
-| **Modificational** | gsetting changed | Compare current vs manifest |
-| **Version** | Package updated outside bkt | Compare versions |
+| Type               | Example                     | Detection                     |
+| ------------------ | --------------------------- | ----------------------------- |
+| **Additive**       | Extra Flatpak installed     | Compare installed vs manifest |
+| **Subtractive**    | Package removed locally     | Compare manifest vs installed |
+| **Modificational** | gsetting changed            | Compare current vs manifest   |
+| **Version**        | Package updated outside bkt | Compare versions              |
 
 ## Guide-level Explanation
 
@@ -164,6 +164,7 @@ bkt dnf untrack missing-feature
 ```
 
 This enables:
+
 - **Proactive cleanup**: Periodic check of tracked issues
 - **Documentation**: Why was this installed?
 - **Automated reminders**: Notify when issue is closed
@@ -181,33 +182,33 @@ This enables:
 
 #### Collecting System State
 
-| Domain | Collection Method |
-|--------|------------------|
-| Flatpaks | `flatpak list --app --columns=application` |
-| Packages | `rpm -qa` + `rpm-ostree status` |
-| GSettings | `dconf dump /` |
-| Extensions | `gnome-extensions list --enabled` |
+| Domain     | Collection Method                          |
+| ---------- | ------------------------------------------ |
+| Flatpaks   | `flatpak list --app --columns=application` |
+| Packages   | `rpm -qa` + `rpm-ostree status`            |
+| GSettings  | `dconf dump /`                             |
+| Extensions | `gnome-extensions list --enabled`          |
 
 #### Comparison Logic
 
 ```rust
 fn detect_drift(manifest: &Manifest, system: &SystemState) -> DriftReport {
     let mut report = DriftReport::new();
-    
+
     // Check for additions (in system, not in manifest)
     for item in &system.items {
         if !manifest.contains(item) {
             report.additions.push(item.clone());
         }
     }
-    
+
     // Check for removals (in manifest, not in system)
     for item in &manifest.items {
         if !system.contains(item) {
             report.removals.push(item.clone());
         }
     }
-    
+
     // Check for modifications (in both, but different)
     for item in &manifest.items {
         if let Some(sys_item) = system.get(item.id()) {
@@ -219,7 +220,7 @@ fn detect_drift(manifest: &Manifest, system: &SystemState) -> DriftReport {
             }
         }
     }
-    
+
     report
 }
 ```
@@ -236,6 +237,7 @@ manifests/
 ```
 
 The **base-image-assumptions.json** file is a **reference document** that tracks what the upstream Bazzite image provides. It is NOT used to install packages—it's used for:
+
 - CI verification that Bazzite still provides expected packages
 - Drift detection to catch upstream breaking changes
 - Documentation of our dependencies on the base image
@@ -276,9 +278,7 @@ gsettings:org.gnome.desktop.privacy.*
   "generated_at": "2025-01-02T10:30:00Z",
   "domains": {
     "flatpak": {
-      "additions": [
-        {"id": "org.gnome.Boxes", "source": "flathub"}
-      ],
+      "additions": [{ "id": "org.gnome.Boxes", "source": "flathub" }],
       "removals": [],
       "modifications": []
     },
@@ -327,6 +327,169 @@ Description=Check for configuration drift
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/bkt drift check --quiet --notify
+```
+
+### Interactive Resolution
+
+The `bkt drift resolve` command provides interactive resolution for detected drift, allowing users to make informed decisions about each drifted item.
+
+#### Command Interface
+
+```bash
+# Interactive resolution (walks through each item)
+bkt drift resolve
+
+# Domain-specific resolution
+bkt drift resolve --only flatpak
+bkt drift resolve --only extension
+bkt drift resolve --only gsettings
+bkt drift resolve --only packages
+
+# Batch operations
+bkt drift resolve --capture-all      # Capture all drift to manifest
+bkt drift resolve --apply-all        # Apply manifest to system
+bkt drift resolve --prefer-manifest  # Use manifest as source of truth
+bkt drift resolve --prefer-system    # Use system as source of truth
+
+# Preview mode
+bkt drift resolve --dry-run          # Show what would happen
+```
+
+#### User Prompts
+
+For each drifted item, the user sees the current state and available actions:
+
+**Additive Drift (item in system, not in manifest):**
+
+```
+Flatpak: org.gnome.Boxes
+  System: installed (not in manifest)
+
+[c] Capture to manifest
+[r] Remove from system
+[s] Skip (leave as-is)
+[i] Ignore permanently (add to .bktignore)
+>
+```
+
+**Subtractive Drift (item in manifest, not in system):**
+
+```
+Flatpak: org.gnome.Calculator
+  Manifest: declared (not installed)
+
+[a] Apply (install from manifest)
+[d] Delete from manifest
+[s] Skip (leave as-is)
+[i] Ignore permanently (add to .bktignore)
+>
+```
+
+**Modificational Drift (item differs between manifest and system):**
+
+```
+GSettings: org.gnome.desktop.interface.gtk-theme
+  Manifest: Adwaita-dark
+  System:   Colloid-Dark
+
+[c] Capture system value to manifest
+[a] Apply manifest value to system
+[s] Skip (leave as-is)
+[i] Ignore permanently (add to .bktignore)
+>
+```
+
+#### Batch Operations
+
+For quick resolution without interactive prompts:
+
+| Flag                | Behavior                                                               |
+| ------------------- | ---------------------------------------------------------------------- |
+| `--capture-all`     | Add all untracked items to manifest, update manifest for modifications |
+| `--apply-all`       | Install missing items, remove untracked items, revert modifications    |
+| `--prefer-manifest` | Alias for `--apply-all`—manifest is source of truth                    |
+| `--prefer-system`   | Alias for `--capture-all`—system state is source of truth              |
+
+```bash
+# After reviewing drift report, capture everything
+bkt drift check
+bkt drift resolve --capture-all
+
+# Or revert everything to manifest state
+bkt drift resolve --apply-all
+```
+
+#### Dry Run Mode
+
+The `--dry-run` flag shows what would happen without making changes:
+
+```bash
+bkt drift resolve --dry-run --prefer-manifest
+# Would remove: org.gnome.Boxes (flatpak)
+# Would install: org.gnome.Calculator (flatpak)
+# Would reset: org.gnome.desktop.interface.gtk-theme → Adwaita-dark
+#
+# 3 changes would be made. Run without --dry-run to apply.
+```
+
+#### Integration with .bktignore
+
+Items marked with `[i] Ignore permanently` are added to `.bktignore`:
+
+```ini
+# .bktignore
+# Automatically added via `bkt drift resolve`
+flatpak:org.gnome.Boxes           # Ignored 2025-01-02
+gsettings:org.gnome.desktop.privacy.remember-recent-files  # Ignored 2025-01-02
+```
+
+Ignored items are excluded from future drift detection:
+
+```bash
+# Show what's being ignored
+bkt drift ignored
+
+# Remove an item from ignore list
+bkt drift unignore flatpak:org.gnome.Boxes
+```
+
+#### Domain-Specific Resolution
+
+Resolve drift for specific domains only:
+
+```bash
+# Only resolve flatpak drift
+bkt drift resolve --only flatpak
+
+# Only resolve extension drift
+bkt drift resolve --only extension
+
+# Only resolve gsettings drift
+bkt drift resolve --only gsettings
+
+# Only resolve package drift
+bkt drift resolve --only packages
+
+# Combine with batch operations
+bkt drift resolve --only flatpak --capture-all
+```
+
+#### Resolution Report
+
+After resolution, a summary is displayed:
+
+```
+╭─────────────────────────────────────╮
+│ Drift Resolution Complete           │
+├─────────────────────────────────────┤
+│ Captured to manifest:  3            │
+│ Applied from manifest: 1            │
+│ Removed from system:   1            │
+│ Added to .bktignore:   2            │
+│ Skipped:               0            │
+╰─────────────────────────────────────╯
+
+Manifest updated. Run `bkt build` to regenerate Containerfile.
 ```
 
 ## Drawbacks

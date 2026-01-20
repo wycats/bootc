@@ -1,6 +1,6 @@
 //! Flatpak command implementation.
 
-use crate::context::{CommandDomain, PrMode};
+use crate::context::{CommandDomain, PrMode, run_host_command};
 use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{FlatpakApp, FlatpakAppsManifest, FlatpakRemotesManifest, FlatpakScope};
 use crate::output::Output;
@@ -528,14 +528,18 @@ pub struct InstalledFlatpak {
 }
 
 /// Get list of installed flatpaks from the system.
+///
+/// When running inside a toolbox, this delegates to the host via flatpak-spawn.
+/// If flatpak-spawn is not available or fails, returns an empty vector and logs a warning.
 pub fn get_installed_flatpaks() -> Vec<InstalledFlatpak> {
-    let output = Command::new("flatpak")
-        .args([
+    let output = run_host_command(
+        "flatpak",
+        &[
             "list",
             "--app",
             "--columns=installation,application,origin,branch,commit",
-        ])
-        .output();
+        ],
+    );
 
     match output {
         Ok(o) if o.status.success() => {
