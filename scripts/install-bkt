@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Build and install the repo's `bkt` binary into ~/.local/bin.
+# This avoids relying on ~/.cargo/bin (which we may want to prune on immutable hosts).
+
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+home=${HOME:?HOME must be set}
+
+mkdir -p "$home/.local/bin"
+
+cargo_shim="$home/.local/bin/distrobox/cargo"
+if [[ ! -x "$cargo_shim" ]]; then
+  echo "Missing cargo shim at $cargo_shim"
+  echo "Run: bkt distrobox apply"
+  exit 1
+fi
+
+echo "Building bkt (release) via distrobox cargo shim…"
+cd "$repo_root"
+"$cargo_shim" build --release --manifest-path bkt/Cargo.toml
+
+src="$repo_root/bkt/target/release/bkt"
+if [[ ! -x "$src" ]]; then
+  echo "Expected built binary at $src"
+  exit 1
+fi
+
+dst="$home/.local/bin/bkt"
+echo "Installing $src -> $dst"
+install -m 0755 "$src" "$dst"
+
+echo "Done. Verify: bkt --help"

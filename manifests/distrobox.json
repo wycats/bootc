@@ -1,0 +1,23 @@
+{
+  "$schema": "../schemas/distrobox.schema.json",
+  "containers": {
+    "bootc-dev": {
+      "image": "ghcr.io/wycats/bootc-toolbox:latest",
+      "packages": ["gcc", "libatomic"],
+      "init_hooks": [
+        "rustup default stable",
+        "rustup update stable",
+        "proto install node"
+      ],
+      "bins": {
+        "from": ["~/.cargo/bin", "~/.proto/shims"],
+        "also": ["/usr/local/bin/nu", "~/.proto/bin/proto"],
+        "to": "~/.local/bin/distrobox"
+      },
+      "path": ["~/.local/bin", "~/.local/bin/distrobox", "$PATH"],
+      "pull": true,
+      "init": false,
+      "root": false
+    }
+  }
+}

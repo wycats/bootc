@@ -113,6 +113,9 @@ pub enum Commands {
     #[command(alias = "fp")]
     Flatpak(commands::flatpak::FlatpakArgs),
 
+    /// Manage Distrobox configuration
+    Distrobox(commands::distrobox::DistroboxArgs),
+
     /// Manage AppImages via GearLever
     #[command(name = "appimage", alias = "ai")]
     AppImage(commands::appimage::AppImageArgs),
@@ -185,6 +188,7 @@ impl Commands {
         match self {
             // Host-only commands
             Commands::Flatpak(_) => CommandTarget::Host,
+            Commands::Distrobox(_) => CommandTarget::Host,
             Commands::AppImage(_) => CommandTarget::Host,
             Commands::Extension(_) => CommandTarget::Host,
             Commands::Gsetting(_) => CommandTarget::Host,
@@ -255,6 +259,7 @@ fn main() -> Result<()> {
         Commands::Dnf(args) => commands::dnf::run(args, &plan),
         Commands::Dev(args) => commands::dev::run(args, &plan),
         Commands::Flatpak(args) => commands::flatpak::run(args, &plan),
+        Commands::Distrobox(args) => commands::distrobox::run(args, &plan),
         Commands::AppImage(args) => commands::appimage::run(args, &plan),
         Commands::Shim(args) => commands::shim::run(args, &plan),
         Commands::Extension(args) => commands::extension::run(args, &plan),

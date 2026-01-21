@@ -1,0 +1,14 @@
+[alias]
+# Run the in-repo bkt without worrying about PATH/version skew.
+# Usage: cargo bkt <subcommand> [...]
+bkt = "run --manifest-path bkt/Cargo.toml --"
+
+# Install bkt from the local `bkt/` crate.
+# By default this installs into `~/.cargo/bin`.
+# Usage: cargo bkt-install
+# Note: `cargo install` does NOT accept `--manifest-path`; use `--path`.
+# Also: cargo aliases are not shells, so avoid `$HOME`/`~` expansion here.
+install-bkt = "install --path bkt --force"
+
+# Immutable-host friendly install:
+# Prefer `scripts/install-bkt` which installs into `~/.local/bin`.

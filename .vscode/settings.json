@@ -1,0 +1,7 @@
+{
+  "chat.tools.terminal.autoApprove": {
+    "bkt": true,
+    "/home/wycats/.cargo/bin/bkt": true,
+    "\"$HOME/.local/bin/bkt\"": true
+  }
+}

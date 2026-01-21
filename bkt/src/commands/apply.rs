@@ -3,7 +3,7 @@
 //! The `bkt apply` command composes multiple sync plans into one and executes them.
 //! This is the "manifest → system" direction of bidirectional sync.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Args;
 
 use crate::output::Output;
@@ -11,6 +11,7 @@ use crate::pipeline::ExecutionPlan;
 use crate::plan::{CompositePlan, ExecuteContext, OperationProgress, Plan, PlanContext, Plannable};
 
 use super::appimage::{AppImageSyncCommand, AppImageSyncPlan};
+use super::distrobox::{DistroboxSyncCommand, DistroboxSyncPlan};
 use super::dnf::{DnfSyncCommand, DnfSyncPlan};
 use super::extension::{ExtensionSyncCommand, ExtensionSyncPlan};
 use super::flatpak::{FlatpakSyncCommand, FlatpakSyncPlan};
@@ -22,6 +23,8 @@ use super::shim::{ShimSyncCommand, ShimSyncPlan};
 pub enum Subsystem {
     /// Host shims for toolbox commands
     Shim,
+    /// Distrobox configuration
+    Distrobox,
     /// GSettings values
     Gsetting,
     /// GNOME Shell extensions
@@ -38,6 +41,7 @@ impl std::fmt::Display for Subsystem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Subsystem::Shim => write!(f, "shim"),
+            Subsystem::Distrobox => write!(f, "distrobox"),
             Subsystem::Gsetting => write!(f, "gsetting"),
             Subsystem::Extension => write!(f, "extension"),
             Subsystem::Flatpak => write!(f, "flatpak"),
@@ -56,6 +60,14 @@ pub struct ApplyArgs {
     /// Exclude specific subsystems from sync
     #[arg(long, short = 'x', value_delimiter = ',')]
     pub exclude: Option<Vec<Subsystem>>,
+
+    /// Apply changes without prompting for confirmation
+    #[arg(long)]
+    pub confirm: bool,
+
+    /// Prune unmanaged AppImages (default is to keep them)
+    #[arg(long)]
+    pub prune_appimages: bool,
 }
 
 /// Command to apply all manifests to the system.
@@ -64,6 +76,9 @@ pub struct ApplyCommand {
     pub include: Option<Vec<Subsystem>>,
     /// Subsystems to exclude.
     pub exclude: Vec<Subsystem>,
+
+    /// Whether to prune unmanaged AppImages.
+    pub prune_appimages: bool,
 }
 
 impl ApplyCommand {
@@ -72,6 +87,7 @@ impl ApplyCommand {
         Self {
             include: args.only.clone(),
             exclude: args.exclude.clone().unwrap_or_default(),
+            prune_appimages: args.prune_appimages,
         }
     }
 
@@ -100,6 +116,12 @@ impl Plannable for ApplyCommand {
         if self.should_include(Subsystem::Shim) {
             let shim_plan: ShimSyncPlan = ShimSyncCommand.plan(ctx)?;
             composite.add(shim_plan);
+        }
+
+        // Distrobox sync
+        if self.should_include(Subsystem::Distrobox) {
+            let distrobox_plan: DistroboxSyncPlan = DistroboxSyncCommand.plan(ctx)?;
+            composite.add(distrobox_plan);
         }
 
         // GSettings apply
@@ -133,7 +155,7 @@ impl Plannable for ApplyCommand {
         // AppImage sync via GearLever
         if self.should_include(Subsystem::AppImage) {
             let appimage_plan: AppImageSyncPlan = AppImageSyncCommand {
-                keep_unmanaged: false, // Prune by default
+                keep_unmanaged: !self.prune_appimages,
             }
             .plan(ctx)?;
             composite.add(appimage_plan);
@@ -165,6 +187,17 @@ pub fn run(args: ApplyArgs, exec_plan: &ExecutionPlan) -> Result<()> {
         return Ok(());
     }
 
+    if !args.confirm {
+        let confirmed = cliclack::confirm("Apply these changes?")
+            .initial_value(false)
+            .interact()
+            .context("Failed to read confirmation")?;
+        if !confirmed {
+            Output::info("Cancelled.");
+            return Ok(());
+        }
+    }
+
     // Print hint that we're executing
     Output::info("Applying changes...");
     println!();
@@ -185,7 +218,7 @@ pub fn run(args: ApplyArgs, exec_plan: &ExecutionPlan) -> Result<()> {
 }
 
 /// Print progress for a single operation.
-fn print_progress(progress: &OperationProgress) {
+pub(crate) fn print_progress(progress: &OperationProgress) {
     use owo_colors::OwoColorize;
 
     let index_str = format!("[{}/{}]", progress.current, progress.total);
@@ -217,9 +250,11 @@ mod tests {
         let cmd = ApplyCommand {
             include: None,
             exclude: vec![],
+            prune_appimages: false,
         };
 
         assert!(cmd.should_include(Subsystem::Shim));
+        assert!(cmd.should_include(Subsystem::Distrobox));
         assert!(cmd.should_include(Subsystem::Gsetting));
         assert!(cmd.should_include(Subsystem::Extension));
         assert!(cmd.should_include(Subsystem::Flatpak));
@@ -231,6 +266,7 @@ mod tests {
         let cmd = ApplyCommand {
             include: Some(vec![Subsystem::Shim, Subsystem::Dnf]),
             exclude: vec![],
+            prune_appimages: false,
         };
 
         assert!(cmd.should_include(Subsystem::Shim));
@@ -245,9 +281,11 @@ mod tests {
         let cmd = ApplyCommand {
             include: None,
             exclude: vec![Subsystem::Extension, Subsystem::Flatpak],
+            prune_appimages: false,
         };
 
         assert!(cmd.should_include(Subsystem::Shim));
+        assert!(cmd.should_include(Subsystem::Distrobox));
         assert!(cmd.should_include(Subsystem::Gsetting));
         assert!(!cmd.should_include(Subsystem::Extension));
         assert!(!cmd.should_include(Subsystem::Flatpak));
@@ -259,6 +297,7 @@ mod tests {
         let cmd = ApplyCommand {
             include: Some(vec![Subsystem::Shim, Subsystem::Extension]),
             exclude: vec![Subsystem::Extension],
+            prune_appimages: false,
         };
 
         assert!(cmd.should_include(Subsystem::Shim));
@@ -268,6 +307,7 @@ mod tests {
     #[test]
     fn test_subsystem_display() {
         assert_eq!(format!("{}", Subsystem::Shim), "shim");
+        assert_eq!(format!("{}", Subsystem::Distrobox), "distrobox");
         assert_eq!(format!("{}", Subsystem::Gsetting), "gsetting");
         assert_eq!(format!("{}", Subsystem::Extension), "extension");
         assert_eq!(format!("{}", Subsystem::Flatpak), "flatpak");
@@ -279,10 +319,13 @@ mod tests {
         let args = ApplyArgs {
             only: Some(vec![Subsystem::Shim]),
             exclude: Some(vec![Subsystem::Dnf]),
+            confirm: true,
+            prune_appimages: true,
         };
 
         let cmd = ApplyCommand::from_args(&args);
         assert_eq!(cmd.include, Some(vec![Subsystem::Shim]));
         assert_eq!(cmd.exclude, vec![Subsystem::Dnf]);
+        assert!(cmd.prune_appimages);
     }
 }

@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DistroboxManifest",
+  "description": "The distrobox.json manifest.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "containers": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/DistroboxContainer"
+      },
+      "default": {}
+    }
+  },
+  "$defs": {
+    "DistroboxBins": {
+      "description": "Binary export configuration for a container.",
+      "type": "object",
+      "properties": {
+        "also": {
+          "description": "Additional binaries to export (absolute or ~ paths)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "from": {
+          "description": "Directories to export all binaries from (absolute or ~ paths)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "to": {
+          "description": "Path to export binaries to (default: ~/.local/bin)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "DistroboxContainer": {
+      "description": "A single Distrobox container definition.",
+      "type": "object",
+      "properties": {
+        "additional_flags": {
+          "description": "Pass-through flags (cannot set PATH)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "bins": {
+          "description": "Binary exports",
+          "$ref": "#/$defs/DistroboxBins"
+        },
+        "env": {
+          "description": "Environment variables (excluding PATH)",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "exported_apps": {
+          "description": "Apps to export (desktop entries)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "image": {
+          "description": "Container image (required)",
+          "type": "string"
+        },
+        "init": {
+          "description": "Run init scripts",
+          "type": "boolean",
+          "default": false
+        },
+        "init_hooks": {
+          "description": "Init hooks (run on each container start).\n\nAxiom: Init hooks must be idempotent AND bring the container to the same\nstate as a fresh bootstrap. Valid examples: `rustup update`, `proto install node`.\nInvalid examples: appending to files, installing pinned versions.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "packages": {
+          "description": "Additional packages to install (distrobox additional_packages)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "path": {
+          "description": "PATH entries (shell-agnostic)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pre_init_hooks": {
+          "description": "Pre-init hooks (run before init)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pull": {
+          "description": "Pull image on assemble",
+          "type": "boolean",
+          "default": false
+        },
+        "root": {
+          "description": "Run as root",
+          "type": "boolean",
+          "default": false
+        },
+        "volume": {
+          "description": "Volume mounts (distrobox volume)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "image"
+      ]
+    }
+  }
+}

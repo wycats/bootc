@@ -11,6 +11,7 @@ use crate::pipeline::ExecutionPlan;
 use crate::plan::{CompositePlan, ExecuteContext, Plan, PlanContext, Plannable};
 
 use super::appimage::{AppImageCaptureCommand, AppImageCapturePlan};
+use super::distrobox::{DistroboxCaptureCommand, DistroboxCapturePlan};
 use super::dnf::{DnfCaptureCommand, DnfCapturePlan};
 use super::extension::{ExtensionCaptureCommand, ExtensionCapturePlan};
 use super::flatpak::{FlatpakCaptureCommand, FlatpakCapturePlan};
@@ -21,6 +22,8 @@ use super::flatpak::{FlatpakCaptureCommand, FlatpakCapturePlan};
 pub enum CaptureSubsystem {
     /// GNOME Shell extensions
     Extension,
+    /// Distrobox configuration
+    Distrobox,
     /// Flatpak applications
     Flatpak,
     /// DNF/RPM packages (rpm-ostree layered)
@@ -33,6 +36,7 @@ impl std::fmt::Display for CaptureSubsystem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CaptureSubsystem::Extension => write!(f, "extension"),
+            CaptureSubsystem::Distrobox => write!(f, "distrobox"),
             CaptureSubsystem::Flatpak => write!(f, "flatpak"),
             CaptureSubsystem::Dnf => write!(f, "dnf"),
             CaptureSubsystem::AppImage => write!(f, "appimage"),
@@ -97,6 +101,12 @@ impl Plannable for CaptureCommand {
         if self.should_include(CaptureSubsystem::Extension) {
             let extension_plan: ExtensionCapturePlan = ExtensionCaptureCommand.plan(ctx)?;
             composite.add(extension_plan);
+        }
+
+        // Distrobox capture
+        if self.should_include(CaptureSubsystem::Distrobox) {
+            let distrobox_plan: DistroboxCapturePlan = DistroboxCaptureCommand.plan(ctx)?;
+            composite.add(distrobox_plan);
         }
 
         // Flatpak capture
@@ -165,6 +175,7 @@ mod tests {
         };
 
         assert!(cmd.should_include(CaptureSubsystem::Extension));
+        assert!(cmd.should_include(CaptureSubsystem::Distrobox));
         assert!(cmd.should_include(CaptureSubsystem::Flatpak));
         assert!(cmd.should_include(CaptureSubsystem::Dnf));
     }
@@ -177,6 +188,7 @@ mod tests {
         };
 
         assert!(cmd.should_include(CaptureSubsystem::Extension));
+        assert!(!cmd.should_include(CaptureSubsystem::Distrobox));
         assert!(!cmd.should_include(CaptureSubsystem::Flatpak));
         assert!(!cmd.should_include(CaptureSubsystem::Dnf));
     }
@@ -189,6 +201,7 @@ mod tests {
         };
 
         assert!(!cmd.should_include(CaptureSubsystem::Extension));
+        assert!(cmd.should_include(CaptureSubsystem::Distrobox));
         assert!(cmd.should_include(CaptureSubsystem::Flatpak));
         assert!(cmd.should_include(CaptureSubsystem::Dnf));
     }
@@ -207,6 +220,7 @@ mod tests {
     #[test]
     fn test_capture_subsystem_display() {
         assert_eq!(format!("{}", CaptureSubsystem::Extension), "extension");
+        assert_eq!(format!("{}", CaptureSubsystem::Distrobox), "distrobox");
         assert_eq!(format!("{}", CaptureSubsystem::Flatpak), "flatpak");
         assert_eq!(format!("{}", CaptureSubsystem::Dnf), "dnf");
     }
