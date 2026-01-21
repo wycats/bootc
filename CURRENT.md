@@ -2,6 +2,9 @@
 
 This document tracks Phase 4 of the bootc distribution development. Phase 3 is archived at [docs/history/003-phase3-complete-the-loop.md](docs/history/003-phase3-complete-the-loop.md).
 
+Quality backlog: [QUALITY.md](QUALITY.md)
+Distrobox integration RFC: [docs/rfcs/0017-distrobox-integration.md](docs/rfcs/0017-distrobox-integration.md)
+
 ---
 
 ## Vision

@@ -1,16 +1,15 @@
 # Nushell environment for new users.
 #
-# Note: your current toolbox setup uses a custom toolbox image tag that already
-# bakes a PATH like:
-#   /home/wycats/.nix-profile/bin:/home/wycats/.cargo/bin:/home/wycats/.local/bin:...
+# Prefer PATH management via systemd user environment.d (see
+# `skel/.config/environment.d/10-distrobox-exports.conf`).
 #
-# If you prefer PATH management in shell init instead of the toolbox image,
-# you can uncomment the block below.
+# If you *do* want to manage PATH in shell init, keep host “control plane”
+# paths early, and avoid putting host toolchains (rustup/proto) ahead of
+# `~/.local/bin/distrobox`.
 
 # let extra_paths = [
-#   ($env.HOME | path join ".nix-profile" "bin")
-#   ($env.HOME | path join ".cargo" "bin")
 #   ($env.HOME | path join ".local" "bin")
+#   ($env.HOME | path join ".local" "bin" "distrobox")
 #   ($env.HOME | path join "bin")
 # ]
 #

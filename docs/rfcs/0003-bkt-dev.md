@@ -409,11 +409,11 @@ This ensures the manifest always reflects the **actual state** of the toolbox - 
 
 ### Flags for Controlling Behavior
 
-| Flag              | Effect                                                                                                |
-| ----------------- | ----------------------------------------------------------------------------------------------------- |
-| `--local`         | Stage the change in ephemeral manifest without execution. Use `bkt local commit` to create PR later. |
-| `--no-pr`         | Skip PR creation (for `bkt dnf` commands that would normally create PRs).                             |
-| `--dry-run`       | Show what would be executed and recorded, but do nothing.                                             |
+| Flag        | Effect                                                                                               |
+| ----------- | ---------------------------------------------------------------------------------------------------- |
+| `--local`   | Stage the change in ephemeral manifest without execution. Use `bkt local commit` to create PR later. |
+| `--no-pr`   | Skip PR creation (for `bkt dnf` commands that would normally create PRs).                            |
+| `--dry-run` | Show what would be executed and recorded, but do nothing.                                            |
 
 #### Staging Changes with `--local`
 
@@ -427,7 +427,7 @@ The `--local` flag stages changes in the ephemeral manifest (see RFC-0001) witho
 # Stage an addition (doesn't install yet)
 bkt dev dnf install gcc --local
 
-# Stage a removal (doesn't uninstall yet)  
+# Stage a removal (doesn't uninstall yet)
 bkt dev dnf remove cmake --local
 
 # View staged changes
@@ -440,6 +440,7 @@ bkt local commit
 **Why not `--manifest-only`?**
 
 A `--manifest-only` flag would create ambiguity with drift detection. If manifest says "no gcc" but system has gcc, is that:
+
 - User installed gcc outside bkt (drift to capture)?
 - User staged a removal (intent to remove)?
 

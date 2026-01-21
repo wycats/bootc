@@ -10,6 +10,7 @@ pub mod changelog;
 pub mod completions;
 pub mod containerfile;
 pub mod dev;
+pub mod distrobox;
 pub mod dnf;
 pub mod doctor;
 pub mod drift;

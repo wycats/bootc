@@ -80,6 +80,8 @@ pub enum CommandTarget {
 pub enum CommandDomain {
     /// Flatpak apps (host-only)
     Flatpak,
+    /// Distrobox configuration (host-only)
+    Distrobox,
     /// GNOME extensions (host-only)
     Extension,
     /// GSettings (host-only, but can be applied in toolbox too)
@@ -110,6 +112,7 @@ impl CommandDomain {
         match (self, context) {
             // Host-only domains
             (CommandDomain::Flatpak, ExecutionContext::Dev) => false,
+            (CommandDomain::Distrobox, ExecutionContext::Dev) => false,
             (CommandDomain::Extension, ExecutionContext::Dev) => false,
             (CommandDomain::Shim, ExecutionContext::Dev) => false,
 
@@ -134,6 +137,13 @@ impl CommandDomain {
         match (self, context) {
             (CommandDomain::Flatpak, ExecutionContext::Dev) => {
                 "Flatpaks are host-level applications.\n\n\
+                 This command requires host context. If you're seeing this error,\n\
+                 you may have explicitly specified --context dev.\n\n\
+                 Fix: Remove the --context flag (delegation is automatic)"
+                    .to_string()
+            }
+            (CommandDomain::Distrobox, ExecutionContext::Dev) => {
+                "Distrobox configuration is host-level.\n\n\
                  This command requires host context. If you're seeing this error,\n\
                  you may have explicitly specified --context dev.\n\n\
                  Fix: Remove the --context flag (delegation is automatic)"

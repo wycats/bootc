@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Move host-installed devtool directories out of the way to reduce $HOME
+# accumulation on immutable hosts.
+#
+# This is intentionally conservative:
+# - It never rm -rf's anything.
+# - It requires BOOTC_PRUNE_CONFIRM=1.
+# - It moves directories into a timestamped backup.
+
+confirm=${BOOTC_PRUNE_CONFIRM:-0}
+if [[ "$confirm" != "1" ]]; then
+  cat <<'EOF'
+Refusing to modify your home directory.
+
+This script moves host-installed devtools out of the way (rustup/cargo + proto).
+It does NOT delete them; it relocates them into a backup directory.
+
+To proceed:
+  BOOTC_PRUNE_CONFIRM=1 scripts/prune-host-devtools
+
+Tip: run `bkt doctor` first to see what is shadowing distrobox shims.
+EOF
+  exit 2
+fi
+
+# Safety: if bkt is currently coming from ~/.cargo/bin, pruning .cargo will break it.
+if [[ -L "$HOME/.local/bin/bkt" ]]; then
+  target=$(readlink "$HOME/.local/bin/bkt" || true)
+  if [[ "$target" == "$HOME/.cargo/bin/bkt" || "$target" == *"/.cargo/bin/bkt" ]]; then
+    cat <<'EOF'
+Your ~/.local/bin/bkt appears to be a symlink into ~/.cargo/bin.
+
+Pruning ~/.cargo will break bkt.
+
+Recommended:
+  scripts/install-bkt
+then rerun:
+  BOOTC_PRUNE_CONFIRM=1 scripts/prune-host-devtools
+EOF
+    exit 3
+  fi
+fi
+
+home=${HOME:?HOME must be set}
+backup_root="$home/.cache/bootc/disabled-devtools"
+ts=$(date +%Y%m%d-%H%M%S)
+backup_dir="$backup_root/$ts"
+
+mkdir -p "$backup_dir"
+
+moved_any=0
+move_dir() {
+  local rel="$1"
+  local src="$home/$rel"
+
+  if [[ ! -e "$src" ]]; then
+    return 0
+  fi
+
+  local dst="$backup_dir/${rel//\//__}"
+  echo "Moving $src -> $dst"
+  mv "$src" "$dst"
+  moved_any=1
+}
+
+# Common host-installed toolchain accumulations
+move_dir ".cargo"
+move_dir ".rustup"
+move_dir ".proto"
+
+if [[ "$moved_any" == "0" ]]; then
+  echo "Nothing to move. No .cargo/.rustup/.proto found."
+  exit 0
+fi
+
+cat <<EOF
+Done.
+
+Backups are in:
+  $backup_dir
+
+Next steps:
+  - Ensure PATH prefers ~/.local/bin and ~/.local/bin/distrobox (relogin)
+  - Re-run: bkt distrobox apply
+  - Verify: cargo --version, node --version (should resolve via distrobox shims)
+EOF

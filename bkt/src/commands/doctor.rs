@@ -6,6 +6,7 @@ use crate::output::Output;
 use crate::pr::run_preflight_checks;
 use anyhow::Result;
 use clap::Args;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Args)]
 pub struct DoctorArgs {
@@ -15,7 +16,13 @@ pub struct DoctorArgs {
 }
 
 pub fn run(args: DoctorArgs) -> Result<()> {
-    let results = run_preflight_checks()?;
+    let mut results = run_preflight_checks()?;
+
+    // Additional environment readiness checks (not specific to PR workflows).
+    results.push(check_distrobox_shims_path());
+    results.push(check_devtools_resolve_to_distrobox("cargo"));
+    results.push(check_devtools_resolve_to_distrobox("node"));
+    results.push(check_devtools_resolve_to_distrobox("pnpm"));
 
     if args.format == "json" {
         let json_results: Vec<_> = results
@@ -57,4 +64,160 @@ pub fn run(args: DoctorArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn home_dir() -> Option<PathBuf> {
+    directories::BaseDirs::new()
+        .map(|d| d.home_dir().to_path_buf())
+        .or_else(|| std::env::var("HOME").ok().map(PathBuf::from))
+}
+
+fn pass(name: &str, message: &str) -> crate::pr::PreflightResult {
+    crate::pr::PreflightResult {
+        name: name.to_string(),
+        passed: true,
+        message: message.to_string(),
+        fix_hint: None,
+    }
+}
+
+fn fail(name: &str, message: &str, fix_hint: &str) -> crate::pr::PreflightResult {
+    crate::pr::PreflightResult {
+        name: name.to_string(),
+        passed: false,
+        message: message.to_string(),
+        fix_hint: if fix_hint.trim().is_empty() {
+            None
+        } else {
+            Some(fix_hint.to_string())
+        },
+    }
+}
+
+fn split_path_var() -> Vec<PathBuf> {
+    let raw = std::env::var("PATH").unwrap_or_default();
+    raw.split(':')
+        .filter(|s| !s.trim().is_empty())
+        .map(PathBuf::from)
+        .collect()
+}
+
+fn find_first_executable(cmd: &str, path: &[PathBuf]) -> Option<PathBuf> {
+    for dir in path {
+        let candidate = dir.join(cmd);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn index_of_path(path: &[PathBuf], needle: &Path) -> Option<usize> {
+    path.iter().position(|p| p == needle)
+}
+
+fn check_distrobox_shims_path() -> crate::pr::PreflightResult {
+    let Some(home) = home_dir() else {
+        return fail(
+            "PATH (distrobox shims)",
+            "Cannot determine $HOME",
+            "Ensure HOME is set",
+        );
+    };
+
+    let distrobox_dir = home.join(".local/bin/distrobox");
+    let cargo_dir = home.join(".cargo/bin");
+    let proto_shims = home.join(".proto/shims");
+
+    let path = split_path_var();
+    let distrobox_idx = index_of_path(&path, &distrobox_dir);
+
+    if distrobox_idx.is_none() {
+        return fail(
+            "PATH (distrobox shims)",
+            "~/.local/bin/distrobox is not on PATH",
+            "Run: bkt skel sync --force\nThen relogin (or restart user session) so environment.d is picked up",
+        );
+    }
+
+    let distrobox_idx = distrobox_idx.unwrap();
+
+    // If host toolchain paths are ahead of distrobox shims, you can accidentally
+    // build/run on the host and accumulate state in $HOME.
+    let mut offenders: Vec<String> = Vec::new();
+    if let Some(i) = index_of_path(&path, &proto_shims) {
+        if i < distrobox_idx {
+            offenders.push("~/.proto/shims".to_string());
+        }
+    }
+    if let Some(i) = index_of_path(&path, &cargo_dir) {
+        if i < distrobox_idx {
+            offenders.push("~/.cargo/bin".to_string());
+        }
+    }
+
+    if !offenders.is_empty() {
+        return fail(
+            "PATH (devtools precedence)",
+            &format!(
+                "Host toolchain paths precede distrobox shims: {}",
+                offenders.join(", ")
+            ),
+            "Move ~/.local/bin/distrobox earlier in PATH (preferably via environment.d)\nOptionally prune host toolchains: scripts/prune-host-devtools",
+        );
+    }
+
+    pass(
+        "PATH (distrobox shims)",
+        "~/.local/bin/distrobox is present and has precedence",
+    )
+}
+
+fn check_devtools_resolve_to_distrobox(cmd: &str) -> crate::pr::PreflightResult {
+    let Some(home) = home_dir() else {
+        return fail(
+            &format!("{} resolution", cmd),
+            "Cannot determine $HOME",
+            "Ensure HOME is set",
+        );
+    };
+
+    let distrobox_dir = home.join(".local/bin/distrobox");
+    let expected = distrobox_dir.join(cmd);
+    if !expected.exists() {
+        // If the shim doesn't exist, don't hard-fail: some hosts won't need every tool.
+        return pass(
+            &format!("{} resolution", cmd),
+            &format!("No distrobox shim for {} (ok if unused)", cmd),
+        );
+    }
+
+    let path = split_path_var();
+    let resolved = find_first_executable(cmd, &path);
+    let Some(resolved) = resolved else {
+        return fail(
+            &format!("{} resolution", cmd),
+            &format!("{} not found on PATH", cmd),
+            "Ensure distrobox shims are exported and PATH includes ~/.local/bin/distrobox",
+        );
+    };
+
+    // Compare by string form to avoid surprises with non-normalized paths.
+    let resolved_s = resolved.to_string_lossy();
+    let expected_s = expected.to_string_lossy();
+    if resolved_s != expected_s {
+        return fail(
+            &format!("{} resolution", cmd),
+            &format!("{} resolves to {}", cmd, resolved_s),
+            &format!(
+                "Expected {} (distrobox shim)\nFix PATH precedence or remove host toolchains that shadow it",
+                expected_s
+            ),
+        );
+    }
+
+    pass(
+        &format!("{} resolution", cmd),
+        &format!("{} resolves to distrobox shim", cmd),
+    )
 }

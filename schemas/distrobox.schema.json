@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DistroboxManifest",
+  "description": "The distrobox.json manifest.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": ["string", "null"]
+    },
+    "containers": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/DistroboxContainer"
+      }
+    }
+  },
+  "required": ["containers"],
+  "$defs": {
+    "DistroboxContainer": {
+      "description": "A single Distrobox container definition.",
+      "type": "object",
+      "properties": {
+        "image": {
+          "description": "Container image (required)",
+          "type": "string"
+        },
+        "packages": {
+          "description": "Additional packages to install (distrobox additional_packages)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "bins": {
+          "description": "Binary exports",
+          "type": "object",
+          "properties": {
+            "from": {
+              "description": "Directories to export all binaries from (absolute or ~ paths)",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "also": {
+              "description": "Additional binaries to export (absolute or ~ paths)",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "to": {
+              "description": "Path to export binaries to (default: ~/.local/bin)",
+              "type": ["string", "null"]
+            }
+          }
+        },
+        "exported_apps": {
+          "description": "Apps to export (desktop entries)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "init_hooks": {
+          "description": "Init hooks (run on each container start). Must be idempotent AND bring the container to the same state as a fresh bootstrap.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pre_init_hooks": {
+          "description": "Pre-init hooks (run before init)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "volume": {
+          "description": "Volume mounts (distrobox volume)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pull": {
+          "description": "Pull image on assemble",
+          "type": "boolean"
+        },
+        "init": {
+          "description": "Run init scripts",
+          "type": "boolean"
+        },
+        "root": {
+          "description": "Run as root",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "PATH entries (shell-agnostic)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "description": "Environment variables (excluding PATH)",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "additional_flags": {
+          "description": "Pass-through flags (cannot set PATH)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["image"]
+    }
+  }
+}

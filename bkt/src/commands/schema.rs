@@ -1,9 +1,9 @@
 //! Schema generation command implementation.
 
 use crate::manifest::{
-    BaseImageAssumptions, ChangelogEntry, FlatpakApp, FlatpakAppsManifest, FlatpakRemote,
-    FlatpakRemotesManifest, GSetting, GSettingsManifest, GnomeExtensionsManifest, Shim,
-    ShimsManifest, UpstreamManifest, VersionMetadata,
+    BaseImageAssumptions, ChangelogEntry, DistroboxManifest, FlatpakApp, FlatpakAppsManifest,
+    FlatpakRemote, FlatpakRemotesManifest, GSetting, GSettingsManifest, GnomeExtensionsManifest,
+    Shim, ShimsManifest, UpstreamManifest, VersionMetadata,
 };
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -83,6 +83,11 @@ const SCHEMAS: &[SchemaInfo] = &[
         description: "The host-shims.json manifest",
     },
     SchemaInfo {
+        name: "DistroboxManifest",
+        filename: "distrobox.schema.json",
+        description: "The distrobox.json manifest",
+    },
+    SchemaInfo {
         name: "UpstreamManifest",
         filename: "upstream-manifest.schema.json",
         description: "The upstream/manifest.json manifest for tracking upstream dependencies",
@@ -142,6 +147,10 @@ fn generate_all_schemas() -> Vec<(&'static str, String)> {
         (
             "host-shims.schema.json",
             serde_json::to_string_pretty(&schema_for!(ShimsManifest)).unwrap(),
+        ),
+        (
+            "distrobox.schema.json",
+            serde_json::to_string_pretty(&schema_for!(DistroboxManifest)).unwrap(),
         ),
         (
             "upstream-manifest.schema.json",
