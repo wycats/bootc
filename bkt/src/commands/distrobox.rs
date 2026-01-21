@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::context::{CommandDomain, run_host_command};
-use crate::manifest::{DistroboxContainer, DistroboxManifest};
+use crate::manifest::{DistroboxBins, DistroboxContainer, DistroboxManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::plan::{
@@ -272,7 +272,7 @@ fn run_assemble(container: &str, ini_path: &Path) -> Result<()> {
         }
         if !stdout.is_empty() {
             if !detail.is_empty() {
-                detail.push_str("\n");
+                detail.push('\n');
             }
             detail.push_str(stdout);
         }
@@ -338,7 +338,7 @@ fn run_export(container: &str, bin: &str, export_path: &str) -> Result<()> {
         }
         if !stdout.is_empty() {
             if !detail.is_empty() {
-                detail.push_str("\n");
+                detail.push('\n');
             }
             detail.push_str(stdout);
         }
@@ -364,7 +364,7 @@ fn list_bins_in_dir(container: &str, dir: &str, original_dir: &str) -> Result<Ve
         }
         if !stdout.is_empty() {
             if !detail.is_empty() {
-                detail.push_str("\n");
+                detail.push('\n');
             }
             detail.push_str(stdout);
         }
@@ -409,7 +409,7 @@ fn list_bins_in_dir(container: &str, dir: &str, original_dir: &str) -> Result<Ve
         }
         if !stdout.is_empty() {
             if !detail.is_empty() {
-                detail.push_str("\n");
+                detail.push('\n');
             }
             detail.push_str(stdout);
         }
@@ -490,7 +490,7 @@ impl Plan for DistroboxCapturePlan {
     fn describe(&self) -> PlanSummary {
         let mut summary = PlanSummary::new("Distrobox Capture");
 
-        for (name, _container) in &self.manifest.containers {
+        for name in self.manifest.containers.keys() {
             summary.add_operation(Operation::new(Verb::Capture, format!("distrobox:{}", name)));
         }
 
@@ -501,7 +501,7 @@ impl Plan for DistroboxCapturePlan {
         let mut report = ExecutionReport::new();
         self.manifest.save_to_dir(&self.manifest_dir)?;
 
-        for (name, _container) in &self.manifest.containers {
+        for name in self.manifest.containers.keys() {
             report.record_success(Verb::Capture, format!("distrobox:{}", name));
         }
 
@@ -656,35 +656,55 @@ fn parse_distrobox_ini(contents: &str) -> Result<DistroboxManifest> {
             continue;
         }
 
-        let mut container = DistroboxContainer::default();
-        container.image = values.get("image").cloned().unwrap_or_default();
-        container.packages = split_list(values.get("additional_packages"));
+        let image = values.get("image").cloned().unwrap_or_default();
+        let packages = split_list(values.get("additional_packages"));
         let exported_bins = split_list(values.get("exported_bins"))
             .into_iter()
             .map(|v| collapse_home(&v))
             .collect::<Vec<_>>();
         let exported_bins_path = values.get("exported_bins_path").map(|v| collapse_home(v));
+        let mut bins = DistroboxBins::default();
         if !exported_bins.is_empty() || exported_bins_path.is_some() {
-            container.bins.also = exported_bins;
-            container.bins.to = exported_bins_path;
+            bins.also = exported_bins;
+            bins.to = exported_bins_path;
         }
-        container.exported_apps = split_list(values.get("exported_apps"));
-        container.init_hooks = split_hooks(values.get("init_hooks"));
-        container.pre_init_hooks = split_hooks(values.get("pre_init_hooks"));
-        container.volume = split_list(values.get("volume"));
-        container.pull = parse_bool(values.get("pull"));
-        container.init = parse_bool(values.get("init"));
-        container.root = parse_bool(values.get("root"));
+        let exported_apps = split_list(values.get("exported_apps"));
+        let init_hooks = split_hooks(values.get("init_hooks"));
+        let pre_init_hooks = split_hooks(values.get("pre_init_hooks"));
+        let volume = split_list(values.get("volume"));
+        let pull = parse_bool(values.get("pull"));
+        let init = parse_bool(values.get("init"));
+        let root = parse_bool(values.get("root"));
+
+        let mut additional_flags = Vec::new();
+        let mut env = BTreeMap::new();
+        let mut path = Vec::new();
 
         if let Some(flags_value) = values.get("additional_flags") {
             let tokens = shlex::split(flags_value).unwrap_or_default();
-            let (remaining, env, path) = parse_additional_flags(tokens);
-            container.additional_flags = remaining;
-            container.env = env;
-            if !path.is_empty() {
-                container.path = path.into_iter().map(|p| collapse_home(&p)).collect();
+            let (remaining, env_map, path_parts) = parse_additional_flags(tokens);
+            additional_flags = remaining;
+            env = env_map;
+            if !path_parts.is_empty() {
+                path = path_parts.into_iter().map(|p| collapse_home(&p)).collect();
             }
         }
+
+        let container = DistroboxContainer {
+            image,
+            packages,
+            bins,
+            exported_apps,
+            init_hooks,
+            pre_init_hooks,
+            volume,
+            pull,
+            init,
+            root,
+            path,
+            env,
+            additional_flags,
+        };
 
         container.validate(&name)?;
         containers.insert(name, container);
@@ -785,42 +805,41 @@ fn parse_additional_flags(
     while i < tokens.len() {
         let token = &tokens[i];
 
-        if token == "--env" || token == "-e" {
-            if let Some(next) = tokens.get(i + 1) {
-                if let Some((key, value)) = split_env_pair(next) {
-                    if key == "PATH" {
-                        path = value.split(':').map(|s| s.to_string()).collect();
-                    } else {
-                        env.insert(key, value);
-                    }
-                    i += 2;
-                    continue;
-                }
+        if (token == "--env" || token == "-e")
+            && let Some(next) = tokens.get(i + 1)
+            && let Some((key, value)) = split_env_pair(next)
+        {
+            if key == "PATH" {
+                path = value.split(':').map(|s| s.to_string()).collect();
+            } else {
+                env.insert(key, value);
             }
+            i += 2;
+            continue;
         }
 
-        if let Some(env_pair) = token.strip_prefix("--env=") {
-            if let Some((key, value)) = split_env_pair(env_pair) {
-                if key == "PATH" {
-                    path = value.split(':').map(|s| s.to_string()).collect();
-                } else {
-                    env.insert(key, value);
-                }
-                i += 1;
-                continue;
+        if let Some(env_pair) = token.strip_prefix("--env=")
+            && let Some((key, value)) = split_env_pair(env_pair)
+        {
+            if key == "PATH" {
+                path = value.split(':').map(|s| s.to_string()).collect();
+            } else {
+                env.insert(key, value);
             }
+            i += 1;
+            continue;
         }
 
-        if let Some(env_pair) = token.strip_prefix("-e=") {
-            if let Some((key, value)) = split_env_pair(env_pair) {
-                if key == "PATH" {
-                    path = value.split(':').map(|s| s.to_string()).collect();
-                } else {
-                    env.insert(key, value);
-                }
-                i += 1;
-                continue;
+        if let Some(env_pair) = token.strip_prefix("-e=")
+            && let Some((key, value)) = split_env_pair(env_pair)
+        {
+            if key == "PATH" {
+                path = value.split(':').map(|s| s.to_string()).collect();
+            } else {
+                env.insert(key, value);
             }
+            i += 1;
+            continue;
         }
 
         remaining.push(token.clone());
@@ -836,10 +855,10 @@ fn split_env_pair(value: &str) -> Option<(String, String)> {
 }
 
 fn expand_home(value: &str) -> String {
-    if let Some(rest) = value.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return format!("{}/{}", home, rest);
-        }
+    if let Some(rest) = value.strip_prefix("~/")
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return format!("{}/{}", home, rest);
     }
     value.to_string()
 }

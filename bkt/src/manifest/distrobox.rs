@@ -202,10 +202,10 @@ fn flag_sets_path(flag: &str) -> bool {
 }
 
 fn expand_home(value: &str) -> String {
-    if let Some(rest) = value.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return format!("{}/{}", home, rest);
-        }
+    if let Some(rest) = value.strip_prefix("~/")
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return format!("{}/{}", home, rest);
     }
     value.to_string()
 }

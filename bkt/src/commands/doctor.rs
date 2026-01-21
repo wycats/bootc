@@ -145,15 +145,15 @@ fn check_distrobox_shims_path() -> crate::pr::PreflightResult {
     // If host toolchain paths are ahead of distrobox shims, you can accidentally
     // build/run on the host and accumulate state in $HOME.
     let mut offenders: Vec<String> = Vec::new();
-    if let Some(i) = index_of_path(&path, &proto_shims) {
-        if i < distrobox_idx {
-            offenders.push("~/.proto/shims".to_string());
-        }
+    if let Some(i) = index_of_path(&path, &proto_shims)
+        && i < distrobox_idx
+    {
+        offenders.push("~/.proto/shims".to_string());
     }
-    if let Some(i) = index_of_path(&path, &cargo_dir) {
-        if i < distrobox_idx {
-            offenders.push("~/.cargo/bin".to_string());
-        }
+    if let Some(i) = index_of_path(&path, &cargo_dir)
+        && i < distrobox_idx
+    {
+        offenders.push("~/.cargo/bin".to_string());
     }
 
     if !offenders.is_empty() {
