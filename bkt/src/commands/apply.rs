@@ -250,6 +250,7 @@ mod tests {
         let cmd = ApplyCommand {
             include: None,
             exclude: vec![],
+            prune_appimages: false,
         };
 
         assert!(cmd.should_include(Subsystem::Shim));
@@ -265,6 +266,7 @@ mod tests {
         let cmd = ApplyCommand {
             include: Some(vec![Subsystem::Shim, Subsystem::Dnf]),
             exclude: vec![],
+            prune_appimages: false,
         };
 
         assert!(cmd.should_include(Subsystem::Shim));
@@ -279,6 +281,7 @@ mod tests {
         let cmd = ApplyCommand {
             include: None,
             exclude: vec![Subsystem::Extension, Subsystem::Flatpak],
+            prune_appimages: false,
         };
 
         assert!(cmd.should_include(Subsystem::Shim));
@@ -294,6 +297,7 @@ mod tests {
         let cmd = ApplyCommand {
             include: Some(vec![Subsystem::Shim, Subsystem::Extension]),
             exclude: vec![Subsystem::Extension],
+            prune_appimages: false,
         };
 
         assert!(cmd.should_include(Subsystem::Shim));
@@ -303,6 +307,7 @@ mod tests {
     #[test]
     fn test_subsystem_display() {
         assert_eq!(format!("{}", Subsystem::Shim), "shim");
+        assert_eq!(format!("{}", Subsystem::Distrobox), "distrobox");
         assert_eq!(format!("{}", Subsystem::Gsetting), "gsetting");
         assert_eq!(format!("{}", Subsystem::Extension), "extension");
         assert_eq!(format!("{}", Subsystem::Flatpak), "flatpak");
@@ -314,10 +319,13 @@ mod tests {
         let args = ApplyArgs {
             only: Some(vec![Subsystem::Shim]),
             exclude: Some(vec![Subsystem::Dnf]),
+            confirm: true,
+            prune_appimages: true,
         };
 
         let cmd = ApplyCommand::from_args(&args);
         assert_eq!(cmd.include, Some(vec![Subsystem::Shim]));
         assert_eq!(cmd.exclude, vec![Subsystem::Dnf]);
+        assert!(cmd.prune_appimages);
     }
 }
