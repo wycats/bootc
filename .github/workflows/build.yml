@@ -3,6 +3,8 @@ name: build-and-push
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   schedule:
     # Hourly cheap poll of upstream digest
     - cron: "0 * * * *"
@@ -10,10 +12,12 @@ on:
     - cron: "0 3 * * *"
   workflow_dispatch:
 
+# Workflow-level permissions - jobs override these as needed
+# PRs only need read access; push/schedule/dispatch need write for registry and releases
 permissions:
-  contents: write
-  packages: write
-  pull-requests: write
+  contents: read
+  packages: read
+  pull-requests: read
 
 concurrency:
   # Ensure we don't pile up scheduled builds (they can take a while).
@@ -217,8 +221,14 @@ jobs:
         nightly,
       ]
     runs-on: ubuntu-latest
+    # Elevated permissions for push/schedule/dispatch (releases + registry)
+    # PRs get workflow-level read-only permissions
+    permissions:
+      contents: write
+      packages: write
     if: |
       github.event_name == 'push' ||
+      github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch' ||
       needs.check-upstream.outputs.upstream_changed == 'true' ||
       needs.nightly.outputs.force_rebuild == 'true'
@@ -289,6 +299,8 @@ jobs:
           echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Create release with build info
+        # Skip release creation on PRs (just validating the build)
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.build-info.outputs.release_tag }}
@@ -319,6 +331,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -349,7 +362,8 @@ jobs:
         with:
           context: .
           file: Containerfile
-          push: true
+          # Push on any non-PR event (push, schedule, workflow_dispatch); PRs just validate the build
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: |
             ${{ steps.meta.outputs.labels }}
@@ -361,8 +375,12 @@ jobs:
 
   build-toolbox:
     runs-on: ubuntu-latest
-    # Build toolbox on push or workflow_dispatch, not on schedule
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # Elevated permissions for push/dispatch (registry push)
+    # PRs get workflow-level read-only permissions
+    permissions:
+      packages: write
+    # Build toolbox on push, PR, or workflow_dispatch (not on schedule)
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -371,6 +389,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -391,7 +410,8 @@ jobs:
         with:
           context: ./toolbox
           file: ./toolbox/Containerfile
-          push: true
+          # Push on any non-PR event; PRs just validate the build
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
