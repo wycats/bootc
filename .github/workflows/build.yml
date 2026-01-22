@@ -3,6 +3,8 @@ name: build-and-push
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   schedule:
     # Hourly cheap poll of upstream digest
     - cron: "0 * * * *"
@@ -219,6 +221,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'push' ||
+      github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch' ||
       needs.check-upstream.outputs.upstream_changed == 'true' ||
       needs.nightly.outputs.force_rebuild == 'true'
@@ -289,6 +292,8 @@ jobs:
           echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Create release with build info
+        # Skip release creation on PRs (just validating the build)
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.build-info.outputs.release_tag }}
@@ -349,7 +354,8 @@ jobs:
         with:
           context: .
           file: Containerfile
-          push: true
+          # Push only on main, not on PRs (PRs just validate the build)
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: |
             ${{ steps.meta.outputs.labels }}
