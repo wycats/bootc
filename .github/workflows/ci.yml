@@ -146,3 +146,9 @@ jobs:
         with:
           dockerfile: Containerfile
           failure-threshold: error
+
+      - name: Lint toolbox Containerfile with hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: toolbox/Containerfile
+          failure-threshold: error
