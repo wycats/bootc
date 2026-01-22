@@ -12,6 +12,9 @@ on:
     - cron: "0 3 * * *"
   workflow_dispatch:
 
+# Note: PRs from same-repo branches get write permissions here. This is acceptable
+# for this single-owner repo. For repos with external contributors, consider
+# splitting into a separate PR validation workflow with read-only permissions.
 permissions:
   contents: write
   packages: write
@@ -354,7 +357,7 @@ jobs:
         with:
           context: .
           file: Containerfile
-          # Push only on main, not on PRs (PRs just validate the build)
+          # Push on any non-PR event (push, schedule, workflow_dispatch); PRs just validate the build
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: |
@@ -367,8 +370,8 @@ jobs:
 
   build-toolbox:
     runs-on: ubuntu-latest
-    # Build toolbox on push or workflow_dispatch, not on schedule
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # Build toolbox on push, PR, or workflow_dispatch (not on schedule)
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -397,7 +400,8 @@ jobs:
         with:
           context: ./toolbox
           file: ./toolbox/Containerfile
-          push: true
+          # Push on any non-PR event; PRs just validate the build
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

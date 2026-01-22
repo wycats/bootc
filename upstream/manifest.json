@@ -95,9 +95,9 @@
       },
       "pinned": {
         "version": "v2.047",
-        "commit": "60ac8a9e2f28a4749369cc7ee2a87ea9c4f8bd32",
-        "sha256": "f11db2928b6634a2255a58bba31f39f86f7c85c6c6646739c45c68500c35371b",
-        "pinned_at": "2026-01-16T19:00:00Z",
+        "commit": "22e564626297b4df0a40570ad81d6c05cc7c38bd",
+        "sha256": "39ee3c587e10e89669b9ff32703261d10d5f9c4dd5ad147b6b5a1c5200591817",
+        "pinned_at": "2026-01-22T22:30:00Z",
         "pin_reason": "v2.051 doubled font size (5MB→10.6MB) with Unicode 17.0 multi-skin-tone sequences, breaking Chromium CBDT rendering"
       },
       "install": {
