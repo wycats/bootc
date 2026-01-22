@@ -1,5 +1,6 @@
 //! Distrobox manifest types.
 
+use crate::context::expand_home;
 use anyhow::{Context, Result, bail};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -166,17 +167,16 @@ impl DistroboxContainer {
         }
 
         if !self.bins.is_empty() {
-            let from_expanded: Vec<String> =
-                self.bins.from.iter().map(|p| expand_home(p)).collect();
             for also in &self.bins.also {
                 let also_expanded = expand_home(also);
-                for from in &from_expanded {
-                    if path_is_within(&also_expanded, from) {
+                for from_orig in &self.bins.from {
+                    let from_expanded = expand_home(from_orig);
+                    if path_is_within(&also_expanded, &from_expanded) {
                         bail!(
                             "Distrobox container '{}' bins.also entry '{}' is inside bins.from directory '{}'",
                             name,
                             also,
-                            collapse_home(from)
+                            from_orig
                         );
                     }
                 }
@@ -199,26 +199,4 @@ fn flag_sets_path(flag: &str) -> bool {
         || trimmed.starts_with("--env PATH=")
         || trimmed.starts_with("-e PATH=")
         || trimmed.starts_with("-e=PATH=")
-}
-
-fn expand_home(value: &str) -> String {
-    if let Some(rest) = value.strip_prefix("~/")
-        && let Ok(home) = std::env::var("HOME")
-    {
-        return format!("{}/{}", home, rest);
-    }
-    value.to_string()
-}
-
-fn collapse_home(value: &str) -> String {
-    if let Ok(home) = std::env::var("HOME") {
-        let prefix = format!("{}/", home);
-        if let Some(rest) = value.strip_prefix(&prefix) {
-            return format!("~/{}", rest);
-        }
-        if value == home {
-            return "~".to_string();
-        }
-    }
-    value.to_string()
 }

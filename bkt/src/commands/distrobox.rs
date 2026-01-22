@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::context::{CommandDomain, run_host_command};
+use crate::context::{CommandDomain, collapse_home, expand_home, run_host_command};
 use crate::manifest::{DistroboxBins, DistroboxContainer, DistroboxManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
@@ -294,6 +294,10 @@ fn run_export(container: &str, bin: &str, export_path: &str) -> Result<()> {
     // Make export idempotent and safe:
     // - If the target already exists as a distrobox-export shim for the same container+bin, skip.
     // - If the target exists but is not a distrobox shim, refuse to overwrite.
+    //
+    // Note: We detect distrobox-export shims by looking for "distrobox_binary" in the file content.
+    // This relies on distrobox-export's shim format (tested with distrobox 1.7+). If distrobox changes
+    // its shim format in future versions, this detection may need to be updated.
     if let Some(file_name) = Path::new(&bin).file_name() {
         let dest = Path::new(&export_path).join(file_name);
         if dest.exists() {
@@ -342,10 +346,18 @@ fn run_export(container: &str, bin: &str, export_path: &str) -> Result<()> {
             }
             detail.push_str(stdout);
         }
-        if detail.is_empty() {
-            bail!("distrobox-export failed for {}", bin);
-        }
-        bail!("distrobox-export failed for {}: {}", bin, detail);
+        let detail = if detail.is_empty() {
+            "(no output)".to_string()
+        } else {
+            detail
+        };
+        bail!(
+            "distrobox-export failed for container '{}' bin '{}' export path '{}': {}",
+            container,
+            bin,
+            export_path,
+            detail
+        );
     }
     Ok(())
 }
@@ -852,26 +864,4 @@ fn parse_additional_flags(
 fn split_env_pair(value: &str) -> Option<(String, String)> {
     let (key, val) = value.split_once('=')?;
     Some((key.to_string(), val.to_string()))
-}
-
-fn expand_home(value: &str) -> String {
-    if let Some(rest) = value.strip_prefix("~/")
-        && let Ok(home) = std::env::var("HOME")
-    {
-        return format!("{}/{}", home, rest);
-    }
-    value.to_string()
-}
-
-fn collapse_home(value: &str) -> String {
-    if let Ok(home) = std::env::var("HOME") {
-        let prefix = format!("{}/", home);
-        if let Some(rest) = value.strip_prefix(&prefix) {
-            return format!("~/{}", rest);
-        }
-        if value == home {
-            return "~".to_string();
-        }
-    }
-    value.to_string()
 }

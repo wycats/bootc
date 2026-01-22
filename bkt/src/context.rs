@@ -298,6 +298,38 @@ pub fn resolve_context(explicit: Option<ExecutionContext>) -> ExecutionContext {
     }
 }
 
+/// Expand `~/` prefix to the user's home directory.
+///
+/// If the value starts with `~/`, replaces it with the value of `$HOME`.
+/// Returns the original string unchanged if it doesn't start with `~/` or if
+/// `$HOME` is not set.
+pub fn expand_home(value: &str) -> String {
+    if let Some(rest) = value.strip_prefix("~/")
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return format!("{}/{}", home, rest);
+    }
+    value.to_string()
+}
+
+/// Collapse the user's home directory to `~/` prefix.
+///
+/// If the value starts with `$HOME/`, replaces that prefix with `~/`.
+/// Returns the original string unchanged if it doesn't start with the home
+/// directory or if `$HOME` is not set.
+pub fn collapse_home(value: &str) -> String {
+    if let Ok(home) = std::env::var("HOME") {
+        let prefix = format!("{}/", home);
+        if let Some(rest) = value.strip_prefix(&prefix) {
+            return format!("~/{}", rest);
+        }
+        if value == home {
+            return "~".to_string();
+        }
+    }
+    value.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
