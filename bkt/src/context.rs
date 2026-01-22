@@ -361,4 +361,48 @@ mod tests {
         assert!(CommandDomain::Dnf.valid_for_context(ExecutionContext::Dev));
         assert!(CommandDomain::Dnf.valid_for_context(ExecutionContext::Image));
     }
+
+    #[test]
+    fn test_expand_home_with_tilde_prefix() {
+        // Use actual HOME from environment
+        if let Ok(home) = std::env::var("HOME") {
+            assert_eq!(expand_home("~/bin"), format!("{}/bin", home));
+            assert_eq!(expand_home("~/.config/app"), format!("{}/.config/app", home));
+        }
+    }
+
+    #[test]
+    fn test_expand_home_without_tilde_prefix() {
+        assert_eq!(expand_home("/usr/bin"), "/usr/bin");
+        assert_eq!(expand_home("relative/path"), "relative/path");
+        assert_eq!(expand_home("~notahome"), "~notahome"); // ~ not followed by /
+    }
+
+    #[test]
+    fn test_collapse_home_with_home_prefix() {
+        // Use actual HOME from environment
+        if let Ok(home) = std::env::var("HOME") {
+            assert_eq!(collapse_home(&format!("{}/bin", home)), "~/bin");
+            assert_eq!(collapse_home(&format!("{}/.config/app", home)), "~/.config/app");
+            assert_eq!(collapse_home(&home), "~");
+        }
+    }
+
+    #[test]
+    fn test_collapse_home_without_home_prefix() {
+        assert_eq!(collapse_home("/usr/bin"), "/usr/bin");
+        // Paths not starting with HOME should be unchanged
+        assert_eq!(collapse_home("/var/log"), "/var/log");
+    }
+
+    #[test]
+    fn test_expand_collapse_roundtrip() {
+        // Use actual HOME from environment
+        if let Ok(_home) = std::env::var("HOME") {
+            let original = "~/some/path";
+            let expanded = expand_home(original);
+            let collapsed = collapse_home(&expanded);
+            assert_eq!(collapsed, original);
+        }
+    }
 }
