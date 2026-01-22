@@ -37,10 +37,69 @@ Phase 4 closes these fidelity gaps.
 
 ---
 
+## 🔥 Urgent: Distrobox Live Capture
+
+**Status:** Blocking workflow usability  
+**Priority:** P0 - Do immediately after PR #78 merges
+
+### Problem
+
+`bkt distrobox capture` only reads from `distrobox.ini` (a format converter), NOT from running containers. Users can't use BoxBuddy or `dnf install` inside a container and have `bkt` capture the changes.
+
+### Current Behavior
+
+```bash
+# User installs package via BoxBuddy or directly in container
+distrobox enter bootc-dev -- dnf install htop
+
+# bkt capture sees nothing - it only reads distrobox.ini
+bkt distrobox capture  # No change detected
+
+# Package is lost on next container rebuild
+```
+
+### Solution
+
+Add `--live` or `--packages` flag to capture that introspects running containers:
+
+```bash
+bkt distrobox capture --packages bootc-dev
+```
+
+### Existing Infrastructure (ready to reuse)
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `extract_packages_from_image()` | `bkt/src/manifest/build_info.rs:94` | Runs `rpm -qa` in containers |
+| `packages` field | `bkt/src/manifest/distrobox.rs:34` | Already in schema |
+| `run_host_command()` | `bkt/src/commands/delegation.rs` | Host command delegation |
+
+### Implementation Approach
+
+1. Run `distrobox enter CONTAINER -- rpm -qa` → current packages
+2. Run `podman run --rm IMAGE rpm -qa` → base image packages  
+3. Compute diff = user-installed packages
+4. Update manifest's `packages` field
+
+### Deliverables
+
+- [ ] Add `capture_container_packages(name: &str)` function
+- [ ] Add `--packages` flag to `bkt distrobox capture`
+- [ ] Diff against base image to find user-installed packages only
+- [ ] Update manifest with captured packages
+
+### UX Improvements (Quality Backlog)
+
+- [ ] Better progress output during `bkt distrobox apply` ("this may take a while" → real progress)
+- [ ] Condense export output (25 lines → "Exported 25 binaries from ~/.cargo/bin")
+
+---
+
 ## Overview
 
 | ID  | Item                                                            | Size | Deps | Status      |
 | --- | --------------------------------------------------------------- | ---- | ---- | ----------- |
+| 0   | [Distrobox Live Capture](#-urgent-distrobox-live-capture)       | M    | —    | **Urgent**  |
 | 1   | [Extension Enabled State](#1-extension-enabled-state)           | M    | —    | Not Started |
 | 2   | [Flatpak Override Capture](#2-flatpak-override-capture)         | M    | —    | Not Started |
 | 3   | [Host Package Install](#3-host-package-install)                 | L    | —    | Not Started |
