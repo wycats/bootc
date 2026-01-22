@@ -34,6 +34,7 @@ RUN dnf install -y \
     python3-pip \
     nodejs \
     npm \
+    unzip \
     && dnf clean all
 
 # Starship and eza: download from GitHub releases (not in Fedora repos, COPR lacks F42)
