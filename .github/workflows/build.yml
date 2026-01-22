@@ -24,7 +24,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  BASE_IMAGE: ghcr.io/ublue-os/bazzite:stable
+  # Must match the FROM line in Containerfile
+  BASE_IMAGE: ghcr.io/ublue-os/bazzite-gnome:stable
 
 jobs:
   # Run the same Rust checks as CI to ensure build doesn't fail on compilation
@@ -325,6 +326,16 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GHCR_TOKEN || github.token }}
+
+      - name: Pin Containerfile to detected digest
+        run: |
+          # Replace floating :stable tag with the exact digest we detected
+          # This eliminates the race condition where the tag could move between detection and build
+          UPSTREAM_DIGEST="${{ needs.check-upstream.outputs.upstream_digest }}"
+          echo "Pinning Containerfile to digest: ${UPSTREAM_DIGEST}"
+          sed -i "s|FROM ${BASE_IMAGE}|FROM ${BASE_IMAGE}@${UPSTREAM_DIGEST}|" Containerfile
+          echo "Updated FROM line:"
+          head -1 Containerfile
 
       - name: Docker metadata
         id: meta
