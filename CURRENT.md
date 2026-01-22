@@ -449,6 +449,34 @@ Start with items that fix daily workflow friction:
 
 ---
 
+## Immediate Follow-ups: Workflow Visibility
+
+These items emerged from investigating why upstream Bazzite updates weren't being detected properly.
+
+### Completed Fixes
+
+- ✅ **BASE_IMAGE mismatch**: Fixed workflow checking wrong image (`bazzite:stable` vs `bazzite-gnome:stable`)
+- ✅ **Race condition**: Workflow now pins Containerfile to the exact detected digest
+
+### Near-term Follow-ups
+
+| Item | Description | Reference |
+|------|-------------|-----------|
+| **Build-info base image section** | `bkt build-info` should show base image package diffs when upstream changes. Currently queries OCI labels; needs to compare current vs previous image labels. | [RFC-0013](docs/rfcs/0013-build-descriptions.md) |
+| **`bkt status` visibility** | `bkt status` should surface: last build date, current vs latest upstream digest, pending changes. Prevents "silent failure" where update loop breaks unnoticed. | — |
+| **Pinned tool update checking** | Scheduled workflow to run `bkt upstream check` and create PRs for available updates (starship, lazygit, keyd, etc.) | [RFC-0006](docs/rfcs/0006-upstream-management.md) |
+| **Release changelog completeness** | GitHub Releases should include full upstream change info when base image updated | [RFC-0013](docs/rfcs/0013-build-descriptions.md) |
+
+### Design Decision: Digest Tracking via OCI Labels
+
+The workflow stores `org.wycats.bootc.base.digest` as an OCI label on each published image. This is the source of truth for "what Bazzite digest did we build against?"
+
+- `upstream/bazzite-stable.digest` file is **documentation only** (not used by workflow)
+- `bkt build-info` should query OCI labels from current and previous images to detect base changes
+- No git commits needed for digest tracking (avoids permissions complexity)
+
+---
+
 ## Deferred to Phase 5+
 
 - Multi-machine sync
@@ -457,7 +485,6 @@ Start with items that fix daily workflow friction:
 - Plugin system
 - Remote management
 - Automatic changelog generation (RFC-0005)
-- Build descriptions for GHCR (RFC-0013)
 - Monitoring via systemd timer
 
 ---
