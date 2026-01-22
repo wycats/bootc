@@ -31,6 +31,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: bkt -> target
+          shared-key: rust-ci
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build bkt
         working-directory: bkt
@@ -106,6 +108,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: bkt -> target
+          shared-key: rust-ci
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build bkt
         working-directory: bkt
