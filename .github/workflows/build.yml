@@ -224,8 +224,8 @@ jobs:
     runs-on: ubuntu-latest
     # PRs require approval via 'pr-build' environment before running
     # This ensures maintainer review before granting cache/registry access
-    environment: ${{ github.event_name == 'pull_request_target' && 'pr-build' || '' }}
-    # Elevated permissions for registry and releases
+    environment: ${{ github.event_name == 'pull_request_target' && 'pr-build' || 'build' }}
+    # Permissions: packages:write for GHCR cache, contents:write only needed for releases (gated by step condition)
     permissions:
       contents: write
       packages: write
@@ -239,7 +239,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # For PRs, checkout the PR head; otherwise checkout the triggering ref
+          # For PRs from forks, we need both the repository and ref to checkout correctly
+          repository: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
@@ -305,7 +306,8 @@ jobs:
 
       - name: Create release with build info
         # Skip release creation on PRs (just validating the build)
-        if: github.event_name != 'pull_request'
+        # This also ensures contents:write permission is only used for non-PR events
+        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.build-info.outputs.release_tag }}
