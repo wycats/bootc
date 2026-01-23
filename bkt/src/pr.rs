@@ -473,7 +473,7 @@ pub fn run_pr_workflow(
     println!("Creating branch: {}", branch);
 
     let status = Command::new("git")
-        .args(["checkout", "-b", "--", &branch])
+        .args(["checkout", "-b", &branch])
         .current_dir(&repo_path)
         .status()
         .context("Failed to create branch")?;
@@ -534,7 +534,7 @@ pub fn run_pr_workflow(
     let config = RepoConfig::load()?;
     validate_branch_pattern(&config.default_branch)?;
     match Command::new("git")
-        .args(["checkout", "--", &config.default_branch])
+        .args(["checkout", &config.default_branch])
         .current_dir(&repo_path)
         .status()
     {

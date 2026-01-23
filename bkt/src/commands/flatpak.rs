@@ -1,6 +1,6 @@
 //! Flatpak command implementation.
 
-use crate::context::{CommandDomain, PrMode, run_host_command};
+use crate::context::{CommandDomain, PrMode, run_command};
 use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{FlatpakApp, FlatpakAppsManifest, FlatpakRemotesManifest, FlatpakScope};
 use crate::output::Output;
@@ -532,7 +532,7 @@ pub struct InstalledFlatpak {
 /// When running inside a toolbox, this delegates to the host via flatpak-spawn.
 /// If flatpak-spawn is not available or fails, returns an empty vector and logs a warning.
 pub fn get_installed_flatpaks() -> Vec<InstalledFlatpak> {
-    let output = run_host_command(
+    let output = run_command(
         "flatpak",
         &[
             "list",

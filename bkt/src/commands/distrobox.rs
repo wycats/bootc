@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::context::{CommandDomain, run_host_command};
+use crate::context::{CommandDomain, run_command};
 use crate::manifest::{DistroboxBins, DistroboxContainer, DistroboxManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
@@ -260,7 +260,7 @@ fn run_assemble(container: &str, ini_path: &Path) -> Result<()> {
         "--file",
         &ini,
     ];
-    let output = run_host_command("distrobox", &args)?;
+    let output = run_command("distrobox", &args)?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -326,7 +326,7 @@ fn run_export(container: &str, bin: &str, export_path: &str) -> Result<()> {
         "--export-path",
         &export_path,
     ];
-    let output = run_host_command("distrobox", &args)?;
+    let output = run_command("distrobox", &args)?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -352,7 +352,7 @@ fn run_export(container: &str, bin: &str, export_path: &str) -> Result<()> {
 
 fn list_bins_in_dir(container: &str, dir: &str, original_dir: &str) -> Result<Vec<String>> {
     let check_args = vec!["enter", container, "--", "test", "-d", dir];
-    let output = run_host_command("distrobox", &check_args)?;
+    let output = run_command("distrobox", &check_args)?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -397,7 +397,7 @@ fn list_bins_in_dir(container: &str, dir: &str, original_dir: &str) -> Result<Ve
         ")",
         "-print",
     ];
-    let output = run_host_command("distrobox", &find_args)?;
+    let output = run_command("distrobox", &find_args)?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);

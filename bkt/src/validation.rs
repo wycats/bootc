@@ -16,9 +16,13 @@ pub fn validate_gsettings_schema(schema: &str) -> Result<()> {
         .context("Failed to list GSettings schemas")?;
 
     if !output.status.success() {
-        // Can't validate, continue anyway
-        Output::warning("Could not validate schema (gsettings unavailable)");
-        return Ok(());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!(
+            "Cannot validate GSettings schema: gsettings command failed.\n\n\
+             stderr: {}\n\n\
+             Make sure gsettings and GLib schemas are available.",
+            stderr.trim()
+        );
     }
 
     let schemas = String::from_utf8_lossy(&output.stdout);
@@ -64,9 +68,14 @@ pub fn validate_gsettings_key(schema: &str, key: &str) -> Result<()> {
         .context("Failed to list GSettings keys")?;
 
     if !output.status.success() {
-        // Schema doesn't exist or gsettings unavailable
-        // Schema validation should have already caught this
-        return Ok(());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!(
+            "Cannot list keys for schema '{}': gsettings command failed.\n\n\
+             stderr: {}\n\n\
+             The schema may not exist, or gsettings may not be available.",
+            schema,
+            stderr.trim()
+        );
     }
 
     let keys = String::from_utf8_lossy(&output.stdout);
@@ -160,8 +169,13 @@ pub fn validate_flatpak_app(app_id: &str, remote: &str) -> Result<()> {
         .context("Failed to list Flatpak remotes")?;
 
     if !remotes_output.status.success() {
-        Output::warning("Could not validate app (flatpak unavailable)");
-        return Ok(());
+        let stderr = String::from_utf8_lossy(&remotes_output.stderr);
+        bail!(
+            "Cannot validate Flatpak app: flatpak command failed.\n\n\
+             stderr: {}\n\n\
+             Make sure flatpak is installed and configured.",
+            stderr.trim()
+        );
     }
 
     let remotes = String::from_utf8_lossy(&remotes_output.stdout);
@@ -280,7 +294,7 @@ mod tests {
         if let Err(e) = err {
             let msg = e.to_string();
             assert!(
-                msg.contains("not found") || msg.contains("unavailable"),
+                msg.contains("not found") || msg.contains("command failed"),
                 "Error message should be helpful: {}",
                 msg
             );

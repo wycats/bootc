@@ -119,6 +119,87 @@ Why three paths?
 - `~/.proto/bin` — Proto-managed tool binaries (`node`, `npm`, etc.)
 - `~/.proto/shims` — Proto shims that delegate to the correct version
 
+## Host PATH Architecture
+
+**Axiom**: PATH is set once, declaratively, via `environment.d`. Shell rc files must not modify PATH.
+
+> **Note**: This axiom supersedes earlier guidance (e.g., RFC-0017) that suggested `PATH="$HOME/.local/bin:$PATH"`. That pattern reintroduces PATH inheritance and is now deprecated.
+
+### Why `environment.d`?
+
+The traditional approach of setting PATH in `.bashrc` or `.profile` is fragile:
+
+| Context                     | Sources `.bashrc`? | Sources `.profile`? |
+| --------------------------- | ------------------ | ------------------- |
+| Interactive terminal        | ✅                 | Depends             |
+| VS Code integrated terminal | ❌ Often not       | ❌                  |
+| Systemd user services       | ❌                 | ❌                  |
+| GUI apps (GNOME)            | ❌                 | ❌                  |
+| SSH sessions                | Depends            | ✅                  |
+
+This leads to "works in my terminal but not in VS Code" bugs.
+
+### The Solution
+
+Use `~/.config/environment.d/10-distrobox-exports.conf`:
+
+```bash
+# Complete PATH for host environment.
+# distrobox shims take priority, then user bins, then system bins.
+# NOTE: Do NOT reference $PATH here - we define the complete path to avoid
+# inheriting stale or unwanted entries (like ~/.cargo/bin from toolbox).
+PATH="$HOME/.local/bin/distrobox:$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin"
+```
+
+Key principles:
+
+1. **Complete, not incremental** — Don't append to `$PATH`; define the full path
+2. **Shims first** — `~/.local/bin/distrobox` contains shims that route to the container
+3. **No toolchain paths** — `~/.cargo/bin`, `~/.proto/*` are NOT in host PATH; shims handle them
+4. **Shell-agnostic** — Works for bash, zsh, nushell, fish, and GUI apps
+
+### What Goes Where
+
+| Directory                                       | Purpose                             | In host PATH? |
+| ----------------------------------------------- | ----------------------------------- | ------------- |
+| `~/.local/bin/distrobox/`                       | Distrobox shims (cargo, node, etc.) | ✅ First      |
+| `~/.local/bin/`                                 | User binaries, direct symlinks      | ✅ Second     |
+| `/usr/local/sbin`, `/usr/local/bin`, `/usr/bin` | System binaries                     | ✅ Last       |
+| `~/.cargo/bin/`                                 | Rust toolchain (used by container)  | ❌ Never      |
+| `~/.proto/bin/`, `~/.proto/shims/`              | Node toolchain (used by container)  | ❌ Never      |
+
+### Shell RC Files
+
+Shell rc files (`.bashrc`, `.bash_profile`, `.profile`, `.zshrc`) should **not** modify PATH. They may:
+
+- Source system defaults (`/etc/bashrc`)
+- Set non-PATH environment variables (`GPG_TTY`, `EDITOR`)
+- Define aliases and functions
+- Hand off to another shell (e.g., `exec nu`)
+
+### Cargo/Rustup Integration
+
+The `~/.cargo/env` file traditionally adds `~/.cargo/bin` to PATH. This must be neutered:
+
+```bash
+# ~/.cargo/env
+# This file is intentionally empty.
+# Toolchains are accessed via distrobox shims, not directly from the host.
+# See: ~/.local/bin/distrobox/cargo
+```
+
+### Verification
+
+After login, verify PATH is correct:
+
+```bash
+# Should show shims directory first
+echo $PATH | tr ':' '\n' | head -5
+
+# Should resolve to shim, not ~/.cargo/bin
+which cargo  # Should be ~/.local/bin/distrobox/cargo
+```
+
 ## Future Work
 
 ### Manifest-Driven Toolbox Containerfile

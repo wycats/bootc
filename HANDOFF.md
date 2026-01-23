@@ -190,6 +190,134 @@ Copilot chat is tied to the **remote window**, so it doesn’t persist when swit
 
 ---
 
+# Session: 2026-01-22
+
+## Bugs Fixed
+
+### 1. Git checkout syntax error in PR workflow (`bkt/src/pr.rs`)
+
+The PR creation workflow failed with:
+
+```
+fatal: 'bkt/dnf-install-gcc-1769115367' is not a commit and a branch '--' cannot be created from it
+```
+
+**Root cause**: Incorrect `--` placement in git checkout commands:
+
+- Line 476: `["checkout", "-b", "--", &branch]` → `["checkout", "-b", &branch]`
+- Line 537: `["checkout", "--", &config.default_branch]` → `["checkout", &config.default_branch]`
+
+### 2. PATH configuration causing host toolchain usage
+
+When running `cargo build` from VS Code, it used the host's `~/.cargo/bin/cargo` directly instead of the distrobox shim, causing "linker `cc` not found" errors.
+
+**Root cause**: The `environment.d` config appended to `$PATH` instead of setting a complete PATH:
+
+```
+# Old (broken)
+PATH="$HOME/.local/bin:$HOME/.local/bin/distrobox:$PATH"
+
+# New (fixed)
+PATH="$HOME/.local/bin/distrobox:$HOME/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin"
+```
+
+**Additional cleanup**:
+
+- Neutered `~/.cargo/env` to prevent accidental sourcing
+- Simplified `~/.bashrc` to remove PATH manipulation (environment.d handles it)
+- Simplified `~/.bash_profile` and `~/.profile`
+
+## Key Findings: Distrobox Transparency
+
+Investigated whether distrobox is transparent enough that tools don't need to know they're containerized.
+
+### What works in distrobox (shared with host):
+
+- ✅ D-Bus session bus (`/run/user/1000/bus`)
+- ✅ `systemctl --user` commands
+- ✅ `systemd-run --user --scope` (creating scopes)
+- ✅ PID namespace (PID 1 is host systemd)
+- ✅ Full filesystem access (home bind-mounted)
+
+### What doesn't work:
+
+- ❌ Direct cgroup writes (`/sys/fs/cgroup` is virtualized)
+- ⚠️ Setuid binaries (depends on SELinux context, same as host)
+
+### Conclusion for shim strategy:
+
+| Tool type                | Shim behavior                         | Examples               |
+| ------------------------ | ------------------------------------- | ---------------------- |
+| Filesystem tools         | distrobox-enter wrapper (transparent) | rg, cargo, node, rustc |
+| System integration tools | Direct symlink (host_only)            | locald, bkt            |
+
+Most tools work fine through distrobox shims. The container is invisible for CLI tools.
+
+## Design Decision: `host_only` Shim Option
+
+For the rare case of tools built in the container that must run directly on the host (e.g., `locald` with setuid requirements), add a manifest option:
+
+```json
+{
+  "shims": [
+    { "name": "cargo", "source": "~/.cargo/bin/cargo" },
+    { "name": "locald", "source": "~/.cargo/bin/locald", "host_only": true }
+  ]
+}
+```
+
+When `host_only: true`:
+
+- Shim generator creates a direct symlink instead of distrobox-enter wrapper
+- Binary runs on host, not through container
+
+CLI:
+
+```bash
+bkt shim add locald              # Normal shim (distrobox wrapper)
+bkt shim add locald --host-only  # Direct link, no container
+```
+
+This is expected to be rare — most tools work fine through shims.
+
+## bkt Delegation Logic
+
+The existing `bkt` delegation code in `delegation.rs` is from the toolbx era. It detects container environment and delegates host commands via `flatpak-spawn --host /usr/bin/bkt`.
+
+### Recommendation: Remove Entirely
+
+**The delegation logic should be removed.** It was designed for a world where `bkt` might run inside the container and need to "escape" to the host. With the host-only shim model, `bkt` always runs on the host.
+
+**Why delegation is unnecessary**:
+
+1. **`bkt` runs on host** — With host-only shim, `bkt` executes directly on the host, never inside distrobox
+2. **Commands invoke container operations directly** — `bkt dev dnf install` should call `distrobox enter bootc-dev -- dnf install`, not re-exec itself inside the container
+3. **Distrobox transparency** — For operations that need host (flatpak, systemctl), distrobox already shares those namespaces
+
+**What to remove**:
+
+- `bkt/src/delegation.rs` — entire module
+- `maybe_delegate()` call in `main.rs`
+- `RuntimeEnvironment` enum (or simplify)
+- `--no-delegate` flag
+
+**What to change**:
+
+- `bkt dev dnf install X` → invoke `distrobox enter bootc-dev -- dnf install X`
+- `bkt dev` subcommands orchestrate container operations, don't delegate
+
+**No action taken this session** — just documenting the decision for future refactoring.
+
+## Files Changed
+
+- `bkt/src/pr.rs` - Fixed git checkout syntax
+- `skel/.config/environment.d/10-distrobox-exports.conf` - Complete PATH, no inheritance
+- `docs/VISION.md` - Added Host PATH Architecture section
+- `docs/rfcs/0018-host-only-shims.md` - New RFC for host_only shim option
+- `CURRENT.md` - Added testing ideas backlog
+
+---
+
 ## Verification Commands (Host)
 
 - `cargo --version`

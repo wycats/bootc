@@ -8,7 +8,6 @@ use clap::ValueEnum;
 use std::fmt;
 use std::path::Path;
 use std::process::{Command, Output};
-use tracing::warn;
 
 /// Execution context for bkt commands.
 ///
@@ -59,20 +58,6 @@ impl PrMode {
     pub fn should_create_pr(&self) -> bool {
         matches!(self, PrMode::Both | PrMode::PrOnly)
     }
-}
-
-/// Where a command naturally wants to execute.
-///
-/// This determines whether a command should be delegated to a different
-/// runtime environment (host vs. toolbox) for transparent execution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommandTarget {
-    /// Must run on the host (flatpak, extension, gsetting, shim, capture, apply)
-    Host,
-    /// Must run in the dev toolbox (bkt dev commands)
-    Dev,
-    /// Can run either place, meaning depends on context
-    Either,
 }
 
 /// Command domain categories.
@@ -139,28 +124,28 @@ impl CommandDomain {
                 "Flatpaks are host-level applications.\n\n\
                  This command requires host context. If you're seeing this error,\n\
                  you may have explicitly specified --context dev.\n\n\
-                 Fix: Remove the --context flag (delegation is automatic)"
+                 Fix: Remove the --context flag or use --context host"
                     .to_string()
             }
             (CommandDomain::Distrobox, ExecutionContext::Dev) => {
                 "Distrobox configuration is host-level.\n\n\
                  This command requires host context. If you're seeing this error,\n\
                  you may have explicitly specified --context dev.\n\n\
-                 Fix: Remove the --context flag (delegation is automatic)"
+                 Fix: Remove the --context flag or use --context host"
                     .to_string()
             }
             (CommandDomain::Extension, ExecutionContext::Dev) => {
                 "GNOME extensions are host-level.\n\n\
                  This command requires host context. If you're seeing this error,\n\
                  you may have explicitly specified --context dev.\n\n\
-                 Fix: Remove the --context flag (delegation is automatic)"
+                 Fix: Remove the --context flag or use --context host"
                     .to_string()
             }
             (CommandDomain::Shim, ExecutionContext::Dev) => {
-                "Shims are host-level (they expose host commands to the toolbox).\n\n\
+                "Shims are host-level (they expose toolbox commands to the host).\n\n\
                  This command requires host context. If you're seeing this error,\n\
                  you may have explicitly specified --context dev.\n\n\
-                 Fix: Remove the --context flag (delegation is automatic)"
+                 Fix: Remove the --context flag or use --context host"
                     .to_string()
             }
             _ => format!("{:?} is not valid in {} context", self, context),
@@ -243,10 +228,10 @@ pub fn is_in_toolbox() -> bool {
         || Path::new("/run/.containerenv").exists()
 }
 
-/// Run a command on the host, delegating via flatpak-spawn if in a toolbox/container.
+/// Run a command and return its output.
 ///
-/// Returns a Result with the command output. If the command fails to execute
-/// (e.g., flatpak-spawn not available), logs a warning and returns the error.
+/// This is a simple wrapper around Command::new().output() with error context.
+/// Since bkt always runs on the host (via host-only shim), no delegation is needed.
 ///
 /// # Arguments
 /// * `program` - The program to run (e.g., "flatpak", "gnome-extensions")
@@ -254,32 +239,13 @@ pub fn is_in_toolbox() -> bool {
 ///
 /// # Example
 /// ```ignore
-/// let output = run_host_command("flatpak", &["list", "--app"])?;
+/// let output = run_command("flatpak", &["list", "--app"])?;
 /// ```
-pub fn run_host_command(program: &str, args: &[&str]) -> Result<Output> {
-    if is_in_toolbox() {
-        let mut cmd = Command::new("flatpak-spawn");
-        cmd.arg("--host").arg(program).args(args);
-        let output = cmd.output().with_context(|| {
-            format!(
-                "Failed to run '{}' via flatpak-spawn --host. \
-                 This is required when running inside a toolbox/container.",
-                program
-            )
-        });
-        if output.is_err() {
-            warn!(
-                "flatpak-spawn failed for command: {} {:?}. Is flatpak-spawn available?",
-                program, args
-            );
-        }
-        output
-    } else {
-        Command::new(program)
-            .args(args)
-            .output()
-            .with_context(|| format!("Failed to run '{}'", program))
-    }
+pub fn run_command(program: &str, args: &[&str]) -> Result<Output> {
+    Command::new(program)
+        .args(args)
+        .output()
+        .with_context(|| format!("Failed to run '{}'", program))
 }
 
 /// Determine the effective execution context.
