@@ -419,6 +419,8 @@ pub enum CommandDomain {
     Skel,
     /// DNF/RPM packages (context-dependent: host uses rpm-ostree, dev uses dnf)
     Dnf,
+    /// System packages (image-level, deferred until image rebuild)
+    System,
     /// Homebrew/Linuxbrew packages (host-only)
     Homebrew,
     /// Profile/status commands (read-only, any context)
@@ -448,6 +450,10 @@ impl CommandDomain {
 
             // DNF is valid in both host (rpm-ostree) and dev (dnf) contexts
             (CommandDomain::Dnf, _) => true,
+
+            // System is host-only (modifies image manifest, not toolbox)
+            (CommandDomain::System, ExecutionContext::Dev) => false,
+            (CommandDomain::System, _) => true,
 
             // Read-only domains work everywhere
             (CommandDomain::Profile, _) => true,
@@ -491,6 +497,13 @@ impl CommandDomain {
                  This command requires host context. If you're seeing this error,\n\
                  you may have explicitly specified --context dev.\n\n\
                  Fix: Remove the --context flag or use --context host"
+                    .to_string()
+            }
+            (CommandDomain::System, ExecutionContext::Dev) => {
+                "System packages are baked into the bootc image.\n\n\
+                 This command modifies manifests/system-packages.json and the Containerfile.\n\
+                 It doesn't make sense in a dev/toolbox context.\n\n\
+                 For toolbox packages, use: bkt dev install <package>"
                     .to_string()
             }
             _ => format!("{:?} is not valid in {} context", self, context),
