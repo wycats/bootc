@@ -419,6 +419,8 @@ pub enum CommandDomain {
     Skel,
     /// DNF/RPM packages (context-dependent: host uses rpm-ostree, dev uses dnf)
     Dnf,
+    /// Homebrew/Linuxbrew packages (host-only)
+    Homebrew,
     /// Profile/status commands (read-only, any context)
     Profile,
     /// Repository info (read-only)
@@ -442,6 +444,7 @@ impl CommandDomain {
             (CommandDomain::Distrobox, ExecutionContext::Dev) => false,
             (CommandDomain::Extension, ExecutionContext::Dev) => false,
             (CommandDomain::Shim, ExecutionContext::Dev) => false,
+            (CommandDomain::Homebrew, ExecutionContext::Dev) => false,
 
             // DNF is valid in both host (rpm-ostree) and dev (dnf) contexts
             (CommandDomain::Dnf, _) => true,
