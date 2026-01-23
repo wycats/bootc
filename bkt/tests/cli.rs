@@ -2,28 +2,23 @@
 //!
 //! These tests run the compiled binary and verify its output.
 //!
-//! ## Test Categories
+//! ## Test Isolation
 //!
-//! Most tests use `bkt()` which sets `BKT_DELEGATED=1` to prevent delegation.
-//! This allows testing command logic in isolation with controlled temp directories.
-//!
-//! Delegation-specific tests use `bkt_with_delegation()` and only run in toolbox
-//! environments (skipped on host/CI). These verify the actual delegation behavior.
+//! Tests use `bkt()` which sets `BKT_DELEGATED=1`. This is a legacy flag that
+//! is checked but no longer functional (delegation was removed). The flag
+//! remains for backward compatibility with existing test infrastructure.
 
-use assert_cmd::Command;
 use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::Command;
 use assert_fs::prelude::*;
 use predicates::prelude::*;
 use std::os::unix::fs::PermissionsExt;
 
-/// Get bkt command with delegation disabled.
+/// Get bkt command for testing.
 ///
-/// Sets BKT_DELEGATED=1 to prevent automatic delegation. This allows tests to:
-/// - Use temp HOME directories that persist across the command invocation
-/// - Test command logic without delegation overhead
-/// - Run identically on host, toolbox, and CI
-///
-/// For testing actual delegation behavior, use `bkt_with_delegation()` instead.
+/// Sets BKT_DELEGATED=1 for backward compatibility. This flag is no longer
+/// used by the main binary (delegation was removed), but some tests may
+/// still reference it.
 fn bkt() -> Command {
     let mut cmd = cargo_bin_cmd!("bkt");
     cmd.env("BKT_DELEGATED", "1");
@@ -937,86 +932,6 @@ fn flatpak_add_force_bypasses_validation() {
         .assert()
         .success()
         .stdout(predicate::str::contains("--force"));
-}
-
-// ============================================================================
-// Delegation integration tests
-// ============================================================================
-//
-// These tests verify that transparent delegation works correctly.
-// They only run in toolbox environments (skipped on host/CI).
-
-/// Get bkt command WITHOUT BKT_DELEGATED set, for testing actual delegation.
-fn bkt_with_delegation() -> Command {
-    cargo_bin_cmd!("bkt")
-}
-
-/// Check if we're running in a toolbox environment.
-fn is_toolbox() -> bool {
-    std::path::Path::new("/run/.toolboxenv").exists()
-}
-
-#[test]
-fn delegation_from_toolbox_shows_message() {
-    if !is_toolbox() {
-        eprintln!("Skipping delegation test: not in toolbox");
-        return;
-    }
-
-    // A Host-targeted command should show delegation message
-    bkt_with_delegation()
-        .args(["flatpak", "list"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Delegating to host"));
-}
-
-#[test]
-fn delegation_dry_run_shows_would_delegate() {
-    if !is_toolbox() {
-        eprintln!("Skipping delegation test: not in toolbox");
-        return;
-    }
-
-    // With --dry-run, should show what would be delegated without actually doing it
-    bkt_with_delegation()
-        .args(["--dry-run", "flatpak", "list"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Would delegate to host"));
-}
-
-#[test]
-fn delegation_no_delegate_flag_prevents_delegation() {
-    if !is_toolbox() {
-        eprintln!("Skipping delegation test: not in toolbox");
-        return;
-    }
-
-    // --no-delegate should prevent delegation
-    // For commands that only read manifests (like flatpak list), this still works
-    // For commands that actually need host (like capture), it would fail
-    // Here we just verify the flag is accepted and no delegation message appears
-    bkt_with_delegation()
-        .args(["--no-delegate", "flatpak", "list"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Delegating to host").not());
-}
-
-#[test]
-fn delegation_either_commands_run_locally() {
-    if !is_toolbox() {
-        eprintln!("Skipping delegation test: not in toolbox");
-        return;
-    }
-
-    // Either-targeted commands (like status) should NOT delegate
-    bkt_with_delegation()
-        .args(["status"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Delegating to host").not());
 }
 
 // ============================================================================

@@ -1,8 +1,7 @@
 //! Admin command implementation - privileged operations via polkit.
 //!
 //! This module provides passwordless privileged operations for wheel group
-//! members, enabling seamless management of bootc images and systemd services
-//! from both host and toolbox contexts.
+//! members, enabling seamless management of bootc images and systemd services.
 //!
 //! # Security Model
 //!
@@ -12,8 +11,8 @@
 //!
 //! # Context Handling
 //!
-//! Commands work identically from host or toolbox via RFC-0010 delegation.
-//! The D-Bus system bus routes correctly from toolbox to host automatically.
+//! Admin commands run on the host. When executed from a distrobox container,
+//! D-Bus routes correctly to the host system automatically.
 //!
 //! # Example Usage
 //!
