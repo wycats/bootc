@@ -18,8 +18,8 @@
 //! - Auth: GitHub authentication issues
 //! - Git state: Conflicts, dirty working directory
 
-use crate::repo::{find_repo_path, RepoConfig};
-use anyhow::{bail, Context, Result};
+use crate::repo::{RepoConfig, find_repo_path};
+use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
 use std::process::Command;
 

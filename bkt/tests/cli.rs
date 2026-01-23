@@ -8,8 +8,8 @@
 //! is checked but no longer functional (delegation was removed). The flag
 //! remains for backward compatibility with existing test infrastructure.
 
-use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use assert_fs::prelude::*;
 use predicates::prelude::*;
 use std::os::unix::fs::PermissionsExt;
@@ -252,12 +252,15 @@ fn gsetting_capture_requires_schema() {
 #[test]
 fn gsetting_capture_validates_schema() {
     // Test that capture fails gracefully with a non-existent schema
-    // (GNOME schemas may not be available in CI environments)
+    // (may fail with "not found" or "command failed" depending on environment)
     bkt()
         .args(["gsetting", "capture", "org.nonexistent.schema", "--dry-run"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("not found"));
+        // Either "not found" (schema missing) or "command failed" (no schemas at all)
+        .stderr(
+            predicate::str::contains("not found").or(predicate::str::contains("command failed")),
+        );
 }
 
 #[test]
@@ -895,7 +898,10 @@ fn gsetting_set_rejects_invalid_schema() {
         .args(["gsetting", "set", "nonexistent.schema.xyz", "key", "value"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("not found"));
+        // Either "not found" (schema missing) or "command failed" (no schemas at all)
+        .stderr(
+            predicate::str::contains("not found").or(predicate::str::contains("command failed")),
+        );
 
     temp.close().unwrap();
 }

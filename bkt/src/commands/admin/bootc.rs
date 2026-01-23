@@ -2,7 +2,7 @@
 //!
 //! Provides passwordless access to bootc operations via polkit + pkexec.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Subcommand;
 use is_terminal::IsTerminal;
 use owo_colors::OwoColorize;

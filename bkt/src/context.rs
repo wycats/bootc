@@ -3,7 +3,7 @@
 //! Determines where commands should execute (host, toolbox, or image-only)
 //! and validates that command/context combinations are valid.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::ValueEnum;
 use std::fmt;
 use std::path::Path;
