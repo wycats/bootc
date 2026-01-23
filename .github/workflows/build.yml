@@ -22,10 +22,9 @@ permissions:
 
 concurrency:
   # Ensure we don't pile up scheduled builds (they can take a while).
-  # This keeps only one build-and-push run in flight per branch/event type.
-  # We include event_name to prevent scheduled runs (which skip if no upstream change)
-  # from cancelling push runs (which always contain code changes).
-  group: build-and-push-${{ github.ref_name }}-${{ github.event_name }}
+  # For PRs, use PR number so different PRs don't cancel each other.
+  # For other events, use ref_name so pushes to main cancel previous main runs.
+  group: build-and-push-${{ github.event.pull_request.number || github.ref_name }}-${{ github.event_name }}
   cancel-in-progress: true
 
 env:
