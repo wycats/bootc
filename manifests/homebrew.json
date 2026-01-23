@@ -1,0 +1,26 @@
+{
+  "$schema": "https://wycats.github.io/bootc/homebrew.schema.json",
+  "formulae": [
+    "atuin",
+    "bash-preexec",
+    "bat",
+    "chezmoi",
+    "direnv",
+    "dysk",
+    "eza",
+    "fd",
+    "gh",
+    "glab",
+    "lefthook",
+    "ripgrep",
+    "shellcheck",
+    "stress-ng",
+    "tealdeer",
+    "television",
+    "trash-cli",
+    "ugrep",
+    "valkyrie00/bbrew/bbrew",
+    "yq",
+    "zoxide"
+  ]
+}

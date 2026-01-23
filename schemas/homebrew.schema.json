@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HomebrewManifest",
+  "description": "The homebrew.json manifest.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "formulae": {
+      "description": "List of formulae to install",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/BrewFormula"
+      }
+    },
+    "taps": {
+      "description": "List of taps to add",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "BrewFormula": {
+      "description": "A Homebrew formula entry.",
+      "anyOf": [
+        {
+          "description": "Simple format: just the formula name",
+          "type": "string"
+        },
+        {
+          "description": "Full format: formula with tap info",
+          "$ref": "#/$defs/BrewFormulaConfig"
+        }
+      ]
+    },
+    "BrewFormulaConfig": {
+      "description": "Detailed configuration for a formula.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Formula name (e.g., \"lefthook\" or \"valkyrie00/bbrew/bbrew\")",
+          "type": "string"
+        },
+        "tap": {
+          "description": "Optional tap to install from (e.g., \"valkyrie00/bbrew\")",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  }
+}

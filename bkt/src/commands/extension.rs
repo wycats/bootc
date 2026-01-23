@@ -76,7 +76,8 @@ fn is_enabled(uuid: &str) -> bool {
         .args(["info", uuid])
         .output()
         .map(|o| {
-            o.status.success() && String::from_utf8_lossy(&o.stdout).contains("State: ENABLED")
+            // GNOME uses "State: ACTIVE" for enabled extensions, "State: INACTIVE" for disabled
+            o.status.success() && String::from_utf8_lossy(&o.stdout).contains("State: ACTIVE")
         })
         .unwrap_or(false)
 }

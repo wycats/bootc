@@ -1,26 +1,5 @@
 {
-  "$schema": "https://wycats.github.io/bootc/system-packages.schema.json",
   "packages": [
-    "1password",
-    "1password-cli",
-    "code",
-    "curl",
-    "fontconfig",
-    "gh",
-    "google-noto-sans-batak-fonts",
-    "google-noto-sans-inscriptional-pahlavi-fonts",
-    "google-noto-sans-inscriptional-parthian-fonts",
-    "google-noto-sans-meroitic-fonts",
-    "google-noto-sans-mongolian-fonts",
-    "jq",
-    "microsoft-edge-stable",
-    "papirus-icon-theme",
-    "rsms-inter-fonts",
-    "toolbox",
-    "unzip",
-    "xorg-x11-server-Xvfb"
-  ],
-  "groups": [],
-  "excluded": [],
-  "copr_repos": []
+    "virt-manager"
+  ]
 }
