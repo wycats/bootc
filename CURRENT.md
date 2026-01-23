@@ -72,7 +72,7 @@ bkt distrobox capture --packages bootc-dev
 |-----------|----------|---------|
 | `extract_packages_from_image()` | `bkt/src/manifest/build_info.rs:94` | Runs `rpm -qa` in containers |
 | `packages` field | `bkt/src/manifest/distrobox.rs:34` | Already in schema |
-| `run_host_command()` | `bkt/src/commands/delegation.rs` | Host command delegation |
+| `run_command()` | `bkt/src/commands/delegation.rs` | Host command delegation |
 
 ### Implementation Approach
 

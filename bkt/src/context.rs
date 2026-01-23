@@ -8,7 +8,6 @@ use clap::ValueEnum;
 use std::fmt;
 use std::path::Path;
 use std::process::{Command, Output};
-use tracing::warn;
 
 /// Execution context for bkt commands.
 ///
@@ -229,10 +228,10 @@ pub fn is_in_toolbox() -> bool {
         || Path::new("/run/.containerenv").exists()
 }
 
-/// Run a command on the host, delegating via flatpak-spawn if in a toolbox/container.
+/// Run a command and return its output.
 ///
-/// Returns a Result with the command output. If the command fails to execute
-/// (e.g., flatpak-spawn not available), logs a warning and returns the error.
+/// This is a simple wrapper around Command::new().output() with error context.
+/// Since bkt always runs on the host (via host-only shim), no delegation is needed.
 ///
 /// # Arguments
 /// * `program` - The program to run (e.g., "flatpak", "gnome-extensions")
@@ -240,32 +239,13 @@ pub fn is_in_toolbox() -> bool {
 ///
 /// # Example
 /// ```ignore
-/// let output = run_host_command("flatpak", &["list", "--app"])?;
+/// let output = run_command("flatpak", &["list", "--app"])?;
 /// ```
-pub fn run_host_command(program: &str, args: &[&str]) -> Result<Output> {
-    if is_in_toolbox() {
-        let mut cmd = Command::new("flatpak-spawn");
-        cmd.arg("--host").arg(program).args(args);
-        let output = cmd.output().with_context(|| {
-            format!(
-                "Failed to run '{}' via flatpak-spawn --host. \
-                 This is required when running inside a toolbox/container.",
-                program
-            )
-        });
-        if output.is_err() {
-            warn!(
-                "flatpak-spawn failed for command: {} {:?}. Is flatpak-spawn available?",
-                program, args
-            );
-        }
-        output
-    } else {
-        Command::new(program)
-            .args(args)
-            .output()
-            .with_context(|| format!("Failed to run '{}'", program))
-    }
+pub fn run_command(program: &str, args: &[&str]) -> Result<Output> {
+    Command::new(program)
+        .args(args)
+        .output()
+        .with_context(|| format!("Failed to run '{}'", program))
 }
 
 /// Determine the effective execution context.

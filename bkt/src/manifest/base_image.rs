@@ -10,7 +10,7 @@
 //! host but not in toolbox. When running from toolbox, commands are automatically
 //! delegated to the host via `flatpak-spawn --host`.
 
-use crate::context::{is_in_toolbox, run_host_command};
+use crate::context::run_command;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -73,7 +73,7 @@ pub struct ImagePackageList {
 
 /// Get the digest of an image using skopeo.
 pub fn get_image_digest(image_ref: &str) -> Result<String> {
-    let output = run_host_command(
+    let output = run_command(
         "skopeo",
         &[
             "inspect",
@@ -103,11 +103,8 @@ pub fn extract_packages_from_image(image_ref: &str) -> Result<ImagePackageList> 
 
     // Use podman to run rpm -qa inside the container
     // We use --entrypoint to override any custom entrypoint
-    let output = if is_in_toolbox() {
-        let mut cmd = Command::new("flatpak-spawn");
-        cmd.args([
-            "--host",
-            "podman",
+    let output = Command::new("podman")
+        .args([
             "run",
             "--rm",
             "--entrypoint",
@@ -116,24 +113,9 @@ pub fn extract_packages_from_image(image_ref: &str) -> Result<ImagePackageList> 
             "-qa",
             "--qf",
             "%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n",
-        ]);
-        cmd.output()
-            .context("Failed to run podman via flatpak-spawn")?
-    } else {
-        Command::new("podman")
-            .args([
-                "run",
-                "--rm",
-                "--entrypoint",
-                "rpm",
-                image_ref,
-                "-qa",
-                "--qf",
-                "%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n",
-            ])
-            .output()
-            .context("Failed to run podman")?
-    };
+        ])
+        .output()
+        .context("Failed to run podman")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
