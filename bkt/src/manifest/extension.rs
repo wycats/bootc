@@ -412,4 +412,47 @@ mod tests {
         let item = manifest.get("disabled@example.com").unwrap();
         assert!(!item.enabled());
     }
+
+    #[test]
+    fn manifest_user_disabled_overrides_system_enabled() {
+        // System manifest has extension as plain UUID (enabled by default)
+        let mut system = GnomeExtensionsManifest::default();
+        system.add("burn-my-windows@schneegans.github.com");
+
+        // Verify system thinks it's enabled
+        assert!(
+            system
+                .get("burn-my-windows@schneegans.github.com")
+                .unwrap()
+                .enabled()
+        );
+
+        // User manifest has same extension explicitly disabled
+        let mut user = GnomeExtensionsManifest::default();
+        user.add(ExtensionItem::Object(ExtensionConfig {
+            id: "burn-my-windows@schneegans.github.com".to_string(),
+            enabled: false,
+        }));
+
+        // Verify user thinks it's disabled
+        assert!(
+            !user
+                .get("burn-my-windows@schneegans.github.com")
+                .unwrap()
+                .enabled()
+        );
+
+        // Merge: user should override system
+        let merged = GnomeExtensionsManifest::merged(&system, &user);
+
+        // Should still have exactly one entry
+        assert_eq!(merged.extensions.len(), 1);
+
+        // Critical: merged result should be DISABLED (user overrides system)
+        let merged_item = merged.get("burn-my-windows@schneegans.github.com").unwrap();
+        assert!(
+            !merged_item.enabled(),
+            "User disabled state should override system enabled state"
+        );
+    }
 }
