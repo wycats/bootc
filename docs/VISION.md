@@ -123,6 +123,8 @@ Why three paths?
 
 **Axiom**: PATH is set once, declaratively, via `environment.d`. Shell rc files must not modify PATH.
 
+> **Note**: This axiom supersedes earlier guidance (e.g., RFC-0017) that suggested `PATH="$HOME/.local/bin:$PATH"`. That pattern reintroduces PATH inheritance and is now deprecated.
+
 ### Why `environment.d`?
 
 The traditional approach of setting PATH in `.bashrc` or `.profile` is fragile:

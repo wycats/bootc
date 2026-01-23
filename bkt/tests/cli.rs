@@ -1,12 +1,6 @@
 //! Integration tests for the bkt CLI.
 //!
 //! These tests run the compiled binary and verify its output.
-//!
-//! ## Test Isolation
-//!
-//! Tests use `bkt()` which sets `BKT_DELEGATED=1`. This is a legacy flag that
-//! is checked but no longer functional (delegation was removed). The flag
-//! remains for backward compatibility with existing test infrastructure.
 
 use assert_cmd::Command;
 use assert_cmd::cargo::cargo_bin_cmd;
@@ -15,14 +9,8 @@ use predicates::prelude::*;
 use std::os::unix::fs::PermissionsExt;
 
 /// Get bkt command for testing.
-///
-/// Sets BKT_DELEGATED=1 for backward compatibility. This flag is no longer
-/// used by the main binary (delegation was removed), but some tests may
-/// still reference it.
 fn bkt() -> Command {
-    let mut cmd = cargo_bin_cmd!("bkt");
-    cmd.env("BKT_DELEGATED", "1");
-    cmd
+    cargo_bin_cmd!("bkt")
 }
 
 // ============================================================================

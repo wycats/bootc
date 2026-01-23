@@ -59,7 +59,8 @@ pub enum AdminAction {
     /// Provides passwordless access to bootc commands for wheel group members.
     /// Read-only operations (status) execute immediately; mutations require --confirm.
     ///
-    /// From toolbox, commands automatically delegate to host via flatpak-spawn.
+    /// Note: `bkt` runs on the host via shim; distrobox D-Bus routing handles
+    /// communication with host services automatically.
     Bootc {
         #[command(subcommand)]
         action: BootcAction,
