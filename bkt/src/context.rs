@@ -3,7 +3,7 @@
 //! Determines where commands should execute (host, toolbox, or image-only)
 //! and validates that command/context combinations are valid.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::ValueEnum;
 use std::fmt;
 use std::path::Path;
@@ -59,20 +59,6 @@ impl PrMode {
     pub fn should_create_pr(&self) -> bool {
         matches!(self, PrMode::Both | PrMode::PrOnly)
     }
-}
-
-/// Where a command naturally wants to execute.
-///
-/// This determines whether a command should be delegated to a different
-/// runtime environment (host vs. toolbox) for transparent execution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommandTarget {
-    /// Must run on the host (flatpak, extension, gsetting, shim, capture, apply)
-    Host,
-    /// Must run in the dev toolbox (bkt dev commands)
-    Dev,
-    /// Can run either place, meaning depends on context
-    Either,
 }
 
 /// Command domain categories.
@@ -139,28 +125,28 @@ impl CommandDomain {
                 "Flatpaks are host-level applications.\n\n\
                  This command requires host context. If you're seeing this error,\n\
                  you may have explicitly specified --context dev.\n\n\
-                 Fix: Remove the --context flag (delegation is automatic)"
+                 Fix: Remove the --context flag or use --context host"
                     .to_string()
             }
             (CommandDomain::Distrobox, ExecutionContext::Dev) => {
                 "Distrobox configuration is host-level.\n\n\
                  This command requires host context. If you're seeing this error,\n\
                  you may have explicitly specified --context dev.\n\n\
-                 Fix: Remove the --context flag (delegation is automatic)"
+                 Fix: Remove the --context flag or use --context host"
                     .to_string()
             }
             (CommandDomain::Extension, ExecutionContext::Dev) => {
                 "GNOME extensions are host-level.\n\n\
                  This command requires host context. If you're seeing this error,\n\
                  you may have explicitly specified --context dev.\n\n\
-                 Fix: Remove the --context flag (delegation is automatic)"
+                 Fix: Remove the --context flag or use --context host"
                     .to_string()
             }
             (CommandDomain::Shim, ExecutionContext::Dev) => {
-                "Shims are host-level (they expose host commands to the toolbox).\n\n\
+                "Shims are host-level (they expose toolbox commands to the host).\n\n\
                  This command requires host context. If you're seeing this error,\n\
                  you may have explicitly specified --context dev.\n\n\
-                 Fix: Remove the --context flag (delegation is automatic)"
+                 Fix: Remove the --context flag or use --context host"
                     .to_string()
             }
             _ => format!("{:?} is not valid in {} context", self, context),

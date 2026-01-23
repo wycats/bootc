@@ -519,12 +519,12 @@ These items emerged from investigating why upstream Bazzite updates weren't bein
 
 ### Near-term Follow-ups
 
-| Item | Description | Reference |
-|------|-------------|-----------|
-| **Build-info base image section** | `bkt build-info` should show base image package diffs when upstream changes. Currently queries OCI labels; needs to compare current vs previous image labels. | [RFC-0013](docs/rfcs/0013-build-descriptions.md) |
-| **`bkt status` visibility** | `bkt status` should surface: last build date, current vs latest upstream digest, pending changes. Prevents "silent failure" where update loop breaks unnoticed. | — |
-| **Pinned tool update checking** | Scheduled workflow to run `bkt upstream check` and create PRs for available updates (starship, lazygit, keyd, etc.) | [RFC-0006](docs/rfcs/0006-upstream-management.md) |
-| **Release changelog completeness** | GitHub Releases should include full upstream change info when base image updated | [RFC-0013](docs/rfcs/0013-build-descriptions.md) |
+| Item                               | Description                                                                                                                                                     | Reference                                         |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| **Build-info base image section**  | `bkt build-info` should show base image package diffs when upstream changes. Currently queries OCI labels; needs to compare current vs previous image labels.   | [RFC-0013](docs/rfcs/0013-build-descriptions.md)  |
+| **`bkt status` visibility**        | `bkt status` should surface: last build date, current vs latest upstream digest, pending changes. Prevents "silent failure" where update loop breaks unnoticed. | —                                                 |
+| **Pinned tool update checking**    | Scheduled workflow to run `bkt upstream check` and create PRs for available updates (starship, lazygit, keyd, etc.)                                             | [RFC-0006](docs/rfcs/0006-upstream-management.md) |
+| **Release changelog completeness** | GitHub Releases should include full upstream change info when base image updated                                                                                | [RFC-0013](docs/rfcs/0013-build-descriptions.md)  |
 
 ### Design Decision: Digest Tracking via OCI Labels
 
@@ -554,3 +554,19 @@ The workflow stores `org.wycats.bootc.base.digest` as an OCI label on each publi
 2. **GSettings baseline**: Ship a baseline with the image, or create on first run?
 3. **Toolchain manifests**: Separate `rustup.json`/`npm.json` or extend `toolbox-packages.json`?
 4. **Upstream verification**: SHA256 of archive or individual files?
+
+---
+
+## Testing Ideas (Backlog)
+
+### PR Workflow Unit Tests
+
+Add unit tests for the git command construction in `bkt/src/pr.rs`. The recent fix for incorrect `--` placement in `git checkout` commands would have been caught by tests that verify the argument arrays passed to `Command::new("git")`.
+
+Suggested tests:
+
+- `test_branch_creation_args()` — verify `checkout -b <branch>` without errant `--`
+- `test_branch_switch_args()` — verify `checkout <branch>` for switching
+- `test_git_add_args()` — verify `add -- <path>` (correct `--` usage for pathspecs)
+
+These don't require running git; just assert on the argument arrays.

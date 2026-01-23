@@ -1,9 +1,8 @@
 //! Bootc subcommand implementation for `bkt admin bootc`.
 //!
 //! Provides passwordless access to bootc operations via polkit + pkexec.
-//! Global delegation ensures commands always run on the host.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::Subcommand;
 use is_terminal::IsTerminal;
 use owo_colors::OwoColorize;
