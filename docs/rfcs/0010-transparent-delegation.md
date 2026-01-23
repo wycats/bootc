@@ -1,8 +1,23 @@
 # RFC-0010: Transparent Command Delegation
 
-- **Status**: Implemented
+- **Status**: Superseded
+- **Superseded by**: RFC-0018 (Host-Only Shims)
 - **Created**: 2026-01-05
 - **Depends on**: RFC-0009 (Privileged Operations)
+
+> **⚠️ This RFC has been superseded.**
+>
+> The delegation system described here has been removed. With the adoption of
+> [RFC-0018: Host-Only Shims](0018-host-only-shims.md), `bkt` now runs directly
+> on the host via a host-only shim. This eliminates the need for:
+>
+> - The `CommandTarget` enum and delegation machinery
+> - `flatpak-spawn --host` delegation from containers
+> - The `BKT_DELEGATED` environment variable
+>
+> Dev commands that need container execution now invoke `distrobox enter`
+> directly. See also [Host PATH Architecture](../VISION.md#host-path-architecture)
+> for the new PATH model.
 
 ## Summary
 
