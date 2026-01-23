@@ -3,7 +3,7 @@
 use crate::manifest::{
     BaseImageAssumptions, ChangelogEntry, DistroboxManifest, FlatpakApp, FlatpakAppsManifest,
     FlatpakRemote, FlatpakRemotesManifest, GSetting, GSettingsManifest, GnomeExtensionsManifest,
-    Shim, ShimsManifest, UpstreamManifest, VersionMetadata,
+    HomebrewManifest, Shim, ShimsManifest, UpstreamManifest, VersionMetadata,
 };
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -107,6 +107,11 @@ const SCHEMAS: &[SchemaInfo] = &[
         filename: "base-image-assumptions.schema.json",
         description: "Base image assumptions for drift detection",
     },
+    SchemaInfo {
+        name: "HomebrewManifest",
+        filename: "homebrew.schema.json",
+        description: "The homebrew.json manifest (Homebrew/Linuxbrew packages)",
+    },
 ];
 
 /// Generate all schemas and return them as (filename, json) pairs.
@@ -167,6 +172,10 @@ fn generate_all_schemas() -> Vec<(&'static str, String)> {
         (
             "base-image-assumptions.schema.json",
             serde_json::to_string_pretty(&schema_for!(BaseImageAssumptions)).unwrap(),
+        ),
+        (
+            "homebrew.schema.json",
+            serde_json::to_string_pretty(&schema_for!(HomebrewManifest)).unwrap(),
         ),
     ]
 }

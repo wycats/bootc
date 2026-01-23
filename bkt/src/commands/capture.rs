@@ -15,6 +15,7 @@ use super::distrobox::{DistroboxCaptureCommand, DistroboxCapturePlan};
 use super::dnf::{DnfCaptureCommand, DnfCapturePlan};
 use super::extension::{ExtensionCaptureCommand, ExtensionCapturePlan};
 use super::flatpak::{FlatpakCaptureCommand, FlatpakCapturePlan};
+use super::homebrew::{HomebrewCaptureCommand, HomebrewCapturePlan};
 
 /// The subsystems that can be captured.
 /// Note: gsetting capture requires a schema filter, so it's excluded from the meta-command.
@@ -30,6 +31,8 @@ pub enum CaptureSubsystem {
     Dnf,
     /// AppImage applications (via GearLever)
     AppImage,
+    /// Homebrew/Linuxbrew formulae
+    Homebrew,
 }
 
 impl std::fmt::Display for CaptureSubsystem {
@@ -40,6 +43,7 @@ impl std::fmt::Display for CaptureSubsystem {
             CaptureSubsystem::Flatpak => write!(f, "flatpak"),
             CaptureSubsystem::Dnf => write!(f, "dnf"),
             CaptureSubsystem::AppImage => write!(f, "appimage"),
+            CaptureSubsystem::Homebrew => write!(f, "homebrew"),
         }
     }
 }
@@ -125,6 +129,12 @@ impl Plannable for CaptureCommand {
         if self.should_include(CaptureSubsystem::AppImage) {
             let appimage_plan: AppImageCapturePlan = AppImageCaptureCommand.plan(ctx)?;
             composite.add(appimage_plan);
+        }
+
+        // Homebrew capture
+        if self.should_include(CaptureSubsystem::Homebrew) {
+            let homebrew_plan: HomebrewCapturePlan = HomebrewCaptureCommand.plan(ctx)?;
+            composite.add(homebrew_plan);
         }
 
         Ok(composite)

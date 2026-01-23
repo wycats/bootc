@@ -17,6 +17,7 @@ pub mod drift;
 pub mod extension;
 pub mod flatpak;
 pub mod gsetting;
+pub mod homebrew;
 pub mod local;
 pub mod profile;
 pub mod repo;

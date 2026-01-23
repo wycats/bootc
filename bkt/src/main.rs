@@ -125,6 +125,10 @@ pub enum Commands {
     #[command(alias = "gs")]
     Gsetting(commands::gsetting::GSettingArgs),
 
+    /// Manage Homebrew/Linuxbrew packages
+    #[command(alias = "brew")]
+    Homebrew(commands::homebrew::HomebrewArgs),
+
     /// Manage skeleton (skel) files
     Skel(commands::skel::SkelArgs),
 
@@ -204,6 +208,7 @@ fn main() -> Result<()> {
         Commands::Shim(args) => commands::shim::run(args, &plan),
         Commands::Extension(args) => commands::extension::run(args, &plan),
         Commands::Gsetting(args) => commands::gsetting::run(args, &plan),
+        Commands::Homebrew(args) => commands::homebrew::run(args, &plan),
         Commands::Skel(args) => commands::skel::run(args, &plan),
         Commands::Profile(args) => commands::profile::run(args),
         Commands::Repo(args) => commands::repo::run(args),
