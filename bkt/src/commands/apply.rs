@@ -11,45 +11,30 @@ use crate::pipeline::ExecutionPlan;
 use crate::plan::{CompositePlan, ExecuteContext, OperationProgress, Plan, PlanContext, Plannable};
 use crate::subsystem::SubsystemRegistry;
 
-/// The subsystems that can be synced.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum Subsystem {
-    /// Host shims for toolbox commands
-    Shim,
-    /// Distrobox configuration
-    Distrobox,
-    /// GSettings values
-    Gsetting,
-    /// GNOME Shell extensions
-    Extension,
-    /// Flatpak applications
-    Flatpak,
-    /// AppImages via GearLever
-    AppImage,
-}
-
-impl std::fmt::Display for Subsystem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Subsystem::Shim => write!(f, "shim"),
-            Subsystem::Distrobox => write!(f, "distrobox"),
-            Subsystem::Gsetting => write!(f, "gsetting"),
-            Subsystem::Extension => write!(f, "extension"),
-            Subsystem::Flatpak => write!(f, "flatpak"),
-            Subsystem::AppImage => write!(f, "appimage"),
-        }
+fn parse_syncable_subsystem(value: &str) -> Result<String, String> {
+    let registry = SubsystemRegistry::builtin();
+    let normalized = value.replace('-', "");
+    if registry.is_valid_syncable(&normalized) {
+        Ok(normalized)
+    } else {
+        let valid = registry.syncable_ids();
+        Err(format!(
+            "Unknown subsystem '{}'. Valid options: {}",
+            value,
+            valid.join(", ")
+        ))
     }
 }
 
 #[derive(Debug, Args)]
 pub struct ApplyArgs {
     /// Only sync specific subsystems (comma-separated)
-    #[arg(long, short = 's', value_delimiter = ',')]
-    pub only: Option<Vec<Subsystem>>,
+    #[arg(long, short = 's', value_delimiter = ',', value_parser = parse_syncable_subsystem)]
+    pub only: Option<Vec<String>>,
 
     /// Exclude specific subsystems from sync
-    #[arg(long, short = 'x', value_delimiter = ',')]
-    pub exclude: Option<Vec<Subsystem>>,
+    #[arg(long, short = 'x', value_delimiter = ',', value_parser = parse_syncable_subsystem)]
+    pub exclude: Option<Vec<String>>,
 
     /// Apply changes without prompting for confirmation
     #[arg(long)]
@@ -63,9 +48,9 @@ pub struct ApplyArgs {
 /// Command to apply all manifests to the system.
 pub struct ApplyCommand {
     /// Subsystems to include (None = all).
-    pub include: Option<Vec<Subsystem>>,
+    pub include: Option<Vec<String>>,
     /// Subsystems to exclude.
-    pub exclude: Vec<Subsystem>,
+    pub exclude: Vec<String>,
 
     /// Whether to prune unmanaged AppImages.
     /// Note: This is currently not passed through the registry abstraction.
@@ -84,22 +69,15 @@ impl ApplyCommand {
         }
     }
 
-    /// Check if a subsystem should be included (by enum value).
-    /// Kept for backward compatibility with tests.
-    #[cfg(test)]
-    fn should_include(&self, subsystem: Subsystem) -> bool {
-        self.should_include_id(&subsystem.to_string())
-    }
-
     /// Check if a subsystem should be included by ID string.
     fn should_include_id(&self, id: &str) -> bool {
         // If exclude list contains it, skip
-        if self.exclude.iter().any(|e| e.to_string() == id) {
+        if self.exclude.iter().any(|e| e == id) {
             return false;
         }
         // If include list is specified, only include those
         if let Some(ref include) = self.include {
-            return include.iter().any(|i| i.to_string() == id);
+            return include.iter().any(|i| i == id);
         }
         // Otherwise, include all
         true
@@ -213,75 +191,66 @@ mod tests {
             prune_appimages: false,
         };
 
-        assert!(cmd.should_include(Subsystem::Shim));
-        assert!(cmd.should_include(Subsystem::Distrobox));
-        assert!(cmd.should_include(Subsystem::Gsetting));
-        assert!(cmd.should_include(Subsystem::Extension));
-        assert!(cmd.should_include(Subsystem::Flatpak));
+        assert!(cmd.should_include_id("shim"));
+        assert!(cmd.should_include_id("distrobox"));
+        assert!(cmd.should_include_id("gsetting"));
+        assert!(cmd.should_include_id("extension"));
+        assert!(cmd.should_include_id("flatpak"));
     }
 
     #[test]
     fn test_apply_command_only_filter() {
         let cmd = ApplyCommand {
-            include: Some(vec![Subsystem::Shim, Subsystem::Flatpak]),
+            include: Some(vec!["shim".to_string(), "flatpak".to_string()]),
             exclude: vec![],
             prune_appimages: false,
         };
 
-        assert!(cmd.should_include(Subsystem::Shim));
-        assert!(!cmd.should_include(Subsystem::Gsetting));
-        assert!(!cmd.should_include(Subsystem::Extension));
-        assert!(cmd.should_include(Subsystem::Flatpak));
+        assert!(cmd.should_include_id("shim"));
+        assert!(!cmd.should_include_id("gsetting"));
+        assert!(!cmd.should_include_id("extension"));
+        assert!(cmd.should_include_id("flatpak"));
     }
 
     #[test]
     fn test_apply_command_exclude_filter() {
         let cmd = ApplyCommand {
             include: None,
-            exclude: vec![Subsystem::Extension, Subsystem::Flatpak],
+            exclude: vec!["extension".to_string(), "flatpak".to_string()],
             prune_appimages: false,
         };
 
-        assert!(cmd.should_include(Subsystem::Shim));
-        assert!(cmd.should_include(Subsystem::Distrobox));
-        assert!(cmd.should_include(Subsystem::Gsetting));
-        assert!(!cmd.should_include(Subsystem::Extension));
-        assert!(!cmd.should_include(Subsystem::Flatpak));
+        assert!(cmd.should_include_id("shim"));
+        assert!(cmd.should_include_id("distrobox"));
+        assert!(cmd.should_include_id("gsetting"));
+        assert!(!cmd.should_include_id("extension"));
+        assert!(!cmd.should_include_id("flatpak"));
     }
 
     #[test]
     fn test_apply_command_exclude_overrides_include() {
         let cmd = ApplyCommand {
-            include: Some(vec![Subsystem::Shim, Subsystem::Extension]),
-            exclude: vec![Subsystem::Extension],
+            include: Some(vec!["shim".to_string(), "extension".to_string()]),
+            exclude: vec!["extension".to_string()],
             prune_appimages: false,
         };
 
-        assert!(cmd.should_include(Subsystem::Shim));
-        assert!(!cmd.should_include(Subsystem::Extension)); // excluded wins
-    }
-
-    #[test]
-    fn test_subsystem_display() {
-        assert_eq!(format!("{}", Subsystem::Shim), "shim");
-        assert_eq!(format!("{}", Subsystem::Distrobox), "distrobox");
-        assert_eq!(format!("{}", Subsystem::Gsetting), "gsetting");
-        assert_eq!(format!("{}", Subsystem::Extension), "extension");
-        assert_eq!(format!("{}", Subsystem::Flatpak), "flatpak");
+        assert!(cmd.should_include_id("shim"));
+        assert!(!cmd.should_include_id("extension")); // excluded wins
     }
 
     #[test]
     fn test_apply_command_from_args() {
         let args = ApplyArgs {
-            only: Some(vec![Subsystem::Shim]),
-            exclude: Some(vec![Subsystem::Flatpak]),
+            only: Some(vec!["shim".to_string()]),
+            exclude: Some(vec!["flatpak".to_string()]),
             confirm: true,
             prune_appimages: true,
         };
 
         let cmd = ApplyCommand::from_args(&args);
-        assert_eq!(cmd.include, Some(vec![Subsystem::Shim]));
-        assert_eq!(cmd.exclude, vec![Subsystem::Flatpak]);
+        assert_eq!(cmd.include, Some(vec!["shim".to_string()]));
+        assert_eq!(cmd.exclude, vec!["flatpak".to_string()]);
         assert!(cmd.prune_appimages);
     }
 }

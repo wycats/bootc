@@ -280,6 +280,22 @@ impl SubsystemRegistry {
             .collect()
     }
 
+    /// Get IDs of subsystems that support capture.
+    pub fn capturable_ids(&self) -> Vec<&'static str> {
+        self.subsystems
+            .iter()
+            .filter(|s| s.supports_capture())
+            .map(|s| s.id())
+            .collect()
+    }
+
+    /// Check if an ID is a valid capturable subsystem.
+    pub fn is_valid_capturable(&self, id: &str) -> bool {
+        self.subsystems
+            .iter()
+            .any(|s| s.supports_capture() && s.id() == id)
+    }
+
     /// Get subsystems that support sync.
     pub fn syncable(&self) -> Vec<&dyn Subsystem> {
         self.subsystems
@@ -287,6 +303,22 @@ impl SubsystemRegistry {
             .filter(|s| s.supports_sync())
             .map(|s| s.as_ref())
             .collect()
+    }
+
+    /// Get IDs of subsystems that support sync.
+    pub fn syncable_ids(&self) -> Vec<&'static str> {
+        self.subsystems
+            .iter()
+            .filter(|s| s.supports_sync())
+            .map(|s| s.id())
+            .collect()
+    }
+
+    /// Check if an ID is a valid syncable subsystem.
+    pub fn is_valid_syncable(&self, id: &str) -> bool {
+        self.subsystems
+            .iter()
+            .any(|s| s.supports_sync() && s.id() == id)
     }
 
     /// Find a subsystem by ID.

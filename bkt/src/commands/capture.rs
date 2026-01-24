@@ -11,46 +11,30 @@ use crate::pipeline::ExecutionPlan;
 use crate::plan::{CompositePlan, ExecuteContext, Plan, PlanContext, Plannable};
 use crate::subsystem::SubsystemRegistry;
 
-/// The subsystems that can be captured.
-/// Note: gsetting capture requires a schema filter, so it's excluded from the meta-command.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum CaptureSubsystem {
-    /// GNOME Shell extensions
-    Extension,
-    /// Distrobox configuration
-    Distrobox,
-    /// Flatpak applications
-    Flatpak,
-    /// System packages (rpm-ostree layered)
-    System,
-    /// AppImage applications (via GearLever)
-    AppImage,
-    /// Homebrew/Linuxbrew formulae
-    Homebrew,
-}
-
-impl std::fmt::Display for CaptureSubsystem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CaptureSubsystem::Extension => write!(f, "extension"),
-            CaptureSubsystem::Distrobox => write!(f, "distrobox"),
-            CaptureSubsystem::Flatpak => write!(f, "flatpak"),
-            CaptureSubsystem::System => write!(f, "system"),
-            CaptureSubsystem::AppImage => write!(f, "appimage"),
-            CaptureSubsystem::Homebrew => write!(f, "homebrew"),
-        }
+fn parse_capturable_subsystem(value: &str) -> Result<String, String> {
+    let registry = SubsystemRegistry::builtin();
+    let normalized = value.replace('-', "");
+    if registry.is_valid_capturable(&normalized) {
+        Ok(normalized)
+    } else {
+        let valid = registry.capturable_ids();
+        Err(format!(
+            "Unknown subsystem '{}'. Valid options: {}",
+            value,
+            valid.join(", ")
+        ))
     }
 }
 
 #[derive(Debug, Args)]
 pub struct CaptureArgs {
     /// Only capture specific subsystems (comma-separated)
-    #[arg(long, short = 's', value_delimiter = ',')]
-    pub only: Option<Vec<CaptureSubsystem>>,
+    #[arg(long, short = 's', value_delimiter = ',', value_parser = parse_capturable_subsystem)]
+    pub only: Option<Vec<String>>,
 
     /// Exclude specific subsystems from capture
-    #[arg(long, short = 'x', value_delimiter = ',')]
-    pub exclude: Option<Vec<CaptureSubsystem>>,
+    #[arg(long, short = 'x', value_delimiter = ',', value_parser = parse_capturable_subsystem)]
+    pub exclude: Option<Vec<String>>,
 
     /// Apply the plan immediately
     #[arg(long)]
@@ -60,9 +44,9 @@ pub struct CaptureArgs {
 /// Command to capture system state to manifests.
 pub struct CaptureCommand {
     /// Subsystems to include (None = all).
-    pub include: Option<Vec<CaptureSubsystem>>,
+    pub include: Option<Vec<String>>,
     /// Subsystems to exclude.
-    pub exclude: Vec<CaptureSubsystem>,
+    pub exclude: Vec<String>,
 }
 
 impl CaptureCommand {
@@ -74,22 +58,15 @@ impl CaptureCommand {
         }
     }
 
-    /// Check if a subsystem should be included (by enum value).
-    /// Kept for backward compatibility with tests.
-    #[cfg(test)]
-    fn should_include(&self, subsystem: CaptureSubsystem) -> bool {
-        self.should_include_id(&subsystem.to_string())
-    }
-
     /// Check if a subsystem should be included by ID string.
     fn should_include_id(&self, id: &str) -> bool {
         // If exclude list contains it, skip
-        if self.exclude.iter().any(|e| e.to_string() == id) {
+        if self.exclude.iter().any(|e| e == id) {
             return false;
         }
         // If include list is specified, only include those
         if let Some(ref include) = self.include {
-            return include.iter().any(|i| i.to_string() == id);
+            return include.iter().any(|i| i == id);
         }
         // Otherwise, include all
         true
@@ -158,67 +135,59 @@ mod tests {
             exclude: vec![],
         };
 
-        assert!(cmd.should_include(CaptureSubsystem::Extension));
-        assert!(cmd.should_include(CaptureSubsystem::Distrobox));
-        assert!(cmd.should_include(CaptureSubsystem::Flatpak));
-        assert!(cmd.should_include(CaptureSubsystem::System));
+        assert!(cmd.should_include_id("extension"));
+        assert!(cmd.should_include_id("distrobox"));
+        assert!(cmd.should_include_id("flatpak"));
+        assert!(cmd.should_include_id("system"));
     }
 
     #[test]
     fn test_capture_command_only_filter() {
         let cmd = CaptureCommand {
-            include: Some(vec![CaptureSubsystem::Extension]),
+            include: Some(vec!["extension".to_string()]),
             exclude: vec![],
         };
 
-        assert!(cmd.should_include(CaptureSubsystem::Extension));
-        assert!(!cmd.should_include(CaptureSubsystem::Distrobox));
-        assert!(!cmd.should_include(CaptureSubsystem::Flatpak));
-        assert!(!cmd.should_include(CaptureSubsystem::System));
+        assert!(cmd.should_include_id("extension"));
+        assert!(!cmd.should_include_id("distrobox"));
+        assert!(!cmd.should_include_id("flatpak"));
+        assert!(!cmd.should_include_id("system"));
     }
 
     #[test]
     fn test_capture_command_exclude_filter() {
         let cmd = CaptureCommand {
             include: None,
-            exclude: vec![CaptureSubsystem::Extension],
+            exclude: vec!["extension".to_string()],
         };
 
-        assert!(!cmd.should_include(CaptureSubsystem::Extension));
-        assert!(cmd.should_include(CaptureSubsystem::Distrobox));
-        assert!(cmd.should_include(CaptureSubsystem::Flatpak));
-        assert!(cmd.should_include(CaptureSubsystem::System));
+        assert!(!cmd.should_include_id("extension"));
+        assert!(cmd.should_include_id("distrobox"));
+        assert!(cmd.should_include_id("flatpak"));
+        assert!(cmd.should_include_id("system"));
     }
 
     #[test]
     fn test_capture_command_exclude_overrides_include() {
         let cmd = CaptureCommand {
-            include: Some(vec![CaptureSubsystem::Extension, CaptureSubsystem::Flatpak]),
-            exclude: vec![CaptureSubsystem::Flatpak],
+            include: Some(vec!["extension".to_string(), "flatpak".to_string()]),
+            exclude: vec!["flatpak".to_string()],
         };
 
-        assert!(cmd.should_include(CaptureSubsystem::Extension));
-        assert!(!cmd.should_include(CaptureSubsystem::Flatpak)); // excluded wins
-    }
-
-    #[test]
-    fn test_capture_subsystem_display() {
-        assert_eq!(format!("{}", CaptureSubsystem::Extension), "extension");
-        assert_eq!(format!("{}", CaptureSubsystem::Distrobox), "distrobox");
-        assert_eq!(format!("{}", CaptureSubsystem::Flatpak), "flatpak");
-        assert_eq!(format!("{}", CaptureSubsystem::System), "system");
+        assert!(cmd.should_include_id("extension"));
+        assert!(!cmd.should_include_id("flatpak")); // excluded wins
     }
 
     #[test]
     fn test_capture_command_from_args() {
         let args = CaptureArgs {
-            only: Some(vec![CaptureSubsystem::Extension]),
-            exclude: Some(vec![CaptureSubsystem::Flatpak]),
+            only: Some(vec!["extension".to_string()]),
+            exclude: Some(vec!["flatpak".to_string()]),
             apply: false,
         };
 
         let cmd = CaptureCommand::from_args(&args);
-        assert_eq!(cmd.include, Some(vec![CaptureSubsystem::Extension]));
-        assert_eq!(cmd.exclude, vec![CaptureSubsystem::Flatpak]);
+        assert_eq!(cmd.include, Some(vec!["extension".to_string()]));
+        assert_eq!(cmd.exclude, vec!["flatpak".to_string()]);
     }
 }
