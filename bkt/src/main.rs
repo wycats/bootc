@@ -36,6 +36,7 @@ pub mod pipeline;
 pub mod plan;
 mod pr;
 mod repo;
+pub mod subsystem;
 pub mod validation;
 
 pub use context::{CommandDomain, ExecutionContext, PrMode};
@@ -178,6 +179,9 @@ pub enum Commands {
     /// View, commit, or clear changes made with --local. These changes
     /// are tracked for later promotion to a PR.
     Local(commands::local::LocalArgs),
+
+    /// List and inspect registered subsystems
+    Subsystem(commands::subsystem::SubsystemArgs),
 }
 
 fn main() -> Result<()> {
@@ -227,5 +231,6 @@ fn main() -> Result<()> {
         Commands::BuildInfo(args) => commands::build_info::run(args),
         Commands::Containerfile(args) => commands::containerfile::run(args, &plan),
         Commands::Local(args) => commands::local::run(args, &plan),
+        Commands::Subsystem(args) => commands::subsystem::run(args),
     }
 }

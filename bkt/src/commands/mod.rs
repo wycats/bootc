@@ -24,5 +24,6 @@ pub mod schema;
 pub mod shim;
 pub mod skel;
 pub mod status;
+pub mod subsystem;
 pub mod system;
 pub mod upstream;

@@ -659,9 +659,16 @@ impl CompositePlan {
     }
 
     /// Add a plan to this composite.
-    pub fn add<P: Plan + 'static>(&mut self, plan: P) {
+    pub fn add<P: Plan + Send + Sync + 'static>(&mut self, plan: P) {
         if !plan.is_empty() {
             self.plans.push(Box::new(plan));
+        }
+    }
+
+    /// Add a boxed dynamic plan to this composite.
+    pub fn add_boxed(&mut self, plan: Box<dyn DynPlan>) {
+        if !plan.is_empty_dyn() {
+            self.plans.push(plan);
         }
     }
 }
@@ -702,7 +709,7 @@ impl Plan for CompositePlan {
 /// The `*_dyn` method names use a suffix to distinguish them from the [`Plan`]
 /// trait methods they mirror. This suffix makes explicit that these are the
 /// object-safe adapters used for dynamic dispatch, not the primary API.
-trait DynPlan {
+pub trait DynPlan: Send + Sync {
     /// Object-safe adapter for [`Plan::describe`].
     fn describe_dyn(&self) -> PlanSummary;
     /// Object-safe adapter for [`Plan::execute`], taking ownership via `Box<Self>`.
@@ -711,7 +718,7 @@ trait DynPlan {
     fn is_empty_dyn(&self) -> bool;
 }
 
-impl<P: Plan> DynPlan for P {
+impl<P: Plan + Send + Sync> DynPlan for P {
     fn describe_dyn(&self) -> PlanSummary {
         self.describe()
     }
