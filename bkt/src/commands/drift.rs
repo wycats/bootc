@@ -18,6 +18,7 @@ use std::process::Command;
 
 use crate::manifest::find_repo_root;
 use crate::output::Output;
+use crate::subsystem::SubsystemRegistry;
 
 #[derive(Debug, Args)]
 pub struct DriftArgs {
@@ -61,6 +62,17 @@ pub enum DriftCategory {
     All,
 }
 
+impl DriftCategory {
+    pub fn subsystem_ids(&self, registry: &SubsystemRegistry) -> Vec<&'static str> {
+        match self {
+            DriftCategory::Packages => vec!["system"],
+            DriftCategory::Flatpaks => vec!["flatpak"],
+            DriftCategory::Extensions => vec!["extension"],
+            DriftCategory::All => registry.driftable_ids(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
 pub enum OutputFormat {
     /// Human-readable output
@@ -94,6 +106,7 @@ fn handle_check(
     no_host: bool,
 ) -> Result<()> {
     let repo_root = get_repo_root()?;
+    let registry = SubsystemRegistry::builtin();
     let script_path = repo_root.join("scripts").join("check-drift");
 
     if !script_path.exists() {
@@ -122,6 +135,23 @@ fn handle_check(
     }
 
     // Add category filter (the Python script doesn't support this yet, but we prepare for it)
+    if let Some(cat) = &category {
+        let ids = cat.subsystem_ids(&registry);
+        let invalid_ids: Vec<_> = ids
+            .iter()
+            .copied()
+            .filter(|id| !registry.is_valid_driftable(id))
+            .collect();
+
+        if !invalid_ids.is_empty() {
+            bail!(
+                "Drift category '{:?}' maps to subsystems without drift support: {}",
+                cat,
+                invalid_ids.join(", ")
+            );
+        }
+    }
+
     if let Some(cat) = &category
         && !matches!(cat, DriftCategory::All)
     {

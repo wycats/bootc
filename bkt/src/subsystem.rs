@@ -111,6 +111,11 @@ pub trait Subsystem: Send + Sync {
     fn supports_sync(&self) -> bool {
         true
     }
+
+    /// Returns true if this subsystem supports drift detection.
+    fn supports_drift(&self) -> bool {
+        false
+    }
 }
 
 // ============================================================================
@@ -305,6 +310,15 @@ impl SubsystemRegistry {
             .collect()
     }
 
+    /// Get subsystems that support drift detection.
+    pub fn driftable(&self) -> Vec<&dyn Subsystem> {
+        self.subsystems
+            .iter()
+            .filter(|s| s.supports_drift())
+            .map(|s| s.as_ref())
+            .collect()
+    }
+
     /// Get IDs of subsystems that support sync.
     pub fn syncable_ids(&self) -> Vec<&'static str> {
         self.subsystems
@@ -314,11 +328,27 @@ impl SubsystemRegistry {
             .collect()
     }
 
+    /// Get IDs of subsystems that support drift detection.
+    pub fn driftable_ids(&self) -> Vec<&'static str> {
+        self.subsystems
+            .iter()
+            .filter(|s| s.supports_drift())
+            .map(|s| s.id())
+            .collect()
+    }
+
     /// Check if an ID is a valid syncable subsystem.
     pub fn is_valid_syncable(&self, id: &str) -> bool {
         self.subsystems
             .iter()
             .any(|s| s.supports_sync() && s.id() == id)
+    }
+
+    /// Check if an ID is a valid drift-detectable subsystem.
+    pub fn is_valid_driftable(&self, id: &str) -> bool {
+        self.subsystems
+            .iter()
+            .any(|s| s.supports_drift() && s.id() == id)
     }
 
     /// Find a subsystem by ID.
@@ -389,6 +419,10 @@ impl Subsystem for ExtensionSubsystem {
             Ok(Some(Box::new(plan)))
         }
     }
+
+    fn supports_drift(&self) -> bool {
+        true
+    }
 }
 
 impl Manifest for GnomeExtensionsManifest {
@@ -438,6 +472,10 @@ impl Subsystem for FlatpakSubsystem {
         } else {
             Ok(Some(Box::new(plan)))
         }
+    }
+
+    fn supports_drift(&self) -> bool {
+        true
     }
 }
 
@@ -542,6 +580,10 @@ impl Subsystem for GsettingSubsystem {
         // GSettings capture requires schema argument
         false
     }
+
+    fn supports_drift(&self) -> bool {
+        true
+    }
 }
 
 impl Manifest for GSettingsManifest {
@@ -591,6 +633,10 @@ impl Subsystem for ShimSubsystem {
 
     fn supports_capture(&self) -> bool {
         false
+    }
+
+    fn supports_drift(&self) -> bool {
+        true
     }
 }
 
@@ -746,6 +792,10 @@ impl Subsystem for SystemSubsystem {
     fn supports_sync(&self) -> bool {
         // System packages cannot be synced at runtime
         false
+    }
+
+    fn supports_drift(&self) -> bool {
+        true
     }
 }
 
