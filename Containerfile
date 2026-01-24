@@ -57,6 +57,7 @@ RUN dnf install -y \
     rsms-inter-fonts \
     toolbox \
     unzip \
+    virt-manager \
     xorg-x11-server-Xvfb \
     && dnf clean all
 # === END SYSTEM_PACKAGES ===
@@ -304,8 +305,7 @@ COPY --chmod=0755 skel/.local/toolbox/bin/code /etc/skel/.local/toolbox/bin/code
 
 # === HOST_SHIMS (managed by bkt) ===
 RUN set -eu; \
-    mkdir -p /usr/etc/skel/.local/toolbox/shims /usr/etc/skel/.local/toolbox/bin /usr/etc/skel/.local/bin; \
-    ln -sf ../toolbox/bin/code /usr/etc/skel/.local/bin/code; \
+    mkdir -p /usr/etc/skel/.local/toolbox/shims /usr/etc/skel/.local/bin; \
     echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBib290YyAiJEAiCg==' | base64 -d > /usr/etc/skel/.local/toolbox/shims/bootc && \
     chmod 0755 /usr/etc/skel/.local/toolbox/shims/bootc && \
     ln -sf ../toolbox/shims/bootc /usr/etc/skel/.local/bin/bootc; \
@@ -327,9 +327,6 @@ RUN set -eu; \
     echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBzeXN0ZW1jdGwgIiRAIgo=' | base64 -d > /usr/etc/skel/.local/toolbox/shims/systemctl && \
     chmod 0755 /usr/etc/skel/.local/toolbox/shims/systemctl && \
     ln -sf ../toolbox/shims/systemctl /usr/etc/skel/.local/bin/systemctl; \
-    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCB0ZXN0LXNoaW0gIiRAIgo=' | base64 -d > /usr/etc/skel/.local/toolbox/shims/test-shim && \
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/test-shim && \
-    ln -sf ../toolbox/shims/test-shim /usr/etc/skel/.local/bin/test-shim; \
     echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCB1anVzdCAiJEAiCg==' | base64 -d > /usr/etc/skel/.local/toolbox/shims/ujust && \
     chmod 0755 /usr/etc/skel/.local/toolbox/shims/ujust && \
     ln -sf ../toolbox/shims/ujust /usr/etc/skel/.local/bin/ujust
