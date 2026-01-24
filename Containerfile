@@ -227,10 +227,14 @@ COPY scripts/bootc-repo /usr/bin/bootc-repo
 COPY scripts/bkt /usr/bin/bkt
 # systemd units: user-level bootstrap and system-level apply
 COPY systemd/user/bootc-bootstrap.service /usr/lib/systemd/user/bootc-bootstrap.service
+COPY systemd/user/bootc-capture.service /usr/lib/systemd/user/bootc-capture.service
+COPY systemd/user/bootc-capture.timer /usr/lib/systemd/user/bootc-capture.timer
 COPY systemd/system/bootc-apply.service /usr/lib/systemd/system/bootc-apply.service
 RUN chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/check-drift /usr/bin/bootc-repo /usr/bin/bkt && \
     mkdir -p /usr/lib/systemd/user/default.target.wants && \
     ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service && \
+    mkdir -p /usr/lib/systemd/user/timers.target.wants && \
+    ln -sf ../bootc-capture.timer /usr/lib/systemd/user/timers.target.wants/bootc-capture.timer && \
     mkdir -p /usr/lib/systemd/system/multi-user.target.wants && \
     ln -sf ../bootc-apply.service /usr/lib/systemd/system/multi-user.target.wants/bootc-apply.service
 
