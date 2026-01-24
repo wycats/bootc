@@ -12,10 +12,10 @@ use crate::plan::{CompositePlan, ExecuteContext, Plan, PlanContext, Plannable};
 
 use super::appimage::{AppImageCaptureCommand, AppImageCapturePlan};
 use super::distrobox::{DistroboxCaptureCommand, DistroboxCapturePlan};
-use super::dnf::{DnfCaptureCommand, DnfCapturePlan};
 use super::extension::{ExtensionCaptureCommand, ExtensionCapturePlan};
 use super::flatpak::{FlatpakCaptureCommand, FlatpakCapturePlan};
 use super::homebrew::{HomebrewCaptureCommand, HomebrewCapturePlan};
+use super::system::{SystemCaptureCommand, SystemCapturePlan};
 
 /// The subsystems that can be captured.
 /// Note: gsetting capture requires a schema filter, so it's excluded from the meta-command.
@@ -27,8 +27,8 @@ pub enum CaptureSubsystem {
     Distrobox,
     /// Flatpak applications
     Flatpak,
-    /// DNF/RPM packages (rpm-ostree layered)
-    Dnf,
+    /// System packages (rpm-ostree layered)
+    System,
     /// AppImage applications (via GearLever)
     AppImage,
     /// Homebrew/Linuxbrew formulae
@@ -41,7 +41,7 @@ impl std::fmt::Display for CaptureSubsystem {
             CaptureSubsystem::Extension => write!(f, "extension"),
             CaptureSubsystem::Distrobox => write!(f, "distrobox"),
             CaptureSubsystem::Flatpak => write!(f, "flatpak"),
-            CaptureSubsystem::Dnf => write!(f, "dnf"),
+            CaptureSubsystem::System => write!(f, "system"),
             CaptureSubsystem::AppImage => write!(f, "appimage"),
             CaptureSubsystem::Homebrew => write!(f, "homebrew"),
         }
@@ -119,10 +119,10 @@ impl Plannable for CaptureCommand {
             composite.add(flatpak_plan);
         }
 
-        // DNF capture (rpm-ostree layered packages)
-        if self.should_include(CaptureSubsystem::Dnf) {
-            let dnf_plan: DnfCapturePlan = DnfCaptureCommand.plan(ctx)?;
-            composite.add(dnf_plan);
+        // System capture (rpm-ostree layered packages)
+        if self.should_include(CaptureSubsystem::System) {
+            let system_plan: SystemCapturePlan = SystemCaptureCommand.plan(ctx)?;
+            composite.add(system_plan);
         }
 
         // AppImage capture (via GearLever)
@@ -187,7 +187,7 @@ mod tests {
         assert!(cmd.should_include(CaptureSubsystem::Extension));
         assert!(cmd.should_include(CaptureSubsystem::Distrobox));
         assert!(cmd.should_include(CaptureSubsystem::Flatpak));
-        assert!(cmd.should_include(CaptureSubsystem::Dnf));
+        assert!(cmd.should_include(CaptureSubsystem::System));
     }
 
     #[test]
@@ -200,7 +200,7 @@ mod tests {
         assert!(cmd.should_include(CaptureSubsystem::Extension));
         assert!(!cmd.should_include(CaptureSubsystem::Distrobox));
         assert!(!cmd.should_include(CaptureSubsystem::Flatpak));
-        assert!(!cmd.should_include(CaptureSubsystem::Dnf));
+        assert!(!cmd.should_include(CaptureSubsystem::System));
     }
 
     #[test]
@@ -213,7 +213,7 @@ mod tests {
         assert!(!cmd.should_include(CaptureSubsystem::Extension));
         assert!(cmd.should_include(CaptureSubsystem::Distrobox));
         assert!(cmd.should_include(CaptureSubsystem::Flatpak));
-        assert!(cmd.should_include(CaptureSubsystem::Dnf));
+        assert!(cmd.should_include(CaptureSubsystem::System));
     }
 
     #[test]
@@ -232,7 +232,7 @@ mod tests {
         assert_eq!(format!("{}", CaptureSubsystem::Extension), "extension");
         assert_eq!(format!("{}", CaptureSubsystem::Distrobox), "distrobox");
         assert_eq!(format!("{}", CaptureSubsystem::Flatpak), "flatpak");
-        assert_eq!(format!("{}", CaptureSubsystem::Dnf), "dnf");
+        assert_eq!(format!("{}", CaptureSubsystem::System), "system");
     }
 
     #[test]

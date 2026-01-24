@@ -606,18 +606,18 @@ fn dev_help_shows_subcommands() {
         .args(["dev", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("dnf"))
+        .stdout(predicate::str::contains("install"))
         .stdout(predicate::str::contains("enter"))
         .stdout(predicate::str::contains("status"))
-        .stdout(predicate::str::contains("update"))
+        .stdout(predicate::str::contains("sync"))
         .stdout(predicate::str::contains("diff"))
         .stdout(predicate::str::contains("copr"));
 }
 
 #[test]
-fn dev_dnf_help_shows_subcommands() {
+fn dev_help_shows_install_subcommand() {
     bkt()
-        .args(["dev", "dnf", "--help"])
+        .args(["dev", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("install"))
@@ -626,7 +626,7 @@ fn dev_dnf_help_shows_subcommands() {
 }
 
 #[test]
-fn dev_dnf_install_updates_toolbox_manifest() {
+fn dev_install_updates_toolbox_manifest() {
     let temp = assert_fs::TempDir::new().unwrap();
     let home = temp.path().to_str().unwrap();
 
@@ -645,7 +645,7 @@ fn dev_dnf_install_updates_toolbox_manifest() {
     bkt()
         .env("HOME", home)
         .env("PATH", new_path)
-        .args(["dev", "dnf", "install", "--force", "gcc"])
+        .args(["dev", "install", "--force", "gcc"])
         .assert()
         .success();
 
@@ -699,16 +699,18 @@ fn dev_diff_shows_empty_manifest() {
 }
 
 #[test]
-fn dev_update_shows_empty_manifest() {
+fn dev_sync_shows_empty_manifest() {
     let temp = assert_fs::TempDir::new().unwrap();
     let home = temp.path().to_str().unwrap();
 
     bkt()
         .env("HOME", home)
-        .args(["dev", "update"])
+        .args(["dev", "sync"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Toolbox manifest is empty"));
+        .stdout(predicate::str::contains(
+            "All manifest packages are already installed",
+        ));
 
     temp.close().unwrap();
 }
