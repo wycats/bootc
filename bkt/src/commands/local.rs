@@ -42,6 +42,7 @@ use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::pr::{ensure_preflight, ensure_repo};
 use crate::repo::RepoConfig;
+use crate::subsystem::SubsystemContext;
 use std::collections::HashMap;
 use std::process::Command;
 
@@ -304,7 +305,7 @@ fn run_commit_workflow(
 
     // Get the repo path
     let repo_path = ensure_repo()?;
-    let manifests_dir = repo_path.join("manifests");
+    let ctx = SubsystemContext::with_repo_root(repo_path.clone());
 
     // Group changes by domain and apply them to manifests
     let mut manifest_changes: HashMap<String, ManifestChange> = HashMap::new();
@@ -315,27 +316,27 @@ fn run_commit_workflow(
     for (domain, domain_changes) in &by_domain {
         match domain {
             ChangeDomain::Flatpak => {
-                let change = apply_flatpak_changes(domain_changes, &manifests_dir)?;
+                let change = apply_flatpak_changes(domain_changes, &ctx)?;
                 manifest_changes.insert("flatpak-apps.json".to_string(), change);
             }
             ChangeDomain::Extension => {
-                let change = apply_extension_changes(domain_changes, &manifests_dir)?;
+                let change = apply_extension_changes(domain_changes, &ctx)?;
                 manifest_changes.insert("gnome-extensions.json".to_string(), change);
             }
             ChangeDomain::Gsetting => {
-                let change = apply_gsetting_changes(domain_changes, &manifests_dir)?;
+                let change = apply_gsetting_changes(domain_changes, &ctx)?;
                 manifest_changes.insert("gsettings.json".to_string(), change);
             }
             ChangeDomain::Shim => {
-                let change = apply_shim_changes(domain_changes, &manifests_dir)?;
+                let change = apply_shim_changes(domain_changes, &ctx)?;
                 manifest_changes.insert("host-shims.json".to_string(), change);
             }
             ChangeDomain::Dnf => {
-                let change = apply_dnf_changes(domain_changes, &manifests_dir)?;
+                let change = apply_dnf_changes(domain_changes, &ctx)?;
                 manifest_changes.insert("system-packages.json".to_string(), change);
             }
             ChangeDomain::AppImage => {
-                let change = apply_appimage_changes(domain_changes, &manifests_dir)?;
+                let change = apply_appimage_changes(domain_changes, &ctx)?;
                 manifest_changes.insert("appimage-apps.json".to_string(), change);
             }
         }
@@ -366,9 +367,9 @@ fn group_changes_by_domain<'a>(
 /// Apply flatpak changes to the manifest.
 fn apply_flatpak_changes(
     changes: &[&EphemeralChange],
-    manifests_dir: &std::path::Path,
+    ctx: &SubsystemContext,
 ) -> Result<ManifestChange> {
-    let manifest_path = manifests_dir.join("flatpak-apps.json");
+    let manifest_path = ctx.repo_manifest_path("flatpak-apps.json");
     let mut manifest = FlatpakAppsManifest::load(&manifest_path)?;
 
     for change in changes {
@@ -432,9 +433,9 @@ fn apply_flatpak_changes(
 /// Apply extension changes to the manifest.
 fn apply_extension_changes(
     changes: &[&EphemeralChange],
-    manifests_dir: &std::path::Path,
+    ctx: &SubsystemContext,
 ) -> Result<ManifestChange> {
-    let manifest_path = manifests_dir.join("gnome-extensions.json");
+    let manifest_path = ctx.repo_manifest_path("gnome-extensions.json");
     let mut manifest = GnomeExtensionsManifest::load(&manifest_path)?;
 
     for change in changes {
@@ -455,9 +456,9 @@ fn apply_extension_changes(
 /// Apply gsetting changes to the manifest.
 fn apply_gsetting_changes(
     changes: &[&EphemeralChange],
-    manifests_dir: &std::path::Path,
+    ctx: &SubsystemContext,
 ) -> Result<ManifestChange> {
-    let manifest_path = manifests_dir.join("gsettings.json");
+    let manifest_path = ctx.repo_manifest_path("gsettings.json");
     let mut manifest = GSettingsManifest::load(&manifest_path)?;
 
     for change in changes {
@@ -501,9 +502,9 @@ fn apply_gsetting_changes(
 /// Apply shim changes to the manifest.
 fn apply_shim_changes(
     changes: &[&EphemeralChange],
-    manifests_dir: &std::path::Path,
+    ctx: &SubsystemContext,
 ) -> Result<ManifestChange> {
-    let manifest_path = manifests_dir.join("host-shims.json");
+    let manifest_path = ctx.repo_manifest_path("host-shims.json");
     let mut manifest = ShimsManifest::load(&manifest_path)?;
 
     for change in changes {
@@ -529,9 +530,9 @@ fn apply_shim_changes(
 /// Apply dnf/package changes to the manifest.
 fn apply_dnf_changes(
     changes: &[&EphemeralChange],
-    manifests_dir: &std::path::Path,
+    ctx: &SubsystemContext,
 ) -> Result<ManifestChange> {
-    let manifest_path = manifests_dir.join("system-packages.json");
+    let manifest_path = ctx.repo_manifest_path("system-packages.json");
     let mut manifest = SystemPackagesManifest::load(&manifest_path)?;
 
     for change in changes {
@@ -552,9 +553,10 @@ fn apply_dnf_changes(
 /// Apply appimage changes to the manifest.
 fn apply_appimage_changes(
     changes: &[&EphemeralChange],
-    manifests_dir: &std::path::Path,
+    ctx: &SubsystemContext,
 ) -> Result<ManifestChange> {
-    let mut manifest = AppImageAppsManifest::load_from_dir(manifests_dir)?;
+    let manifests_dir = ctx.repo_root.join("manifests");
+    let mut manifest = AppImageAppsManifest::load_from_dir(&manifests_dir)?;
 
     for change in changes {
         match change.action {
@@ -815,7 +817,9 @@ mod tests {
     #[test]
     fn test_apply_flatpak_changes_add() {
         let temp = assert_fs::TempDir::new().unwrap();
-        let manifests_dir = temp.path();
+        let manifests_dir = temp.path().join("manifests");
+        std::fs::create_dir_all(&manifests_dir).unwrap();
+        let ctx = SubsystemContext::with_repo_root(temp.path().to_path_buf());
 
         // Create empty manifest
         let manifest_path = manifests_dir.join("flatpak-apps.json");
@@ -828,7 +832,7 @@ mod tests {
         )];
         let refs: Vec<&EphemeralChange> = changes.iter().collect();
 
-        let result = apply_flatpak_changes(&refs, manifests_dir).unwrap();
+        let result = apply_flatpak_changes(&refs, &ctx).unwrap();
 
         // Verify the content includes the new app
         assert!(result.content.contains("org.test.App"));
@@ -838,7 +842,9 @@ mod tests {
     #[test]
     fn test_apply_extension_changes_add() {
         let temp = assert_fs::TempDir::new().unwrap();
-        let manifests_dir = temp.path();
+        let manifests_dir = temp.path().join("manifests");
+        std::fs::create_dir_all(&manifests_dir).unwrap();
+        let ctx = SubsystemContext::with_repo_root(temp.path().to_path_buf());
 
         // Create empty manifest
         let manifest_path = manifests_dir.join("gnome-extensions.json");
@@ -851,7 +857,7 @@ mod tests {
         )];
         let refs: Vec<&EphemeralChange> = changes.iter().collect();
 
-        let result = apply_extension_changes(&refs, manifests_dir).unwrap();
+        let result = apply_extension_changes(&refs, &ctx).unwrap();
 
         assert!(result.content.contains("test@example.com"));
     }
@@ -859,7 +865,9 @@ mod tests {
     #[test]
     fn test_apply_dnf_changes_add() {
         let temp = assert_fs::TempDir::new().unwrap();
-        let manifests_dir = temp.path();
+        let manifests_dir = temp.path().join("manifests");
+        std::fs::create_dir_all(&manifests_dir).unwrap();
+        let ctx = SubsystemContext::with_repo_root(temp.path().to_path_buf());
 
         // Create empty manifest
         let manifest_path = manifests_dir.join("system-packages.json");
@@ -876,7 +884,7 @@ mod tests {
         )];
         let refs: Vec<&EphemeralChange> = changes.iter().collect();
 
-        let result = apply_dnf_changes(&refs, manifests_dir).unwrap();
+        let result = apply_dnf_changes(&refs, &ctx).unwrap();
 
         assert!(result.content.contains("htop"));
     }
@@ -884,7 +892,9 @@ mod tests {
     #[test]
     fn test_apply_shim_changes_add() {
         let temp = assert_fs::TempDir::new().unwrap();
-        let manifests_dir = temp.path();
+        let manifests_dir = temp.path().join("manifests");
+        std::fs::create_dir_all(&manifests_dir).unwrap();
+        let ctx = SubsystemContext::with_repo_root(temp.path().to_path_buf());
 
         // Create empty manifest
         let manifest_path = manifests_dir.join("host-shims.json");
@@ -897,7 +907,7 @@ mod tests {
         )];
         let refs: Vec<&EphemeralChange> = changes.iter().collect();
 
-        let result = apply_shim_changes(&refs, manifests_dir).unwrap();
+        let result = apply_shim_changes(&refs, &ctx).unwrap();
 
         assert!(result.content.contains("docker"));
     }
@@ -905,7 +915,9 @@ mod tests {
     #[test]
     fn test_apply_gsetting_changes() {
         let temp = assert_fs::TempDir::new().unwrap();
-        let manifests_dir = temp.path();
+        let manifests_dir = temp.path().join("manifests");
+        std::fs::create_dir_all(&manifests_dir).unwrap();
+        let ctx = SubsystemContext::with_repo_root(temp.path().to_path_buf());
 
         // Create empty manifest
         let manifest_path = manifests_dir.join("gsettings.json");
@@ -923,7 +935,7 @@ mod tests {
         let changes = vec![change];
         let refs: Vec<&EphemeralChange> = changes.iter().collect();
 
-        let result = apply_gsetting_changes(&refs, manifests_dir).unwrap();
+        let result = apply_gsetting_changes(&refs, &ctx).unwrap();
 
         assert!(result.content.contains("org.gnome.desktop.interface"));
         assert!(result.content.contains("color-scheme"));
