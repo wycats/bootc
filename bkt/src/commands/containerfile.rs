@@ -11,6 +11,7 @@ use crate::containerfile::{
 use crate::manifest::system_config::SystemConfigManifest;
 use crate::manifest::{ShimsManifest, SystemPackagesManifest};
 use crate::output::Output;
+use crate::pipeline::ExecutionPlan;
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use std::path::Path;
@@ -37,9 +38,18 @@ struct SectionSyncResult {
     message: String,
 }
 
-pub fn run(args: ContainerfileArgs) -> Result<()> {
+pub fn run(args: ContainerfileArgs, plan: &ExecutionPlan) -> Result<()> {
     match args.action {
-        ContainerfileAction::Sync => run_sync(),
+        ContainerfileAction::Sync => {
+            if plan.dry_run {
+                // In dry-run mode, sync behaves like check
+                Output::info("Dry-run mode: checking for drift instead of syncing");
+                Output::blank();
+                run_check()
+            } else {
+                run_sync()
+            }
+        }
         ContainerfileAction::Check => run_check(),
     }
 }

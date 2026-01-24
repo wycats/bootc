@@ -230,7 +230,7 @@ fn main() -> Result<()> {
         Commands::Drift(args) => commands::drift::run(args),
         Commands::Base(args) => commands::base::run(args),
         Commands::BuildInfo(args) => commands::build_info::run(args),
-        Commands::Containerfile(args) => commands::containerfile::run(args),
+        Commands::Containerfile(args) => commands::containerfile::run(args, &plan),
         Commands::Local(args) => commands::local::run(args, &plan),
     }
 }
