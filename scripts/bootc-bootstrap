@@ -103,28 +103,63 @@ apply_gnome_extensions() {
   tmpdir="$(mktemp -d)"
   trap 'rm -rf "$tmpdir"' EXIT
 
+  # Merge system manifest with user overrides
+  local user_file="${XDG_CONFIG_HOME:-$HOME/.config}/bootc/gnome-extensions.json"
+  local merged_file="${tmpdir}/merged-extensions.json"
+  
+  # Start with system manifest
+  cp "$file" "$merged_file"
+  
+  # If user overrides exist, merge them (user takes precedence)
+  if [[ -f "$user_file" ]]; then
+    log "Merging user extension overrides from ${user_file}"
+    # Create a merged manifest where user overrides take precedence
+    jq -s '
+      def merge_extensions:
+        (.[0].extensions // []) as $system |
+        (.[1].extensions // []) as $user |
+        # Convert to objects keyed by id for merging
+        ($system | map(if type == "string" then {id: ., enabled: true} else . end) | INDEX(.id)) as $sys_map |
+        ($user | map(if type == "string" then {id: ., enabled: true} else . end) | INDEX(.id)) as $usr_map |
+        # Merge with user taking precedence
+        ($sys_map * $usr_map) | to_entries | map(.value);
+      {extensions: merge_extensions}
+    ' "$file" "$user_file" > "$merged_file" 2>/dev/null || cp "$file" "$merged_file"
+  fi
+
   local count
-  count="$(jq -r '.extensions | length' "$file")"
+  count="$(jq -r '.extensions | length' "$merged_file")"
 
   for ((i=0; i<count; i++)); do
     local uuid enabled
     local item
-    item="$(jq -r ".extensions[$i]" "$file")"
+    item="$(jq -r ".extensions[$i]" "$merged_file")"
 
     # Handle both string format and object format
     if [[ "$item" == "{"* ]]; then
       # Object format: {"id": "...", "enabled": true/false}
-      uuid="$(jq -r ".extensions[$i].id" "$file")"
-      enabled="$(jq -r ".extensions[$i].enabled // true" "$file")"
+      uuid="$(jq -r ".extensions[$i].id" "$merged_file")"
+      enabled="$(jq -r ".extensions[$i].enabled // true" "$merged_file")"
     else
       # String format: just the UUID (implies enabled=true)
       uuid="$item"
       enabled="true"
     fi
 
-    # Skip disabled extensions
+    # Handle disabled extensions - disable them if currently enabled
     if [[ "$enabled" != "true" ]]; then
-      log "Skipping disabled extension: ${uuid}"
+      if gnome-extensions info "${uuid}" >/dev/null 2>&1; then
+        local state
+        state="$(gnome-extensions info "${uuid}" 2>/dev/null | grep -i "State:" | head -1 || true)"
+        if [[ "$state" == *"ACTIVE"* ]]; then
+          log "Disabling extension per user override: ${uuid}"
+          gnome-extensions disable "${uuid}" >/dev/null 2>&1 || true
+        else
+          log "Skipping disabled extension: ${uuid}"
+        fi
+      else
+        log "Skipping disabled extension (not installed): ${uuid}"
+      fi
       continue
     fi
 
