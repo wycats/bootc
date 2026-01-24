@@ -111,13 +111,22 @@ pub enum LocalAction {
 
 /// Parse a domain filter string into a ChangeDomain.
 fn parse_domain_filter(domain: &str) -> Result<ChangeDomain> {
-    match domain.to_lowercase().as_str() {
-        "flatpak" | "fp" => Ok(ChangeDomain::Flatpak),
-        "extension" | "ext" => Ok(ChangeDomain::Extension),
-        "gsetting" | "gs" => Ok(ChangeDomain::Gsetting),
-        "shim" => Ok(ChangeDomain::Shim),
-        "dnf" | "rpm" => Ok(ChangeDomain::Dnf),
-        "appimage" | "ai" => Ok(ChangeDomain::AppImage),
+    let normalized = domain.to_lowercase();
+    match normalized.as_str() {
+        id if id == ChangeDomain::Flatpak.subsystem_id() || id == "fp" => Ok(ChangeDomain::Flatpak),
+        id if id == ChangeDomain::Extension.subsystem_id() || id == "ext" => {
+            Ok(ChangeDomain::Extension)
+        }
+        id if id == ChangeDomain::Gsetting.subsystem_id() || id == "gs" => {
+            Ok(ChangeDomain::Gsetting)
+        }
+        id if id == ChangeDomain::Shim.subsystem_id() => Ok(ChangeDomain::Shim),
+        id if id == "dnf" || id == "rpm" || id == ChangeDomain::Dnf.subsystem_id() => {
+            Ok(ChangeDomain::Dnf)
+        }
+        id if id == ChangeDomain::AppImage.subsystem_id() || id == "ai" => {
+            Ok(ChangeDomain::AppImage)
+        }
         _ => bail!(
             "Unknown domain: '{}'. Valid domains: flatpak, extension, gsetting, shim, dnf, appimage",
             domain
@@ -794,6 +803,7 @@ mod tests {
         assert_eq!(parse_domain_filter("ext").unwrap(), ChangeDomain::Extension);
         assert_eq!(parse_domain_filter("dnf").unwrap(), ChangeDomain::Dnf);
         assert_eq!(parse_domain_filter("rpm").unwrap(), ChangeDomain::Dnf);
+        assert_eq!(parse_domain_filter("system").unwrap(), ChangeDomain::Dnf);
         assert!(parse_domain_filter("invalid").is_err());
     }
 

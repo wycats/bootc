@@ -23,6 +23,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+use crate::subsystem::SubsystemRegistry;
+
 /// The domain of a change (which subsystem it affects).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -51,6 +53,28 @@ impl std::fmt::Display for ChangeDomain {
             ChangeDomain::Dnf => write!(f, "dnf"),
             ChangeDomain::AppImage => write!(f, "appimage"),
         }
+    }
+}
+
+impl ChangeDomain {
+    /// Return the subsystem registry ID for this change domain.
+    pub fn subsystem_id(&self) -> &'static str {
+        match self {
+            ChangeDomain::Flatpak => "flatpak",
+            ChangeDomain::Extension => "extension",
+            ChangeDomain::Gsetting => "gsetting",
+            ChangeDomain::Shim => "shim",
+            ChangeDomain::Dnf => "system",
+            ChangeDomain::AppImage => "appimage",
+        }
+    }
+
+    /// Check if this domain maps to a registered subsystem.
+    #[allow(dead_code)]
+    pub fn is_registered(&self) -> bool {
+        SubsystemRegistry::builtin()
+            .find(self.subsystem_id())
+            .is_some()
     }
 }
 
@@ -507,5 +531,24 @@ mod tests {
         assert_eq!(ChangeAction::Add.to_string(), "add");
         assert_eq!(ChangeAction::Remove.to_string(), "remove");
         assert_eq!(ChangeAction::Update.to_string(), "update");
+    }
+
+    #[test]
+    fn test_change_domain_subsystem_mapping_is_registered() {
+        for domain in [
+            ChangeDomain::Flatpak,
+            ChangeDomain::Extension,
+            ChangeDomain::Gsetting,
+            ChangeDomain::Shim,
+            ChangeDomain::Dnf,
+            ChangeDomain::AppImage,
+        ] {
+            assert!(
+                domain.is_registered(),
+                "ChangeDomain::{:?} maps to unregistered subsystem '{}'",
+                domain,
+                domain.subsystem_id()
+            );
+        }
     }
 }
