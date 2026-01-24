@@ -2,7 +2,9 @@
 
 use crate::context::{CommandDomain, PrMode, run_command};
 use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
-use crate::manifest::{FlatpakApp, FlatpakAppsManifest, FlatpakRemotesManifest, FlatpakScope};
+use crate::manifest::{
+    FlatpakApp, FlatpakAppsManifest, FlatpakOverrides, FlatpakRemotesManifest, FlatpakScope,
+};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::plan::{
@@ -106,6 +108,35 @@ fn is_installed(app_id: &str) -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// Apply overrides to a flatpak app.
+///
+/// Uses `flatpak override --user` or `--system` depending on scope.
+fn apply_overrides(app_id: &str, scope: FlatpakScope, overrides: &[String]) -> Result<bool> {
+    if overrides.is_empty() {
+        return Ok(true);
+    }
+
+    let scope_flag = match scope {
+        FlatpakScope::System => "--system",
+        FlatpakScope::User => "--user",
+    };
+
+    let mut args = vec!["override", scope_flag];
+    args.push(app_id);
+
+    // Add each override flag
+    for flag in overrides {
+        args.push(flag);
+    }
+
+    let status = Command::new("flatpak")
+        .args(&args)
+        .status()
+        .context("Failed to run flatpak override")?;
+
+    Ok(status.success())
 }
 
 pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
@@ -480,6 +511,37 @@ impl Plan for FlatpakSyncPlan {
                         Verb::Install,
                         format!("flatpak:{}", item.app.id),
                     );
+
+                    // Apply overrides if present
+                    if let Some(ref overrides) = item.app.overrides
+                        && !overrides.is_empty()
+                    {
+                        match apply_overrides(&item.app.id, item.app.scope, overrides) {
+                            Ok(true) => {
+                                report.record_success_and_notify(
+                                    ctx,
+                                    Verb::Configure,
+                                    format!("flatpak:{}:overrides", item.app.id),
+                                );
+                            }
+                            Ok(false) => {
+                                report.record_failure_and_notify(
+                                    ctx,
+                                    Verb::Configure,
+                                    format!("flatpak:{}:overrides", item.app.id),
+                                    "flatpak override failed",
+                                );
+                            }
+                            Err(e) => {
+                                report.record_failure_and_notify(
+                                    ctx,
+                                    Verb::Configure,
+                                    format!("flatpak:{}:overrides", item.app.id),
+                                    e.to_string(),
+                                );
+                            }
+                        }
+                    }
                 }
                 Ok(false) => {
                     report.record_failure_and_notify(
@@ -647,6 +709,11 @@ impl Plannable for FlatpakCaptureCommand {
                     ));
                 }
 
+                // Read any existing overrides for this app
+                let overrides = FlatpakOverrides::load_for_app(&flatpak.id, scope)
+                    .map(|o| o.to_cli_flags())
+                    .filter(|flags| !flags.is_empty());
+
                 to_capture.push(FlatpakToCapture {
                     app: FlatpakApp {
                         id: flatpak.id,
@@ -658,7 +725,7 @@ impl Plannable for FlatpakCaptureCommand {
                         } else {
                             Some(flatpak.commit)
                         },
-                        overrides: None,
+                        overrides,
                     },
                     unmanaged_remote,
                 });
