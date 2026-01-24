@@ -97,10 +97,6 @@ pub enum Commands {
     /// Capture system state to manifests
     Capture(commands::capture::CaptureArgs),
 
-    /// Manage RPM packages (rpm-ostree on host, dnf in toolbox)
-    #[command(hide = true)]
-    Dnf(commands::dnf::DnfArgs),
-
     /// Manage system packages in the bootc image
     ///
     /// Add or remove packages from the image recipe (deferred until rebuild).
@@ -208,7 +204,6 @@ fn main() -> Result<()> {
         Commands::Admin(args) => commands::admin::run(args, &plan),
         Commands::Apply(args) => commands::apply::run(args, &plan),
         Commands::Capture(args) => commands::capture::run(args, &plan),
-        Commands::Dnf(args) => commands::dnf::run(args, &plan),
         Commands::System(args) => commands::system::run(args, &plan),
         Commands::Dev(args) => commands::dev::run(args, &plan),
         Commands::Flatpak(args) => commands::flatpak::run(args, &plan),
