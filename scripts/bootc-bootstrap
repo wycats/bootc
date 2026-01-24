@@ -38,6 +38,8 @@ run_flatpak() {
 }
 
 apply_flatpak_remotes() {
+  # Flatpak remotes are handled by bkt flatpak sync if available
+  # For now, keep the standalone implementation as remotes are configured separately
   local file="${share_dir}/flatpak-remotes.json"
   [[ -f "$file" ]] || return 0
   need_cmd flatpak || { log "flatpak not found; skipping flatpak remotes"; return 1; }
@@ -58,6 +60,14 @@ apply_flatpak_remotes() {
 }
 
 apply_flatpak_apps() {
+  # Delegate to bkt if available
+  if need_cmd bkt; then
+    log "Syncing Flatpak apps via bkt"
+    bkt flatpak sync --confirm || log "Flatpak sync failed (non-fatal)"
+    return 0
+  fi
+
+  # Fallback: manual flatpak installation
   local file="${share_dir}/flatpak-apps.json"
   [[ -f "$file" ]] || return 0
   need_cmd flatpak || { log "flatpak not found; skipping flatpak apps"; return 1; }
@@ -85,6 +95,14 @@ shell_major_version() {
 }
 
 apply_gnome_extensions() {
+  # Delegate to bkt if available
+  if need_cmd bkt; then
+    log "Syncing GNOME extensions via bkt"
+    bkt extension sync --confirm || log "Extension sync failed (non-fatal)"
+    return 0
+  fi
+
+  # Fallback: manual extension installation
   local file="${share_dir}/gnome-extensions.json"
   [[ -f "$file" ]] || return 0
 
@@ -187,6 +205,14 @@ apply_gnome_extensions() {
 }
 
 apply_gsettings() {
+  # Delegate to bkt if available
+  if need_cmd bkt; then
+    log "Applying GSettings via bkt"
+    bkt gsetting apply --confirm || log "GSettings apply failed (non-fatal)"
+    return 0
+  fi
+
+  # Fallback: manual gsettings application
   local file="${share_dir}/gsettings.json"
   [[ -f "$file" ]] || return 0
 

@@ -9,13 +9,7 @@ use clap::Args;
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::plan::{CompositePlan, ExecuteContext, Plan, PlanContext, Plannable};
-
-use super::appimage::{AppImageCaptureCommand, AppImageCapturePlan};
-use super::distrobox::{DistroboxCaptureCommand, DistroboxCapturePlan};
-use super::extension::{ExtensionCaptureCommand, ExtensionCapturePlan};
-use super::flatpak::{FlatpakCaptureCommand, FlatpakCapturePlan};
-use super::homebrew::{HomebrewCaptureCommand, HomebrewCapturePlan};
-use super::system::{SystemCaptureCommand, SystemCapturePlan};
+use crate::subsystem::SubsystemRegistry;
 
 /// The subsystems that can be captured.
 /// Note: gsetting capture requires a schema filter, so it's excluded from the meta-command.
@@ -80,15 +74,22 @@ impl CaptureCommand {
         }
     }
 
-    /// Check if a subsystem should be included.
+    /// Check if a subsystem should be included (by enum value).
+    /// Kept for backward compatibility with tests.
+    #[cfg(test)]
     fn should_include(&self, subsystem: CaptureSubsystem) -> bool {
+        self.should_include_id(&subsystem.to_string())
+    }
+
+    /// Check if a subsystem should be included by ID string.
+    fn should_include_id(&self, id: &str) -> bool {
         // If exclude list contains it, skip
-        if self.exclude.contains(&subsystem) {
+        if self.exclude.iter().any(|e| e.to_string() == id) {
             return false;
         }
         // If include list is specified, only include those
         if let Some(ref include) = self.include {
-            return include.contains(&subsystem);
+            return include.iter().any(|i| i.to_string() == id);
         }
         // Otherwise, include all
         true
@@ -100,41 +101,14 @@ impl Plannable for CaptureCommand {
 
     fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
         let mut composite = CompositePlan::new("Capture");
+        let registry = SubsystemRegistry::builtin();
 
-        // Extension capture
-        if self.should_include(CaptureSubsystem::Extension) {
-            let extension_plan: ExtensionCapturePlan = ExtensionCaptureCommand.plan(ctx)?;
-            composite.add(extension_plan);
-        }
-
-        // Distrobox capture
-        if self.should_include(CaptureSubsystem::Distrobox) {
-            let distrobox_plan: DistroboxCapturePlan = DistroboxCaptureCommand.plan(ctx)?;
-            composite.add(distrobox_plan);
-        }
-
-        // Flatpak capture
-        if self.should_include(CaptureSubsystem::Flatpak) {
-            let flatpak_plan: FlatpakCapturePlan = FlatpakCaptureCommand.plan(ctx)?;
-            composite.add(flatpak_plan);
-        }
-
-        // System capture (rpm-ostree layered packages)
-        if self.should_include(CaptureSubsystem::System) {
-            let system_plan: SystemCapturePlan = SystemCaptureCommand.plan(ctx)?;
-            composite.add(system_plan);
-        }
-
-        // AppImage capture (via GearLever)
-        if self.should_include(CaptureSubsystem::AppImage) {
-            let appimage_plan: AppImageCapturePlan = AppImageCaptureCommand.plan(ctx)?;
-            composite.add(appimage_plan);
-        }
-
-        // Homebrew capture
-        if self.should_include(CaptureSubsystem::Homebrew) {
-            let homebrew_plan: HomebrewCapturePlan = HomebrewCaptureCommand.plan(ctx)?;
-            composite.add(homebrew_plan);
+        for subsystem in registry.capturable() {
+            if self.should_include_id(subsystem.id())
+                && let Some(plan) = subsystem.capture(ctx)?
+            {
+                composite.add_boxed(plan);
+            }
         }
 
         Ok(composite)

@@ -9,13 +9,7 @@ use clap::Args;
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::plan::{CompositePlan, ExecuteContext, OperationProgress, Plan, PlanContext, Plannable};
-
-use super::appimage::{AppImageSyncCommand, AppImageSyncPlan};
-use super::distrobox::{DistroboxSyncCommand, DistroboxSyncPlan};
-use super::extension::{ExtensionSyncCommand, ExtensionSyncPlan};
-use super::flatpak::{FlatpakSyncCommand, FlatpakSyncPlan};
-use super::gsetting::{GsettingApplyCommand, GsettingApplyPlan};
-use super::shim::{ShimSyncCommand, ShimSyncPlan};
+use crate::subsystem::SubsystemRegistry;
 
 /// The subsystems that can be synced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -74,6 +68,9 @@ pub struct ApplyCommand {
     pub exclude: Vec<Subsystem>,
 
     /// Whether to prune unmanaged AppImages.
+    /// Note: This is currently not passed through the registry abstraction.
+    /// AppImage sync via registry uses the default (keep_unmanaged=false).
+    #[allow(dead_code)]
     pub prune_appimages: bool,
 }
 
@@ -87,15 +84,22 @@ impl ApplyCommand {
         }
     }
 
-    /// Check if a subsystem should be included.
+    /// Check if a subsystem should be included (by enum value).
+    /// Kept for backward compatibility with tests.
+    #[cfg(test)]
     fn should_include(&self, subsystem: Subsystem) -> bool {
+        self.should_include_id(&subsystem.to_string())
+    }
+
+    /// Check if a subsystem should be included by ID string.
+    fn should_include_id(&self, id: &str) -> bool {
         // If exclude list contains it, skip
-        if self.exclude.contains(&subsystem) {
+        if self.exclude.iter().any(|e| e.to_string() == id) {
             return false;
         }
         // If include list is specified, only include those
         if let Some(ref include) = self.include {
-            return include.contains(&subsystem);
+            return include.iter().any(|i| i.to_string() == id);
         }
         // Otherwise, include all
         true
@@ -107,44 +111,14 @@ impl Plannable for ApplyCommand {
 
     fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
         let mut composite = CompositePlan::new("Apply");
+        let registry = SubsystemRegistry::builtin();
 
-        // Shim sync
-        if self.should_include(Subsystem::Shim) {
-            let shim_plan: ShimSyncPlan = ShimSyncCommand.plan(ctx)?;
-            composite.add(shim_plan);
-        }
-
-        // Distrobox sync
-        if self.should_include(Subsystem::Distrobox) {
-            let distrobox_plan: DistroboxSyncPlan = DistroboxSyncCommand.plan(ctx)?;
-            composite.add(distrobox_plan);
-        }
-
-        // GSettings apply
-        if self.should_include(Subsystem::Gsetting) {
-            let gsetting_plan: GsettingApplyPlan = GsettingApplyCommand.plan(ctx)?;
-            composite.add(gsetting_plan);
-        }
-
-        // Extension sync
-        if self.should_include(Subsystem::Extension) {
-            let extension_plan: ExtensionSyncPlan = ExtensionSyncCommand.plan(ctx)?;
-            composite.add(extension_plan);
-        }
-
-        // Flatpak sync
-        if self.should_include(Subsystem::Flatpak) {
-            let flatpak_plan: FlatpakSyncPlan = FlatpakSyncCommand.plan(ctx)?;
-            composite.add(flatpak_plan);
-        }
-
-        // AppImage sync via GearLever
-        if self.should_include(Subsystem::AppImage) {
-            let appimage_plan: AppImageSyncPlan = AppImageSyncCommand {
-                keep_unmanaged: !self.prune_appimages,
+        for subsystem in registry.syncable() {
+            if self.should_include_id(subsystem.id())
+                && let Some(plan) = subsystem.sync(ctx)?
+            {
+                composite.add_boxed(plan);
             }
-            .plan(ctx)?;
-            composite.add(appimage_plan);
         }
 
         Ok(composite)
