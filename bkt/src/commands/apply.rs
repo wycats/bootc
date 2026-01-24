@@ -12,7 +12,6 @@ use crate::plan::{CompositePlan, ExecuteContext, OperationProgress, Plan, PlanCo
 
 use super::appimage::{AppImageSyncCommand, AppImageSyncPlan};
 use super::distrobox::{DistroboxSyncCommand, DistroboxSyncPlan};
-use super::dnf::{DnfSyncCommand, DnfSyncPlan};
 use super::extension::{ExtensionSyncCommand, ExtensionSyncPlan};
 use super::flatpak::{FlatpakSyncCommand, FlatpakSyncPlan};
 use super::gsetting::{GsettingApplyCommand, GsettingApplyPlan};
@@ -31,8 +30,6 @@ pub enum Subsystem {
     Extension,
     /// Flatpak applications
     Flatpak,
-    /// DNF/rpm-ostree packages
-    Dnf,
     /// AppImages via GearLever
     AppImage,
 }
@@ -45,7 +42,6 @@ impl std::fmt::Display for Subsystem {
             Subsystem::Gsetting => write!(f, "gsetting"),
             Subsystem::Extension => write!(f, "extension"),
             Subsystem::Flatpak => write!(f, "flatpak"),
-            Subsystem::Dnf => write!(f, "dnf"),
             Subsystem::AppImage => write!(f, "appimage"),
         }
     }
@@ -140,16 +136,6 @@ impl Plannable for ApplyCommand {
         if self.should_include(Subsystem::Flatpak) {
             let flatpak_plan: FlatpakSyncPlan = FlatpakSyncCommand.plan(ctx)?;
             composite.add(flatpak_plan);
-        }
-
-        // DNF sync
-        if self.should_include(Subsystem::Dnf) {
-            let dnf_plan: DnfSyncPlan = DnfSyncCommand {
-                now: false, // Default to reboot-required mode for apply
-                context: ctx.execution_plan().context,
-            }
-            .plan(ctx)?;
-            composite.add(dnf_plan);
         }
 
         // AppImage sync via GearLever
@@ -258,13 +244,12 @@ mod tests {
         assert!(cmd.should_include(Subsystem::Gsetting));
         assert!(cmd.should_include(Subsystem::Extension));
         assert!(cmd.should_include(Subsystem::Flatpak));
-        assert!(cmd.should_include(Subsystem::Dnf));
     }
 
     #[test]
     fn test_apply_command_only_filter() {
         let cmd = ApplyCommand {
-            include: Some(vec![Subsystem::Shim, Subsystem::Dnf]),
+            include: Some(vec![Subsystem::Shim, Subsystem::Flatpak]),
             exclude: vec![],
             prune_appimages: false,
         };
@@ -272,8 +257,7 @@ mod tests {
         assert!(cmd.should_include(Subsystem::Shim));
         assert!(!cmd.should_include(Subsystem::Gsetting));
         assert!(!cmd.should_include(Subsystem::Extension));
-        assert!(!cmd.should_include(Subsystem::Flatpak));
-        assert!(cmd.should_include(Subsystem::Dnf));
+        assert!(cmd.should_include(Subsystem::Flatpak));
     }
 
     #[test]
@@ -289,7 +273,6 @@ mod tests {
         assert!(cmd.should_include(Subsystem::Gsetting));
         assert!(!cmd.should_include(Subsystem::Extension));
         assert!(!cmd.should_include(Subsystem::Flatpak));
-        assert!(cmd.should_include(Subsystem::Dnf));
     }
 
     #[test]
@@ -311,21 +294,20 @@ mod tests {
         assert_eq!(format!("{}", Subsystem::Gsetting), "gsetting");
         assert_eq!(format!("{}", Subsystem::Extension), "extension");
         assert_eq!(format!("{}", Subsystem::Flatpak), "flatpak");
-        assert_eq!(format!("{}", Subsystem::Dnf), "dnf");
     }
 
     #[test]
     fn test_apply_command_from_args() {
         let args = ApplyArgs {
             only: Some(vec![Subsystem::Shim]),
-            exclude: Some(vec![Subsystem::Dnf]),
+            exclude: Some(vec![Subsystem::Flatpak]),
             confirm: true,
             prune_appimages: true,
         };
 
         let cmd = ApplyCommand::from_args(&args);
         assert_eq!(cmd.include, Some(vec![Subsystem::Shim]));
-        assert_eq!(cmd.exclude, vec![Subsystem::Dnf]);
+        assert_eq!(cmd.exclude, vec![Subsystem::Flatpak]);
         assert!(cmd.prune_appimages);
     }
 }

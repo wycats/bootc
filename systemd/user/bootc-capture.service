@@ -1,0 +1,15 @@
+[Unit]
+Description=Capture system state to bootc manifests
+# Don't run during initial bootstrap
+After=bootc-bootstrap.service
+
+[Service]
+Type=oneshot
+# Run from the bootc repo directory
+WorkingDirectory=%h/Code/Config/bootc
+# Capture all domains to local manifests (no PR creation)
+ExecStart=/usr/bin/bkt capture --apply --local
+# Sync Containerfile sections from manifests
+ExecStart=/usr/bin/bkt containerfile sync
+# Only run if we're in a graphical session (user is active)
+ExecCondition=/usr/bin/systemctl --user is-active graphical-session.target

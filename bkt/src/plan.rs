@@ -252,6 +252,8 @@ pub enum Verb {
     Update,
     /// Capture state to manifest
     Capture,
+    /// Configure something (e.g., apply overrides)
+    Configure,
     /// Skip (already in desired state)
     Skip,
 }
@@ -269,6 +271,7 @@ impl Verb {
             Verb::Delete => "Delete",
             Verb::Update => "Update",
             Verb::Capture => "Capture",
+            Verb::Configure => "Configure",
             Verb::Skip => "Skip",
         }
     }
@@ -278,7 +281,7 @@ impl Verb {
         match self {
             Verb::Install | Verb::Enable | Verb::Create => self.as_str().green().to_string(),
             Verb::Remove | Verb::Disable | Verb::Delete => self.as_str().red().to_string(),
-            Verb::Set | Verb::Update => self.as_str().yellow().to_string(),
+            Verb::Set | Verb::Update | Verb::Configure => self.as_str().yellow().to_string(),
             Verb::Capture => self.as_str().cyan().to_string(),
             Verb::Skip => self.as_str().dimmed().to_string(),
         }

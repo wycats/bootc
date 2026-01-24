@@ -1,0 +1,13 @@
+[Unit]
+Description=Periodically capture system state to bootc manifests
+After=bootc-bootstrap.service
+
+[Timer]
+# Run 5 minutes after boot, then every 15 minutes
+OnBootSec=5min
+OnUnitActiveSec=15min
+# Catch up if we missed a run (e.g., laptop was sleeping)
+Persistent=true
+
+[Install]
+WantedBy=timers.target
