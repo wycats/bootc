@@ -16,9 +16,11 @@ use crate::manifest::{
 };
 use crate::output::Output;
 use crate::repo::find_repo_path;
+use crate::subsystem::{SubsystemContext, SubsystemRegistry};
 use anyhow::Result;
 use clap::{Args, ValueEnum};
 use owo_colors::OwoColorize;
+use serde::de::DeserializeOwned;
 use std::fs;
 use std::path::PathBuf;
 use tracing::debug;
@@ -294,6 +296,22 @@ fn shims_dir() -> PathBuf {
     PathBuf::from(home).join(".local/bin")
 }
 
+fn load_subsystem_manifest<T>(
+    registry: &SubsystemRegistry,
+    ctx: &SubsystemContext,
+    subsystem_id: &str,
+) -> T
+where
+    T: DeserializeOwned + Default,
+{
+    registry
+        .find(subsystem_id)
+        .and_then(|subsystem| subsystem.load_manifest(ctx).ok())
+        .and_then(|manifest| manifest.to_json().ok())
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default()
+}
+
 pub fn run(args: StatusArgs) -> Result<()> {
     debug!("Gathering status information");
 
@@ -304,11 +322,15 @@ pub fn run(args: StatusArgs) -> Result<()> {
     let installed_flatpaks: std::collections::HashSet<String> =
         get_installed_flatpaks().into_iter().map(|f| f.id).collect();
 
+    let registry = SubsystemRegistry::builtin();
+    let subsystem_ctx = find_repo_path()
+        .map(SubsystemContext::with_repo_root)
+        .unwrap_or_default();
+
     // Gather flatpak status
     let flatpak_status = {
-        let system = FlatpakAppsManifest::load_system().unwrap_or_default();
-        let user = FlatpakAppsManifest::load_user().unwrap_or_default();
-        let merged = FlatpakAppsManifest::merged(&system, &user);
+        let merged: FlatpakAppsManifest =
+            load_subsystem_manifest(&registry, &subsystem_ctx, "flatpak");
 
         let manifest_ids: std::collections::HashSet<_> =
             merged.apps.iter().map(|a| a.id.as_str()).collect();
@@ -341,9 +363,8 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     // Gather extension status
     let extension_status = {
-        let system = GnomeExtensionsManifest::load_system().unwrap_or_default();
-        let user = GnomeExtensionsManifest::load_user().unwrap_or_default();
-        let merged = GnomeExtensionsManifest::merged(&system, &user);
+        let merged: GnomeExtensionsManifest =
+            load_subsystem_manifest(&registry, &subsystem_ctx, "extension");
 
         let manifest_uuids: std::collections::HashSet<_> =
             merged.extensions.iter().map(|s| s.id()).collect();
@@ -376,9 +397,8 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     // Gather gsettings status
     let gsetting_status = {
-        let system = GSettingsManifest::load_system().unwrap_or_default();
-        let user = GSettingsManifest::load_user().unwrap_or_default();
-        let merged = GSettingsManifest::merged(&system, &user);
+        let merged: GSettingsManifest =
+            load_subsystem_manifest(&registry, &subsystem_ctx, "gsetting");
 
         let total = merged.settings.len();
         let mut applied = 0;
@@ -401,9 +421,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     // Gather shim status
     let shim_status = {
-        let system = ShimsManifest::load_system().unwrap_or_default();
-        let user = ShimsManifest::load_user().unwrap_or_default();
-        let merged = ShimsManifest::merged(&system, &user);
+        let merged: ShimsManifest = load_subsystem_manifest(&registry, &subsystem_ctx, "shim");
 
         let shims_dir = shims_dir();
         let total = merged.shims.len();
