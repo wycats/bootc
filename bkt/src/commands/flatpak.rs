@@ -599,7 +599,7 @@ pub fn get_installed_flatpaks() -> Vec<InstalledFlatpak> {
         &[
             "list",
             "--app",
-            "--columns=installation,application,origin,branch,commit",
+            "--columns=installation,application,origin,branch,active",
         ],
     );
 
