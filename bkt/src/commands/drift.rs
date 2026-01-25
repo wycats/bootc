@@ -12,13 +12,13 @@
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand, ValueEnum};
 use owo_colors::OwoColorize;
+use serde::Serialize;
 use std::env;
 use std::path::PathBuf;
-use std::process::Command;
 
 use crate::manifest::find_repo_root;
 use crate::output::Output;
-use crate::subsystem::SubsystemRegistry;
+use crate::subsystem::{DriftReport, SubsystemContext, SubsystemRegistry};
 
 #[derive(Debug, Args)]
 pub struct DriftArgs {
@@ -82,6 +82,28 @@ pub enum OutputFormat {
     Json,
 }
 
+struct SubsystemDrift {
+    id: &'static str,
+    name: &'static str,
+    report: DriftReport,
+}
+
+#[derive(Serialize)]
+struct DriftOutput {
+    has_drift: bool,
+    subsystems: Vec<SubsystemDriftOutput>,
+}
+
+#[derive(Serialize)]
+struct SubsystemDriftOutput {
+    id: &'static str,
+    name: &'static str,
+    expected: Vec<String>,
+    actual: Vec<String>,
+    missing: Vec<String>,
+    extra: Vec<String>,
+}
+
 pub fn run(args: DriftArgs) -> Result<()> {
     match args.action {
         DriftAction::Check {
@@ -92,6 +114,60 @@ pub fn run(args: DriftArgs) -> Result<()> {
         DriftAction::Status => handle_status(),
         DriftAction::Explain => handle_explain(),
     }
+}
+
+fn print_human(reports: &[SubsystemDrift], has_drift: bool) {
+    if !has_drift {
+        println!("{}", "✓ No drift detected".green());
+        return;
+    }
+
+    for subsystem in reports.iter().filter(|r| r.report.has_drift()) {
+        println!(
+            "{}",
+            format!("═══ {} ({}) ═══", subsystem.name, subsystem.id)
+                .yellow()
+                .bold()
+        );
+
+        if !subsystem.report.missing.is_empty() {
+            println!("  {}", "missing:".red());
+            for item in &subsystem.report.missing {
+                println!("    - {}", item);
+            }
+        }
+
+        if !subsystem.report.extra.is_empty() {
+            println!("  {}", "extra:".blue());
+            for item in &subsystem.report.extra {
+                println!("    + {}", item);
+            }
+        }
+
+        println!();
+    }
+}
+
+fn print_json(reports: &[SubsystemDrift], has_drift: bool) -> Result<()> {
+    let subsystems = reports
+        .iter()
+        .map(|r| SubsystemDriftOutput {
+            id: r.id,
+            name: r.name,
+            expected: r.report.expected.clone(),
+            actual: r.report.actual.clone(),
+            missing: r.report.missing.clone(),
+            extra: r.report.extra.clone(),
+        })
+        .collect();
+
+    let output = DriftOutput {
+        has_drift,
+        subsystems,
+    };
+
+    println!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(())
 }
 
 fn get_repo_root() -> Result<PathBuf> {
@@ -107,90 +183,71 @@ fn handle_check(
 ) -> Result<()> {
     let repo_root = get_repo_root()?;
     let registry = SubsystemRegistry::builtin();
-    let script_path = repo_root.join("scripts").join("check-drift");
-
-    if !script_path.exists() {
-        bail!(
-            "Drift detection script not found at {}. \
-             Make sure you're running from the bootc repository.",
-            script_path.display()
-        );
-    }
-
-    let mut cmd = Command::new("python3");
-    cmd.arg(&script_path);
-    cmd.current_dir(&repo_root);
-
-    // Add format flag
-    match format {
-        OutputFormat::Json => {
-            cmd.arg("--json");
-        }
-        OutputFormat::Human => {}
-    }
-
-    // Add no-host flag
     if no_host {
-        cmd.arg("--no-host");
+        Output::warning("--no-host has no effect for native drift detection.");
     }
 
-    // Add category filter (the Python script doesn't support this yet, but we prepare for it)
-    if let Some(cat) = &category {
-        let ids = cat.subsystem_ids(&registry);
-        let invalid_ids: Vec<_> = ids
-            .iter()
-            .copied()
-            .filter(|id| !registry.is_valid_driftable(id))
-            .collect();
-
-        if !invalid_ids.is_empty() {
-            bail!(
-                "Drift category '{:?}' maps to subsystems without drift support: {}",
-                cat,
-                invalid_ids.join(", ")
-            );
+    let mut ctx = SubsystemContext::with_repo_root(repo_root.clone());
+    if !ctx.system_manifest_dir.exists() {
+        let repo_manifests = repo_root.join("manifests");
+        if repo_manifests.exists() {
+            ctx.system_manifest_dir = repo_manifests;
         }
     }
 
-    if let Some(cat) = &category
-        && !matches!(cat, DriftCategory::All)
-    {
-        Output::warning(format!(
-            "Category filter '{:?}' is not yet supported. Running full drift check.",
-            cat
-        ));
-    }
+    let subsystems = match category {
+        Some(cat) => {
+            let ids = cat.subsystem_ids(&registry);
+            let invalid_ids: Vec<_> = ids
+                .iter()
+                .copied()
+                .filter(|id| !registry.is_valid_driftable(id))
+                .collect();
+
+            if !invalid_ids.is_empty() {
+                bail!(
+                    "Drift category '{:?}' maps to subsystems without drift support: {}",
+                    cat,
+                    invalid_ids.join(", ")
+                );
+            }
+
+            registry.filtered(Some(ids.as_slice()), &[])
+        }
+        None => registry.driftable(),
+    };
 
     Output::info("Running drift detection...");
     Output::info(format!("Repository: {}", repo_root.display()));
     println!();
 
-    let status = cmd
-        .status()
-        .with_context(|| format!("Failed to run {}", script_path.display()))?;
-
-    match status.code() {
-        Some(0) => {
-            println!();
-            Output::success("No drift detected (or only optional-tier changes).");
-            Ok(())
-        }
-        Some(1) => {
-            println!();
-            Output::warning("Drift detected in baked or bootstrapped tiers.");
-            Output::info("Review the output above to see what has drifted.");
-            Ok(())
-        }
-        Some(2) => {
-            bail!("Error collecting system state. Check the output above for details.");
-        }
-        Some(code) => {
-            bail!("Drift check exited with unexpected code: {}", code);
-        }
-        None => {
-            bail!("Drift check was terminated by a signal.");
+    let mut reports = Vec::new();
+    for subsystem in subsystems {
+        if let Some(report) = subsystem.drift(&ctx)? {
+            reports.push(SubsystemDrift {
+                id: subsystem.id(),
+                name: subsystem.name(),
+                report,
+            });
         }
     }
+
+    let has_drift = reports.iter().any(|r| r.report.has_drift());
+
+    match format {
+        OutputFormat::Json => print_json(&reports, has_drift)?,
+        OutputFormat::Human => print_human(&reports, has_drift),
+    }
+
+    if has_drift {
+        println!();
+        Output::warning("Drift detected. Review the output above to see what has drifted.");
+    } else {
+        println!();
+        Output::success("No drift detected.");
+    }
+
+    Ok(())
 }
 
 fn handle_status() -> Result<()> {

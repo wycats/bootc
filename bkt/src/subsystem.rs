@@ -109,6 +109,13 @@ pub trait Subsystem: Send + Sync {
         Ok(None)
     }
 
+    /// Calculate drift between manifest and system state.
+    ///
+    /// Returns `Ok(None)` if this subsystem doesn't support drift detection.
+    fn drift(&self, _ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
+        Ok(None)
+    }
+
     /// Returns true if this subsystem supports capture operations.
     fn supports_capture(&self) -> bool {
         true
@@ -131,6 +138,24 @@ pub trait SubsystemStatus: std::fmt::Debug + Send + Sync {
     fn synced(&self) -> usize;
     fn pending(&self) -> usize;
     fn untracked(&self) -> usize;
+}
+
+#[derive(Debug, Default)]
+pub struct DriftReport {
+    /// In manifest, should exist
+    pub expected: Vec<String>,
+    /// Actually on system
+    pub actual: Vec<String>,
+    /// In manifest but not on system
+    pub missing: Vec<String>,
+    /// On system but not in manifest
+    pub extra: Vec<String>,
+}
+
+impl DriftReport {
+    pub fn has_drift(&self) -> bool {
+        !self.missing.is_empty() || !self.extra.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -156,6 +181,28 @@ impl SubsystemStatus for BasicSubsystemStatus {
 
     fn untracked(&self) -> usize {
         self.untracked
+    }
+}
+
+fn build_drift_report(mut expected: Vec<String>, mut actual: Vec<String>) -> DriftReport {
+    use std::collections::HashSet;
+
+    let expected_set: HashSet<String> = expected.iter().cloned().collect();
+    let actual_set: HashSet<String> = actual.iter().cloned().collect();
+
+    let mut missing: Vec<String> = expected_set.difference(&actual_set).cloned().collect();
+    let mut extra: Vec<String> = actual_set.difference(&expected_set).cloned().collect();
+
+    expected.sort();
+    actual.sort();
+    missing.sort();
+    extra.sort();
+
+    DriftReport {
+        expected,
+        actual,
+        missing,
+        extra,
     }
 }
 
@@ -494,6 +541,22 @@ impl Subsystem for ExtensionSubsystem {
         })))
     }
 
+    fn drift(&self, ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
+        let system =
+            GnomeExtensionsManifest::load(&ctx.system_manifest_path("gnome-extensions.json"))?;
+        let user = GnomeExtensionsManifest::load(&ctx.user_manifest_path("gnome-extensions.json"))?;
+        let merged = GnomeExtensionsManifest::merged(&system, &user);
+
+        let expected: Vec<String> = merged
+            .extensions
+            .iter()
+            .map(|s| s.id().to_string())
+            .collect();
+        let actual = get_enabled_extensions();
+
+        Ok(Some(build_drift_report(expected, actual)))
+    }
+
     fn supports_drift(&self) -> bool {
         true
     }
@@ -591,6 +654,17 @@ impl Subsystem for FlatpakSubsystem {
             pending,
             untracked,
         })))
+    }
+
+    fn drift(&self, ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
+        let system = FlatpakAppsManifest::load(&ctx.system_manifest_path("flatpak-apps.json"))?;
+        let user = FlatpakAppsManifest::load(&ctx.user_manifest_path("flatpak-apps.json"))?;
+        let merged = FlatpakAppsManifest::merged(&system, &user);
+
+        let expected: Vec<String> = merged.apps.iter().map(|a| a.id.clone()).collect();
+        let actual: Vec<String> = get_installed_flatpaks().into_iter().map(|f| f.id).collect();
+
+        Ok(Some(build_drift_report(expected, actual)))
     }
 
     fn supports_drift(&self) -> bool {
@@ -720,6 +794,44 @@ impl Subsystem for GsettingSubsystem {
         })))
     }
 
+    fn drift(&self, ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
+        let system = GSettingsManifest::load(&ctx.system_manifest_path("gsettings.json"))?;
+        let user = GSettingsManifest::load(&ctx.user_manifest_path("gsettings.json"))?;
+        let merged = GSettingsManifest::merged(&system, &user);
+
+        let mut report = DriftReport::default();
+
+        for setting in &merged.settings {
+            let key = format!("{}.{}", setting.schema, setting.key);
+            let expected_entry = format!("{} = {}", key, setting.value);
+            report.expected.push(expected_entry);
+
+            match get_gsetting(&setting.schema, &setting.key) {
+                Some(current) => {
+                    report.actual.push(format!("{} = {}", key, current));
+                    if current != setting.value {
+                        report.missing.push(format!(
+                            "{} (expected {}, actual {})",
+                            key, setting.value, current
+                        ));
+                    }
+                }
+                None => {
+                    report.missing.push(format!(
+                        "{} (expected {}, actual <unset>)",
+                        key, setting.value
+                    ));
+                }
+            }
+        }
+
+        report.expected.sort();
+        report.actual.sort();
+        report.missing.sort();
+
+        Ok(Some(report))
+    }
+
     fn supports_capture(&self) -> bool {
         // GSettings capture requires schema argument
         false
@@ -805,6 +917,17 @@ impl Subsystem for ShimSubsystem {
         })))
     }
 
+    fn drift(&self, ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
+        let system = ShimsManifest::load(&ctx.system_manifest_path("host-shims.json"))?;
+        let user = ShimsManifest::load(&ctx.user_manifest_path("host-shims.json"))?;
+        let merged = ShimsManifest::merged(&system, &user);
+
+        let expected: Vec<String> = merged.shims.iter().map(|s| s.name.clone()).collect();
+        let actual = get_installed_shims();
+
+        Ok(Some(build_drift_report(expected, actual)))
+    }
+
     fn supports_capture(&self) -> bool {
         false
     }
@@ -816,8 +939,28 @@ impl Subsystem for ShimSubsystem {
 
 /// Get the shims directory.
 fn shims_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/home".to_string());
-    PathBuf::from(home).join(".local/bin")
+    ShimsManifest::shims_dir()
+}
+
+fn get_installed_shims() -> Vec<String> {
+    let dir = shims_dir();
+    if !dir.exists() {
+        return Vec::new();
+    }
+
+    let mut shims = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            if let Ok(file_type) = entry.file_type()
+                && file_type.is_file()
+                && let Some(name) = entry.file_name().to_str()
+            {
+                shims.push(name.to_string());
+            }
+        }
+    }
+
+    shims
 }
 
 impl Manifest for ShimsManifest {
@@ -969,6 +1112,18 @@ impl Subsystem for SystemSubsystem {
         Ok(None)
     }
 
+    fn drift(&self, ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
+        let system =
+            SystemPackagesManifest::load(&ctx.system_manifest_path("system-packages.json"))?;
+        let user = SystemPackagesManifest::load(&ctx.user_manifest_path("system-packages.json"))?;
+        let merged = SystemPackagesManifest::merged(&system, &user);
+
+        let expected = merged.packages;
+        let actual = get_layered_packages();
+
+        Ok(Some(build_drift_report(expected, actual)))
+    }
+
     fn supports_sync(&self) -> bool {
         // System packages cannot be synced at runtime
         false
@@ -983,6 +1138,44 @@ impl Manifest for SystemPackagesManifest {
     fn to_json(&self) -> Result<String> {
         Ok(serde_json::to_string_pretty(self)?)
     }
+}
+
+fn get_layered_packages() -> Vec<String> {
+    let output = run_command("rpm-ostree", &["status", "--json"]);
+
+    let output = match output {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+
+    let json: serde_json::Value = match serde_json::from_slice(&output.stdout) {
+        Ok(j) => j,
+        Err(_) => return Vec::new(),
+    };
+
+    let deployments = match json.get("deployments").and_then(|d| d.as_array()) {
+        Some(d) => d,
+        None => return Vec::new(),
+    };
+
+    let booted = match deployments
+        .iter()
+        .find(|d| d.get("booted").and_then(|b| b.as_bool()).unwrap_or(false))
+    {
+        Some(b) => b,
+        None => return Vec::new(),
+    };
+
+    booted
+        .get("requested-packages")
+        .or_else(|| booted.get("requested_packages"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 // ============================================================================
