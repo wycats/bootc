@@ -10,22 +10,16 @@
 //! 4. Back to `bkt status`
 
 use crate::context::run_command;
-use crate::manifest::{
-    FlatpakAppsManifest, GSettingsManifest, GnomeExtensionsManifest, ShimsManifest,
-    changelog::ChangelogManager,
-};
+use crate::manifest::changelog::ChangelogManager;
 use crate::output::Output;
 use crate::repo::find_repo_path;
-use crate::subsystem::{SubsystemContext, SubsystemRegistry};
+use crate::subsystem::{SubsystemContext, SubsystemRegistry, SubsystemStatus};
 use anyhow::Result;
 use clap::{Args, ValueEnum};
 use owo_colors::OwoColorize;
-use serde::de::DeserializeOwned;
 use std::fs;
 use std::path::PathBuf;
 use tracing::debug;
-
-use super::flatpak::get_installed_flatpaks;
 
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
 pub enum OutputFormat {
@@ -110,7 +104,7 @@ pub struct ManifestStatus {
     pub skel: SkelStatus,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, Default)]
 pub struct FlatpakStatus {
     total: usize,
     installed: usize,
@@ -119,7 +113,7 @@ pub struct FlatpakStatus {
     untracked: usize,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, Default)]
 pub struct ExtensionStatus {
     total: usize,
     installed: usize,
@@ -128,7 +122,7 @@ pub struct ExtensionStatus {
     untracked: usize,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, Default)]
 pub struct GSettingStatus {
     total: usize,
     applied: usize,
@@ -137,7 +131,7 @@ pub struct GSettingStatus {
     drifted: usize,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, Default)]
 pub struct ShimStatus {
     total: usize,
     synced: usize,
@@ -228,20 +222,6 @@ fn get_os_status() -> Option<OsStatus> {
     })
 }
 
-/// Get list of enabled GNOME extension UUIDs
-fn get_enabled_extensions() -> Vec<String> {
-    let output = run_command("gnome-extensions", &["list", "--enabled"]);
-
-    match output {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
 /// Get skel directory path.
 fn skel_dir() -> Option<PathBuf> {
     find_repo_path().ok().map(|p| p.join("skel"))
@@ -275,41 +255,22 @@ fn skel_differs(skel_path: &PathBuf, home_path: &PathBuf) -> bool {
     skel_content != home_content
 }
 
-/// Check if a GNOME extension is installed.
-fn is_extension_installed(uuid: &str) -> bool {
-    run_command("gnome-extensions", &["info", uuid])
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
-
-/// Get current value of a gsetting.
-fn get_gsetting(schema: &str, key: &str) -> Option<String> {
-    run_command("gsettings", &["get", schema, key])
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-}
-
-/// Get the shims directory.
-fn shims_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/home".to_string());
-    PathBuf::from(home).join(".local/bin")
-}
-
-fn load_subsystem_manifest<T>(
+fn load_subsystem_status(
     registry: &SubsystemRegistry,
     ctx: &SubsystemContext,
-    subsystem_id: &str,
-) -> T
-where
-    T: DeserializeOwned + Default,
-{
-    registry
-        .find(subsystem_id)
-        .and_then(|subsystem| subsystem.load_manifest(ctx).ok())
-        .and_then(|manifest| manifest.to_json().ok())
-        .and_then(|json| serde_json::from_str(&json).ok())
-        .unwrap_or_default()
+    statuses: &mut std::collections::HashMap<&'static str, Box<dyn SubsystemStatus>>,
+) {
+    for subsystem in registry.all() {
+        match subsystem.status(ctx) {
+            Ok(Some(status)) => {
+                statuses.insert(subsystem.id(), status);
+            }
+            Ok(None) => {}
+            Err(err) => {
+                debug!("Failed to get status for {}: {}", subsystem.id(), err);
+            }
+        }
+    }
 }
 
 pub fn run(args: StatusArgs) -> Result<()> {
@@ -318,121 +279,52 @@ pub fn run(args: StatusArgs) -> Result<()> {
     // Gather OS status (unless skipped)
     let os_status = if args.skip_os { None } else { get_os_status() };
 
-    // Get installed flatpaks for drift detection (use HashSet for O(1) lookup)
-    let installed_flatpaks: std::collections::HashSet<String> =
-        get_installed_flatpaks().into_iter().map(|f| f.id).collect();
-
     let registry = SubsystemRegistry::builtin();
     let subsystem_ctx = find_repo_path()
         .map(SubsystemContext::with_repo_root)
         .unwrap_or_default();
 
-    // Gather flatpak status
-    let flatpak_status = {
-        let merged: FlatpakAppsManifest =
-            load_subsystem_manifest(&registry, &subsystem_ctx, "flatpak");
+    let mut subsystem_statuses: std::collections::HashMap<&'static str, Box<dyn SubsystemStatus>> =
+        std::collections::HashMap::new();
+    load_subsystem_status(&registry, &subsystem_ctx, &mut subsystem_statuses);
 
-        let manifest_ids: std::collections::HashSet<_> =
-            merged.apps.iter().map(|a| a.id.as_str()).collect();
+    // Gather subsystem status
+    let flatpak_status = subsystem_statuses
+        .get("flatpak")
+        .map(|status| FlatpakStatus {
+            total: status.total(),
+            installed: status.synced(),
+            pending: status.pending(),
+            untracked: status.untracked(),
+        })
+        .unwrap_or_default();
 
-        let total = merged.apps.len();
-        let installed = merged
-            .apps
-            .iter()
-            .filter(|a| installed_flatpaks.contains(&a.id))
-            .count();
-        let pending = total - installed;
+    let extension_status = subsystem_statuses
+        .get("extension")
+        .map(|status| ExtensionStatus {
+            total: status.total(),
+            installed: status.synced(),
+            enabled: status.synced(),
+            untracked: status.untracked(),
+        })
+        .unwrap_or_default();
 
-        // Find untracked flatpaks (installed but not in manifest)
-        let untracked = installed_flatpaks
-            .iter()
-            .filter(|id| !manifest_ids.contains(id.as_str()))
-            .count();
+    let gsetting_status = subsystem_statuses
+        .get("gsetting")
+        .map(|status| GSettingStatus {
+            total: status.total(),
+            applied: status.synced(),
+            drifted: status.pending(),
+        })
+        .unwrap_or_default();
 
-        FlatpakStatus {
-            total,
-            installed,
-            pending,
-            untracked,
-        }
-    };
-
-    // Get enabled extensions for drift detection (use HashSet for O(1) lookup)
-    let enabled_extensions: std::collections::HashSet<String> =
-        get_enabled_extensions().into_iter().collect();
-
-    // Gather extension status
-    let extension_status = {
-        let merged: GnomeExtensionsManifest =
-            load_subsystem_manifest(&registry, &subsystem_ctx, "extension");
-
-        let manifest_uuids: std::collections::HashSet<_> =
-            merged.extensions.iter().map(|s| s.id()).collect();
-
-        let total = merged.extensions.len();
-        let installed = merged
-            .extensions
-            .iter()
-            .filter(|u| is_extension_installed(u.id()))
-            .count();
-        let enabled = merged
-            .extensions
-            .iter()
-            .filter(|u| enabled_extensions.contains(u.id()))
-            .count();
-
-        // Find untracked extensions (enabled but not in manifest)
-        let untracked = enabled_extensions
-            .iter()
-            .filter(|uuid| !manifest_uuids.contains(uuid.as_str()))
-            .count();
-
-        ExtensionStatus {
-            total,
-            installed,
-            enabled,
-            untracked,
-        }
-    };
-
-    // Gather gsettings status
-    let gsetting_status = {
-        let merged: GSettingsManifest =
-            load_subsystem_manifest(&registry, &subsystem_ctx, "gsetting");
-
-        let total = merged.settings.len();
-        let mut applied = 0;
-        let mut drifted = 0;
-
-        for s in &merged.settings {
-            match get_gsetting(&s.schema, &s.key) {
-                Some(current) if current == s.value => applied += 1,
-                Some(_) => drifted += 1, // Value differs from manifest
-                None => drifted += 1,    // Schema/key missing = needs sync
-            }
-        }
-
-        GSettingStatus {
-            total,
-            applied,
-            drifted,
-        }
-    };
-
-    // Gather shim status
-    let shim_status = {
-        let merged: ShimsManifest = load_subsystem_manifest(&registry, &subsystem_ctx, "shim");
-
-        let shims_dir = shims_dir();
-        let total = merged.shims.len();
-        let synced = merged
-            .shims
-            .iter()
-            .filter(|s| shims_dir.join(&s.name).exists())
-            .count();
-
-        ShimStatus { total, synced }
-    };
+    let shim_status = subsystem_statuses
+        .get("shim")
+        .map(|status| ShimStatus {
+            total: status.total(),
+            synced: status.synced(),
+        })
+        .unwrap_or_default();
 
     // Gather skel status
     let skel_status = {

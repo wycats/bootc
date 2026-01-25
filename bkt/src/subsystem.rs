@@ -102,6 +102,13 @@ pub trait Subsystem: Send + Sync {
     /// Returns `Ok(None)` if this subsystem doesn't support sync.
     fn sync(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>>;
 
+    /// Calculate subsystem status (manifest vs system).
+    ///
+    /// Returns `Ok(None)` if this subsystem doesn't support status.
+    fn status(&self, _ctx: &SubsystemContext) -> Result<Option<Box<dyn SubsystemStatus>>> {
+        Ok(None)
+    }
+
     /// Returns true if this subsystem supports capture operations.
     fn supports_capture(&self) -> bool {
         true
@@ -115,6 +122,40 @@ pub trait Subsystem: Send + Sync {
     /// Returns true if this subsystem supports drift detection.
     fn supports_drift(&self) -> bool {
         false
+    }
+}
+
+/// Status summary for a subsystem.
+pub trait SubsystemStatus: std::fmt::Debug + Send + Sync {
+    fn total(&self) -> usize;
+    fn synced(&self) -> usize;
+    fn pending(&self) -> usize;
+    fn untracked(&self) -> usize;
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BasicSubsystemStatus {
+    total: usize,
+    synced: usize,
+    pending: usize,
+    untracked: usize,
+}
+
+impl SubsystemStatus for BasicSubsystemStatus {
+    fn total(&self) -> usize {
+        self.total
+    }
+
+    fn synced(&self) -> usize {
+        self.synced
+    }
+
+    fn pending(&self) -> usize {
+        self.pending
+    }
+
+    fn untracked(&self) -> usize {
+        self.untracked
     }
 }
 
@@ -380,6 +421,7 @@ impl fmt::Debug for SubsystemRegistry {
 // ----------------------------------------------------------------------------
 
 use crate::commands::extension::{ExtensionCaptureCommand, ExtensionSyncCommand};
+use crate::context::run_command;
 use crate::manifest::GnomeExtensionsManifest;
 use crate::plan::Plannable;
 
@@ -420,8 +462,54 @@ impl Subsystem for ExtensionSubsystem {
         }
     }
 
+    fn status(&self, ctx: &SubsystemContext) -> Result<Option<Box<dyn SubsystemStatus>>> {
+        let system =
+            GnomeExtensionsManifest::load(&ctx.system_manifest_path("gnome-extensions.json"))?;
+        let user = GnomeExtensionsManifest::load(&ctx.user_manifest_path("gnome-extensions.json"))?;
+        let merged = GnomeExtensionsManifest::merged(&system, &user);
+
+        let enabled_extensions: std::collections::HashSet<String> =
+            get_enabled_extensions().into_iter().collect();
+        let manifest_uuids: std::collections::HashSet<_> =
+            merged.extensions.iter().map(|s| s.id()).collect();
+
+        let total = merged.extensions.len();
+        let synced = merged
+            .extensions
+            .iter()
+            .filter(|u| enabled_extensions.contains(u.id()))
+            .count();
+        let pending = total.saturating_sub(synced);
+
+        let untracked = enabled_extensions
+            .iter()
+            .filter(|uuid| !manifest_uuids.contains(uuid.as_str()))
+            .count();
+
+        Ok(Some(Box::new(BasicSubsystemStatus {
+            total,
+            synced,
+            pending,
+            untracked,
+        })))
+    }
+
     fn supports_drift(&self) -> bool {
         true
+    }
+}
+
+/// Get list of enabled GNOME extension UUIDs.
+fn get_enabled_extensions() -> Vec<String> {
+    let output = run_command("gnome-extensions", &["list", "--enabled"]);
+
+    match output {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        _ => Vec::new(),
     }
 }
 
@@ -435,7 +523,7 @@ impl Manifest for GnomeExtensionsManifest {
 // Flatpak Subsystem
 // ----------------------------------------------------------------------------
 
-use crate::commands::flatpak::{FlatpakCaptureCommand, FlatpakSyncCommand};
+use crate::commands::flatpak::{FlatpakCaptureCommand, FlatpakSyncCommand, get_installed_flatpaks};
 use crate::manifest::FlatpakAppsManifest;
 
 /// Flatpak applications subsystem.
@@ -472,6 +560,37 @@ impl Subsystem for FlatpakSubsystem {
         } else {
             Ok(Some(Box::new(plan)))
         }
+    }
+
+    fn status(&self, ctx: &SubsystemContext) -> Result<Option<Box<dyn SubsystemStatus>>> {
+        let system = FlatpakAppsManifest::load(&ctx.system_manifest_path("flatpak-apps.json"))?;
+        let user = FlatpakAppsManifest::load(&ctx.user_manifest_path("flatpak-apps.json"))?;
+        let merged = FlatpakAppsManifest::merged(&system, &user);
+
+        let installed_flatpaks: std::collections::HashSet<String> =
+            get_installed_flatpaks().into_iter().map(|f| f.id).collect();
+        let manifest_ids: std::collections::HashSet<_> =
+            merged.apps.iter().map(|a| a.id.as_str()).collect();
+
+        let total = merged.apps.len();
+        let synced = merged
+            .apps
+            .iter()
+            .filter(|a| installed_flatpaks.contains(&a.id))
+            .count();
+        let pending = total.saturating_sub(synced);
+
+        let untracked = installed_flatpaks
+            .iter()
+            .filter(|id| !manifest_ids.contains(id.as_str()))
+            .count();
+
+        Ok(Some(Box::new(BasicSubsystemStatus {
+            total,
+            synced,
+            pending,
+            untracked,
+        })))
     }
 
     fn supports_drift(&self) -> bool {
@@ -576,6 +695,31 @@ impl Subsystem for GsettingSubsystem {
         }
     }
 
+    fn status(&self, ctx: &SubsystemContext) -> Result<Option<Box<dyn SubsystemStatus>>> {
+        let system = GSettingsManifest::load(&ctx.system_manifest_path("gsettings.json"))?;
+        let user = GSettingsManifest::load(&ctx.user_manifest_path("gsettings.json"))?;
+        let merged = GSettingsManifest::merged(&system, &user);
+
+        let total = merged.settings.len();
+        let mut synced = 0;
+        let mut pending = 0;
+
+        for s in &merged.settings {
+            match get_gsetting(&s.schema, &s.key) {
+                Some(current) if current == s.value => synced += 1,
+                Some(_) => pending += 1,
+                None => pending += 1,
+            }
+        }
+
+        Ok(Some(Box::new(BasicSubsystemStatus {
+            total,
+            synced,
+            pending,
+            untracked: 0,
+        })))
+    }
+
     fn supports_capture(&self) -> bool {
         // GSettings capture requires schema argument
         false
@@ -584,6 +728,14 @@ impl Subsystem for GsettingSubsystem {
     fn supports_drift(&self) -> bool {
         true
     }
+}
+
+/// Get current value of a gsetting.
+fn get_gsetting(schema: &str, key: &str) -> Option<String> {
+    run_command("gsettings", &["get", schema, key])
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
 }
 
 impl Manifest for GSettingsManifest {
@@ -631,6 +783,28 @@ impl Subsystem for ShimSubsystem {
         }
     }
 
+    fn status(&self, ctx: &SubsystemContext) -> Result<Option<Box<dyn SubsystemStatus>>> {
+        let system = ShimsManifest::load(&ctx.system_manifest_path("host-shims.json"))?;
+        let user = ShimsManifest::load(&ctx.user_manifest_path("host-shims.json"))?;
+        let merged = ShimsManifest::merged(&system, &user);
+
+        let shims_dir = shims_dir();
+        let total = merged.shims.len();
+        let synced = merged
+            .shims
+            .iter()
+            .filter(|s| shims_dir.join(&s.name).exists())
+            .count();
+        let pending = total.saturating_sub(synced);
+
+        Ok(Some(Box::new(BasicSubsystemStatus {
+            total,
+            synced,
+            pending,
+            untracked: 0,
+        })))
+    }
+
     fn supports_capture(&self) -> bool {
         false
     }
@@ -638,6 +812,12 @@ impl Subsystem for ShimSubsystem {
     fn supports_drift(&self) -> bool {
         true
     }
+}
+
+/// Get the shims directory.
+fn shims_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/home".to_string());
+    PathBuf::from(home).join(".local/bin")
 }
 
 impl Manifest for ShimsManifest {
