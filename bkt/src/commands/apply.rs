@@ -9,7 +9,7 @@ use clap::Args;
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::plan::{CompositePlan, ExecuteContext, OperationProgress, Plan, PlanContext, Plannable};
-use crate::subsystem::SubsystemRegistry;
+use crate::subsystem::{SubsystemConfig, SubsystemRegistry};
 
 fn parse_syncable_subsystem(value: &str) -> Result<String, String> {
     let registry = SubsystemRegistry::builtin();
@@ -53,9 +53,6 @@ pub struct ApplyCommand {
     pub exclude: Vec<String>,
 
     /// Whether to prune unmanaged AppImages.
-    /// Note: This is currently not passed through the registry abstraction.
-    /// AppImage sync via registry uses the default (keep_unmanaged=false).
-    #[allow(dead_code)]
     pub prune_appimages: bool,
 }
 
@@ -90,10 +87,13 @@ impl Plannable for ApplyCommand {
     fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
         let mut composite = CompositePlan::new("Apply");
         let registry = SubsystemRegistry::builtin();
+        let config = SubsystemConfig {
+            appimage_prune: self.prune_appimages,
+        };
 
         for subsystem in registry.syncable() {
             if self.should_include_id(subsystem.id())
-                && let Some(plan) = subsystem.sync(ctx)?
+                && let Some(plan) = subsystem.sync(ctx, &config)?
             {
                 composite.add_boxed(plan);
             }

@@ -71,7 +71,11 @@ use crate::plan::{DynPlan, Plan, PlanContext};
 ///         Ok(if plan.is_empty() { None } else { Some(Box::new(plan)) })
 ///     }
 ///
-///     fn sync(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
+///     fn sync(
+///         &self,
+///         ctx: &PlanContext,
+///         _config: &SubsystemConfig,
+///     ) -> Result<Option<Box<dyn DynPlan>>> {
 ///         let plan = ExtensionSyncCommand.plan(ctx)?;
 ///         Ok(if plan.is_empty() { None } else { Some(Box::new(plan)) })
 ///     }
@@ -100,7 +104,8 @@ pub trait Subsystem: Send + Sync {
     /// Create a sync plan (manifest → system).
     ///
     /// Returns `Ok(None)` if this subsystem doesn't support sync.
-    fn sync(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>>;
+    fn sync(&self, ctx: &PlanContext, config: &SubsystemConfig)
+    -> Result<Option<Box<dyn DynPlan>>>;
 
     /// Calculate subsystem status (manifest vs system).
     ///
@@ -286,6 +291,16 @@ impl Default for SubsystemContext {
 pub trait Manifest: std::fmt::Debug + Send + Sync {
     /// Serialize to JSON for capture operations.
     fn to_json(&self) -> Result<String>;
+}
+
+// ============================================================================
+// Subsystem Configuration
+// ============================================================================
+
+#[derive(Debug, Default, Clone)]
+pub struct SubsystemConfig {
+    pub appimage_prune: bool,
+    // Future: other per-subsystem config
 }
 
 // ============================================================================
@@ -500,7 +515,11 @@ impl Subsystem for ExtensionSubsystem {
         }
     }
 
-    fn sync(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
+    fn sync(
+        &self,
+        ctx: &PlanContext,
+        _config: &SubsystemConfig,
+    ) -> Result<Option<Box<dyn DynPlan>>> {
         let plan = ExtensionSyncCommand.plan(ctx)?;
         if plan.is_empty() {
             Ok(None)
@@ -616,7 +635,11 @@ impl Subsystem for FlatpakSubsystem {
         }
     }
 
-    fn sync(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
+    fn sync(
+        &self,
+        ctx: &PlanContext,
+        _config: &SubsystemConfig,
+    ) -> Result<Option<Box<dyn DynPlan>>> {
         let plan = FlatpakSyncCommand.plan(ctx)?;
         if plan.is_empty() {
             Ok(None)
@@ -712,7 +735,11 @@ impl Subsystem for DistroboxSubsystem {
         }
     }
 
-    fn sync(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
+    fn sync(
+        &self,
+        ctx: &PlanContext,
+        _config: &SubsystemConfig,
+    ) -> Result<Option<Box<dyn DynPlan>>> {
         let plan = DistroboxSyncCommand.plan(ctx)?;
         if plan.is_empty() {
             Ok(None)
@@ -760,7 +787,11 @@ impl Subsystem for GsettingSubsystem {
         Ok(None)
     }
 
-    fn sync(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
+    fn sync(
+        &self,
+        ctx: &PlanContext,
+        _config: &SubsystemConfig,
+    ) -> Result<Option<Box<dyn DynPlan>>> {
         let plan = GsettingApplyCommand.plan(ctx)?;
         if plan.is_empty() {
             Ok(None)
@@ -886,7 +917,11 @@ impl Subsystem for ShimSubsystem {
         Ok(None)
     }
 
-    fn sync(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
+    fn sync(
+        &self,
+        ctx: &PlanContext,
+        _config: &SubsystemConfig,
+    ) -> Result<Option<Box<dyn DynPlan>>> {
         let plan = ShimSyncCommand.plan(ctx)?;
         if plan.is_empty() {
             Ok(None)
@@ -1003,9 +1038,13 @@ impl Subsystem for AppImageSubsystem {
         }
     }
 
-    fn sync(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
+    fn sync(
+        &self,
+        ctx: &PlanContext,
+        config: &SubsystemConfig,
+    ) -> Result<Option<Box<dyn DynPlan>>> {
         let cmd = AppImageSyncCommand {
-            keep_unmanaged: false,
+            keep_unmanaged: !config.appimage_prune,
         };
         let plan = cmd.plan(ctx)?;
         if plan.is_empty() {
@@ -1056,7 +1095,11 @@ impl Subsystem for HomebrewSubsystem {
         }
     }
 
-    fn sync(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
+    fn sync(
+        &self,
+        ctx: &PlanContext,
+        _config: &SubsystemConfig,
+    ) -> Result<Option<Box<dyn DynPlan>>> {
         let plan = HomebrewSyncCommand.plan(ctx)?;
         if plan.is_empty() {
             Ok(None)
@@ -1107,7 +1150,11 @@ impl Subsystem for SystemSubsystem {
         }
     }
 
-    fn sync(&self, _ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
+    fn sync(
+        &self,
+        _ctx: &PlanContext,
+        _config: &SubsystemConfig,
+    ) -> Result<Option<Box<dyn DynPlan>>> {
         // System packages are synced at image build time, not runtime
         Ok(None)
     }
