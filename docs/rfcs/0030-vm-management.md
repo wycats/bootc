@@ -48,7 +48,9 @@ Example manifest:
       "graphics": "spice",
       "iso_sources": [
         { "path": "~/Downloads/Win11_25H2_English_x64.iso" },
-        { "url": "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso" }
+        {
+          "url": "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso"
+        }
       ]
     }
   }
@@ -232,5 +234,4 @@ Example manifest:
 - Should `iso_sources` be optional or required for initial provisioning only?
 - Do we want a default network if `network` is omitted?
 - Should we support metadata like `autostart` or `cpu_model` later?
-
 ````

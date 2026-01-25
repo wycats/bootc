@@ -1,7 +1,7 @@
 ````markdown
 # RFC-0029: Subsystem Dependencies
 
-- **Status**: Draft
+- **Status**: Implemented
 - **Created**: 2026-01-24
 - **Depends on**: RFC-0028
 
@@ -59,12 +59,14 @@ fn phase(&self) -> ExecutionPhase {
 A small, fixed set of phases with explicit ordering. This is easy to understand and implement, and mirrors the existing operational ordering in `bootc-bootstrap`.
 
 **Pros**
+
 - Simple mental model
 - Minimal API surface
 - Deterministic ordering
 - Backward compatible via default phase
 
 **Cons**
+
 - Limited granularity
 - No expressible cross-phase dependencies beyond the phase boundary
 
@@ -73,10 +75,12 @@ A small, fixed set of phases with explicit ordering. This is easy to understand 
 Subsystems declare dependencies on other subsystems, producing a DAG.
 
 **Pros**
+
 - Fine-grained control
 - Naturally models complex relationships
 
 **Cons**
+
 - More complex API
 - Requires cycle detection from day one
 - Harder to keep stable across plugin evolution
@@ -86,9 +90,11 @@ Subsystems declare dependencies on other subsystems, producing a DAG.
 Order determined by runtime observation or subsystem registration order.
 
 **Pros**
+
 - No new API
 
 **Cons**
+
 - Non-deterministic and fragile
 - Hard to debug
 
@@ -159,5 +165,4 @@ The phase model does not introduce new execution capabilities; it only changes o
 - Should phase ordering be configurable for advanced users?
 - Do plugin subsystems need a way to declare their phase in `plugin.json`?
 - Should we allow explicit phase-level `after` constraints for built-in subsystems?
-
 ````
