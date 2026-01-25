@@ -1,6 +1,6 @@
 # RFC-0027: Subsystem Trait Migration Cleanup
 
-- **Status**: Proposed
+- **Status**: Implemented (Phases 1-5 complete)
 - **Created**: 2026-01-24
 - **Depends On**: RFC-0026
 
@@ -23,7 +23,8 @@ However, vestiges of the old architecture remain:
 - **Parallel domain definitions**: `ChangeDomain` and `DriftCategory` duplicate subsystem IDs
 
 This creates maintenance burden and risk of divergence. For example, adding a new subsystem requires updating:
-- `SubsystemRegistry::builtin()` 
+
+- `SubsystemRegistry::builtin()`
 - `CaptureSubsystem` enum (if capturable)
 - `Subsystem` enum (if syncable)
 - `ChangeDomain` enum (if used in local changes)
@@ -33,7 +34,9 @@ The goal is **one place to add a new subsystem**: the registry.
 
 ## Implementation Plan
 
-### Phase 1: Remove Vestigial Enums
+### Phase 1: Remove Vestigial Enums ✅
+
+**Status**: Complete
 
 Replace `CaptureSubsystem` and `Subsystem` enums with dynamic validation against the registry.
 
@@ -106,7 +109,7 @@ pub struct CaptureArgs {
 fn parse_capturable_subsystem(s: &str) -> Result<String, String> {
     let registry = SubsystemRegistry::builtin();
     let capturable_ids: Vec<&str> = registry.capturable().iter().map(|s| s.id()).collect();
-    
+
     if capturable_ids.contains(&s) {
         Ok(s.to_string())
     } else {
@@ -175,7 +178,9 @@ Similarly for `apply.rs` with `parse_syncable_subsystem`.
 
 ---
 
-### Phase 2: Unify status.rs Manifest Loading
+### Phase 2: Unify status.rs Manifest Loading ✅
+
+**Status**: Complete
 
 Replace duplicated load/merge patterns with registry-based loading.
 
@@ -186,6 +191,7 @@ Replace duplicated load/merge patterns with registry-based loading.
 Four duplicated patterns exist:
 
 1. **Flatpak** (lines 298-301):
+
 ```rust
 let system = FlatpakAppsManifest::load_system().unwrap_or_default();
 let user = FlatpakAppsManifest::load_user().unwrap_or_default();
@@ -193,6 +199,7 @@ let merged = FlatpakAppsManifest::merged(&system, &user);
 ```
 
 2. **Extensions** (lines 321-323):
+
 ```rust
 let system = GnomeExtensionsManifest::load_system().unwrap_or_default();
 let user = GnomeExtensionsManifest::load_user().unwrap_or_default();
@@ -200,6 +207,7 @@ let merged = GnomeExtensionsManifest::merged(&system, &user);
 ```
 
 3. **GSettings** (lines 346-348):
+
 ```rust
 let system = GSettingsManifest::load_system().unwrap_or_default();
 let user = GSettingsManifest::load_user().unwrap_or_default();
@@ -207,6 +215,7 @@ let merged = GSettingsManifest::merged(&system, &user);
 ```
 
 4. **Shims** (lines 402-404):
+
 ```rust
 let system = ShimsManifest::load_system().unwrap_or_default();
 let user = ShimsManifest::load_user().unwrap_or_default();
@@ -230,12 +239,12 @@ pub fn run(args: StatusArgs) -> Result<()> {
             .expect("flatpak subsystem not found")
             .load_manifest(&ctx)
             .unwrap_or_else(|_| Box::new(FlatpakAppsManifest::default()));
-        
+
         // Downcast to concrete type for status calculation
         let manifest = manifest.as_any()
             .downcast_ref::<FlatpakAppsManifest>()
             .expect("flatpak manifest type mismatch");
-        
+
         // ... existing status calculation using manifest.apps
     };
     // ... similar for other subsystems
@@ -247,6 +256,7 @@ This requires adding `as_any()` to the `Manifest` trait for downcasting.
 #### Steps
 
 1. **Extend Manifest trait** in `bkt/src/subsystem.rs`:
+
    ```rust
    pub trait Manifest: std::fmt::Debug + Send + Sync {
        fn to_json(&self) -> Result<String>;
@@ -255,6 +265,7 @@ This requires adding `as_any()` to the `Manifest` trait for downcasting.
    ```
 
 2. **Implement as_any** for each manifest type in subsystem.rs (add to each `impl Manifest for XxxManifest`):
+
    ```rust
    fn as_any(&self) -> &dyn std::any::Any {
        self
@@ -262,6 +273,7 @@ This requires adding `as_any()` to the `Manifest` trait for downcasting.
    ```
 
 3. **Add type aliases or helper functions** for cleaner downcasting:
+
    ```rust
    // In subsystem.rs
    impl SubsystemRegistry {
@@ -292,7 +304,7 @@ A cleaner approach is to add a `status()` method to the `Subsystem` trait:
 ```rust
 pub trait Subsystem: Send + Sync {
     // ... existing methods ...
-    
+
     /// Get status for this subsystem (for `bkt status` command).
     fn status(&self, ctx: &SubsystemContext) -> Result<Box<dyn SubsystemStatus>>;
 }
@@ -317,7 +329,9 @@ This moves status calculation into each subsystem, making the code more cohesive
 
 ---
 
-### Phase 3: Unify local.rs Manifest Loading
+### Phase 3: Unify local.rs Manifest Loading ✅
+
+**Status**: Complete
 
 The `local.rs` file loads manifests when applying changes to create PRs.
 
@@ -328,26 +342,31 @@ The `local.rs` file loads manifests when applying changes to create PRs.
 Each `apply_*_changes` function loads its own manifest:
 
 1. **apply_flatpak_changes** (line 363):
+
    ```rust
    let mut manifest = FlatpakAppsManifest::load(&manifest_path)?;
    ```
 
 2. **apply_extension_changes** (line 431):
+
    ```rust
    let mut manifest = GnomeExtensionsManifest::load(&manifest_path)?;
    ```
 
 3. **apply_gsetting_changes** (line 454):
+
    ```rust
    let mut manifest = GSettingsManifest::load(&manifest_path)?;
    ```
 
 4. **apply_shim_changes** (line 497):
+
    ```rust
    let mut manifest = ShimsManifest::load(&manifest_path)?;
    ```
 
 5. **apply_dnf_changes** (line 522):
+
    ```rust
    let mut manifest = SystemPackagesManifest::load(&manifest_path)?;
    ```
@@ -360,6 +379,7 @@ Each `apply_*_changes` function loads its own manifest:
 #### Target State
 
 These functions load from the **repo** manifests directory (not system/user merged), so they're slightly different from the status.rs case. However, they could still benefit from registry integration for:
+
 - Consistent path resolution via `SubsystemContext::repo_manifest_path()`
 - Future extensibility (e.g., validation)
 
@@ -380,7 +400,8 @@ fn apply_flatpak_changes(
    - Create `SubsystemContext::with_repo_root(repo_path)` early
    - Pass `&ctx` to each `apply_*_changes` function
 
-2. **Update apply_* function signatures**:
+2. **Update apply\_\* function signatures**:
+
    ```rust
    fn apply_flatpak_changes(
        changes: &[&EphemeralChange],
@@ -401,7 +422,9 @@ fn apply_flatpak_changes(
 
 ---
 
-### Phase 4: Connect ChangeDomain to Registry
+### Phase 4: Connect ChangeDomain to Registry ✅
+
+**Status**: Complete
 
 The `ChangeDomain` enum duplicates subsystem identifiers.
 
@@ -451,7 +474,7 @@ impl ChangeDomain {
             ChangeDomain::AppImage => "appimage",
         }
     }
-    
+
     pub fn is_registered(&self) -> bool {
         SubsystemRegistry::builtin().find(self.subsystem_id()).is_some()
     }
@@ -505,7 +528,9 @@ pub struct EphemeralChange {
 
 ---
 
-### Phase 5: Connect DriftCategory to Registry
+### Phase 5: Connect DriftCategory to Registry ✅
+
+**Status**: Complete
 
 The `DriftCategory` enum defines which subsystems can be drift-checked.
 
@@ -545,11 +570,13 @@ if let Some(cat) = &category
 There are two approaches:
 
 **Option A: Keep delegation to Python** (minimal change)
+
 - Add `supports_drift()` method to `Subsystem` trait
 - Keep `DriftCategory` enum but add mapping to subsystem IDs
 - Pass category to Python script when implementing filtering
 
 **Option B: Native Rust drift checking** (larger scope)
+
 - Add `drift(&self, ctx: &SubsystemContext) -> Result<DriftReport>` to `Subsystem` trait
 - Each subsystem implements its own drift detection
 - Remove Python script dependency
@@ -559,6 +586,7 @@ There are two approaches:
 #### Steps (Option A)
 
 1. **Add supports_drift() to Subsystem trait** in subsystem.rs:
+
    ```rust
    fn supports_drift(&self) -> bool {
        false  // Default: subsystems opt-in to drift detection
@@ -571,6 +599,7 @@ There are two approaches:
    - `SystemSubsystem::supports_drift() -> true`
 
 3. **Add registry method**:
+
    ```rust
    pub fn driftable(&self) -> Vec<&dyn Subsystem> {
        self.subsystems
@@ -582,6 +611,7 @@ There are two approaches:
    ```
 
 4. **Add subsystem_id() to DriftCategory**:
+
    ```rust
    impl DriftCategory {
        pub fn subsystem_ids(&self) -> Vec<&'static str> {
@@ -626,13 +656,13 @@ Add a meta-test that validates all subsystem enumerations are in sync:
 #[test]
 fn test_subsystem_registry_completeness() {
     let registry = SubsystemRegistry::builtin();
-    
+
     // All capturable subsystems have valid IDs
     for subsystem in registry.capturable() {
         assert!(!subsystem.id().is_empty());
         assert!(registry.find(subsystem.id()).is_some());
     }
-    
+
     // All syncable subsystems have valid IDs
     for subsystem in registry.syncable() {
         assert!(!subsystem.id().is_empty());
@@ -660,19 +690,15 @@ Execute phases sequentially, with each phase as a separate commit:
 1. **Phase 1** (Remove Vestigial Enums): ~2 hours
    - Highest impact, removes most duplicated code
    - Breaking change to internal API, but CLI unchanged
-   
 2. **Phase 2** (Unify status.rs): ~1.5 hours
    - Requires Manifest trait extension
    - Good candidate for pair review
-   
 3. **Phase 3** (Unify local.rs): ~1 hour
    - Straightforward threading of SubsystemContext
    - Low risk
-   
 4. **Phase 4** (ChangeDomain): ~0.5 hours
    - Non-breaking addition of methods
    - Add validation test
-   
 5. **Phase 5** (DriftCategory): ~0.5 hours
    - Non-breaking addition of methods
    - Prepares for future native drift checking
