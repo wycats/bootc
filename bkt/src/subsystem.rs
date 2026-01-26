@@ -400,11 +400,7 @@ impl SubsystemRegistry {
             ExecutionPhase::Configuration => 2,
         };
 
-        if reverse {
-            2 - rank
-        } else {
-            rank
-        }
+        if reverse { 2 - rank } else { rank }
     }
 
     /// Get subsystems by ID filter.
@@ -1390,7 +1386,14 @@ mod tests {
 
         assert_eq!(
             ids,
-            vec!["extension", "flatpak", "appimage", "homebrew", "system", "distrobox"]
+            vec![
+                "extension",
+                "flatpak",
+                "appimage",
+                "homebrew",
+                "system",
+                "distrobox"
+            ]
         );
     }
 
