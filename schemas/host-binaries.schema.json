@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Host Binaries Manifest",
+  "description": "Manifest for binaries installed via fetchbin",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference"
+    },
+    "binaries": {
+      "type": "array",
+      "description": "List of binary specifications to install",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the binary"
+          },
+          "source": {
+            "type": "string",
+            "description": "Source specification (e.g., npm:turbo, cargo:ripgrep, github:owner/repo)"
+          },
+          "version": {
+            "type": "string",
+            "description": "Version requirement (optional, defaults to latest)"
+          },
+          "bin": {
+            "type": "string",
+            "description": "Specific binary name for multi-binary packages"
+          },
+          "asset": {
+            "type": "string",
+            "description": "Asset pattern for GitHub releases"
+          }
+        },
+        "required": ["name", "source"]
+      }
+    }
+  },
+  "required": ["binaries"]
+}
