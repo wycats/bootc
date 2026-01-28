@@ -39,7 +39,7 @@ Phase 4 closes these fidelity gaps.
 
 ## 🔥 Urgent: Distrobox Live Capture
 
-**Status:** Blocking workflow usability  
+**Status:** ✅ Complete  
 **Priority:** P0 - Do immediately after PR #78 merges
 
 ### Problem
@@ -68,25 +68,25 @@ bkt distrobox capture --packages bootc-dev
 
 ### Existing Infrastructure (ready to reuse)
 
-| Component | Location | Purpose |
-|-----------|----------|---------|
+| Component                       | Location                            | Purpose                      |
+| ------------------------------- | ----------------------------------- | ---------------------------- |
 | `extract_packages_from_image()` | `bkt/src/manifest/build_info.rs:94` | Runs `rpm -qa` in containers |
-| `packages` field | `bkt/src/manifest/distrobox.rs:34` | Already in schema |
-| `run_command()` | `bkt/src/commands/delegation.rs` | Host command delegation |
+| `packages` field                | `bkt/src/manifest/distrobox.rs:34`  | Already in schema            |
+| `run_command()`                 | `bkt/src/commands/delegation.rs`    | Host command delegation      |
 
 ### Implementation Approach
 
 1. Run `distrobox enter CONTAINER -- rpm -qa` → current packages
-2. Run `podman run --rm IMAGE rpm -qa` → base image packages  
+2. Run `podman run --rm IMAGE rpm -qa` → base image packages
 3. Compute diff = user-installed packages
 4. Update manifest's `packages` field
 
 ### Deliverables
 
-- [ ] Add `capture_container_packages(name: &str)` function
-- [ ] Add `--packages` flag to `bkt distrobox capture`
-- [ ] Diff against base image to find user-installed packages only
-- [ ] Update manifest with captured packages
+- [x] Add `capture_container_packages(name: &str)` function
+- [x] Add `--packages` flag to `bkt distrobox capture`
+- [x] Diff against base image to find user-installed packages only
+- [x] Update manifest with captured packages
 
 ### UX Improvements (Quality Backlog)
 
@@ -97,19 +97,478 @@ bkt distrobox capture --packages bootc-dev
 
 ## Overview
 
-| ID  | Item                                                            | Size | Deps | Status      |
-| --- | --------------------------------------------------------------- | ---- | ---- | ----------- |
-| 0   | [Distrobox Live Capture](#-urgent-distrobox-live-capture)       | M    | —    | **Urgent**  |
-| 1   | [Extension Enabled State](#1-extension-enabled-state)           | M    | —    | Not Started |
-| 2   | [Flatpak Override Capture](#2-flatpak-override-capture)         | M    | —    | Not Started |
-| 3   | [Host Package Install](#3-host-package-install)                 | L    | —    | Not Started |
-| 4   | [Dev Command Execution](#4-dev-command-execution)               | M    | —    | Not Started |
-| 5   | [GSettings Auto-Discovery](#5-gsettings-auto-discovery)         | M    | —    | Not Started |
-| 6   | [Upstream Dependency Tracking](#6-upstream-dependency-tracking) | XL   | —    | Not Started |
-| 7   | [Drift Resolution](#7-drift-resolution)                         | M    | 1, 2 | Not Started |
-| 8   | [Dev Toolchain Management](#8-dev-toolchain-management)         | L    | 4    | Not Started |
+| ID  | Item                                                             | Size | Deps | Status      |
+| --- | ---------------------------------------------------------------- | ---- | ---- | ----------- |
+| 0   | [Distrobox Live Capture](#-urgent-distrobox-live-capture)        | M    | —    | ✅ Complete |
+| 1   | [Extension Enabled State](#1-extension-enabled-state)            | M    | —    | ✅ Complete |
+| 2   | [Flatpak Override Capture](#2-flatpak-override-capture)          | M    | —    | ✅ Complete |
+| 3   | [Host Package Install](#3-host-package-install)                  | L    | —    | Not Started |
+| 4   | [Dev Command Execution](#4-dev-command-execution)                | M    | —    | Not Started |
+| 5   | [GSettings Auto-Discovery](#5-gsettings-auto-discovery)          | M    | —    | Not Started |
+| 6   | [Upstream Dependency Tracking](#6-upstream-dependency-tracking)  | XL   | —    | Not Started |
+| 7   | [Drift Resolution](#7-drift-resolution)                          | M    | 1, 2 | Not Started |
+| 8   | [Dev Toolchain Management](#8-dev-toolchain-management)          | L    | 4    | Not Started |
+| 9   | [Binary Acquisition Crate](#9-binary-acquisition-crate-fetchbin) | XL   | —    | In Progress |
 
 **Size Legend:** S = Small, M = Medium, L = Large, XL = Extra Large
+
+---
+
+## 9. Binary Acquisition Crate (fetchbin)
+
+**Source:** [RFC-0032](docs/rfcs/0032-binary-acquisition.md)  
+**Size:** XL  
+**Dependencies:** None  
+**Status:** ✅ Complete
+
+### Review Findings (2026-01-27)
+
+Post-implementation review identified critical issues blocking RFC goals.
+
+#### Critical Issues (Must Fix)
+
+| Issue                         | Description                                            | Fix                                       |
+| ----------------------------- | ------------------------------------------------------ | ----------------------------------------- |
+| **RuntimePool not persisted** | `fetch()` takes `&RuntimePool`, downloads aren't saved | Change to `&mut RuntimePool`              |
+| **pnpm bootstrap broken**     | No CLI path sets initial pnpm version                  | Auto-resolve latest on first npm install  |
+| **Node not used at runtime**  | Symlinks point to binaries directly                    | Add execution wrappers using managed Node |
+
+#### Major Issues
+
+| Issue              | Description                                      | Fix                              |
+| ------------------ | ------------------------------------------------ | -------------------------------- |
+| Version comparison | `bkt fetchbin add` only checks name, not version | Compare with semver              |
+| Semver ranges      | Version constraints treated as exact strings     | Implement proper semver matching |
+| Runtime pruning    | `update()` and `prune()` exist but never called  | Wire into every operation        |
+| Checksum gaps      | pnpm/cargo-binstall lack verification            | Add checksum support             |
+| Platform support   | Only Linux asset patterns                        | Add macOS/Windows patterns       |
+
+#### Design Decisions Made
+
+| Question         | Decision                                                  |
+| ---------------- | --------------------------------------------------------- |
+| Platform support | All platforms (Linux, macOS, Windows)                     |
+| Version fields   | Semver ranges like Cargo (default `^`, support arbitrary) |
+| Runtime pruning  | After every operation (per RFC)                           |
+
+#### Fix Implementation Steps
+
+| Step | Description                             | Size | Status      |
+| ---- | --------------------------------------- | ---- | ----------- |
+| 9.9  | RuntimePool mutation fix                | S    | ✅ Complete |
+| 9.10 | pnpm auto-bootstrap                     | S    | ✅ Complete |
+| 9.11 | Semver range support                    | M    | ✅ Complete |
+| 9.12 | Runtime pruning on every op             | S    | ✅ Complete |
+| 9.13 | macOS/Windows platform patterns         | M    | ✅ Complete |
+| 9.14 | Checksum verification for pnpm/binstall | M    | ✅ Complete |
+| 9.15 | Node execution wrappers                 | L    | ✅ Complete |
+
+### Questions Resolved by Prepare Agent
+
+These decisions were made during implementation planning:
+
+| Question                  | Resolution                                                       |
+| ------------------------- | ---------------------------------------------------------------- |
+| GitHub API rate limiting  | Support `GITHUB_TOKEN` env var for authenticated requests        |
+| Prerelease handling       | Exclude by default; add `--prerelease` flag later                |
+| Checksum failure policy   | Fail hard if checksum exists but mismatches; warn if no checksum |
+| Node version caching      | No caching for v1; always fetch fresh index                      |
+| Node extraction structure | Keep tarball structure (don't flatten)                           |
+| `--allow-scripts` flag    | Defer to future PR; v1 always ignores scripts                    |
+| Multiple binaries         | Error with `MultipleBinaries`; add `--binary` flag later         |
+
+### Crate Name Decision Needed
+
+RFC lists candidates: `fetchbin`, `binst`, `binsrc`, `grab`. Scaffold uses `fetchbin` as placeholder.
+
+**Recommendation:** Decide before releasing to avoid renaming.
+
+### Problem
+
+CLI tools distributed via npm (turbo, vercel), cargo (ripgrep), or GitHub releases (lazygit) require their source ecosystems on PATH. Users want binaries without ecosystem clutter.
+
+### Solution
+
+Standalone Rust crate `fetchbin` that:
+
+- Installs binaries from npm, cargo-binstall, GitHub releases
+- Manages Node/pnpm invisibly as infrastructure
+- Isolates each package (pipx model)
+- Tracks versions and checksums in manifest
+
+### Current State
+
+**52 tests passing.** CLI is functional with install, list, update, remove commands.
+
+Verified working:
+
+```bash
+fetchbin install github:jesseduffield/lazygit  # ✓ Downloads and extracts
+fetchbin list                                   # ✓ Shows installed binaries
+fetchbin remove lazygit                         # ✓ Cleans up
+```
+
+### Implementation Steps
+
+| Step | Description                                                    | Size | Status      |
+| ---- | -------------------------------------------------------------- | ---- | ----------- |
+| 9.1  | [GitHubSource Implementation](#91-githubsource-implementation) | M    | ✅ Complete |
+| 9.2  | [RuntimePool + Node Download](#92-runtimepool--node-download)  | M    | ✅ Complete |
+| 9.3  | [pnpm Bootstrap](#93-pnpm-bootstrap)                           | S    | ✅ Complete |
+| 9.4  | [NpmSource Implementation](#94-npmsource-implementation)       | L    | ✅ Complete |
+| 9.5  | [cargo-binstall Bootstrap](#95-cargo-binstall-bootstrap)       | S    | ✅ Complete |
+| 9.6  | [CargoSource Implementation](#96-cargosource-implementation)   | M    | ✅ Complete |
+| 9.7  | [CLI Wiring](#97-cli-wiring)                                   | M    | ✅ Complete |
+| 9.8  | [bkt Integration](#98-bkt-integration)                         | L    | ✅ Complete |
+
+### 9.1 GitHubSource Implementation
+
+**Size:** M  
+**Dependencies:** None  
+**Status:** Ready for implementation
+
+Implement GitHub release asset download:
+
+- Query GitHub Releases API for versions
+- Match assets using platform-specific patterns
+- Download, verify checksum (if available), extract
+- Support tar.gz and zip archives
+
+<details>
+<summary><strong>Implementation Plan</strong> (click to expand)</summary>
+
+#### Files to Modify
+
+| File                            | Changes                                                                        |
+| ------------------------------- | ------------------------------------------------------------------------------ |
+| `fetchbin/src/source/github.rs` | Full `BinarySource` trait implementation                                       |
+| `fetchbin/src/error.rs`         | Add `AssetNotFound`, `ChecksumMismatch`, `NoDownloadUrl`, `GitHubApi` variants |
+| `fetchbin/src/platform.rs`      | Add `asset_patterns()` and `matches_asset()` methods                           |
+| `fetchbin/Cargo.toml`           | Add `tar = "0.4"`                                                              |
+
+#### New Modules
+
+- `fetchbin/src/source/github/api.rs` — GitHub API types (`Release`, `Asset`)
+- `fetchbin/src/source/github/archive.rs` — Archive extraction (`extract_tar_gz`, `extract_zip`, `write_raw`)
+- `fetchbin/src/source/github/checksum.rs` — Checksum verification
+
+#### Key Functions
+
+```rust
+impl GithubSource {
+    fn fetch_releases(&self, repo: &str) -> Result<Vec<Release>, FetchError>;
+    fn find_asset(&self, release: &Release, pattern: Option<&str>) -> Result<&Asset, FetchError>;
+    fn fetch_checksum(&self, release: &Release, asset: &Asset) -> Result<Option<String>, FetchError>;
+    fn download_asset(&self, asset: &Asset) -> Result<Vec<u8>, FetchError>;
+}
+```
+
+#### Test Cases
+
+- `test_parse_release_response` — Deserialize GitHub API JSON
+- `test_asset_pattern_matching_linux_x86_64` — Platform pattern matching
+- `test_checksum_file_parsing` — Parse various checksum file formats
+- `test_archive_type_detection` — `.tar.gz`, `.zip`, raw binary
+- `test_extract_tar_gz_single_binary` — Extract binary at root
+- `test_extract_zip_single_binary` — Extract from zip
+
+#### Blocking Questions
+
+1. **GitHub API Rate Limiting** — Support `GITHUB_TOKEN` env var? **→ Yes, check and use if present**
+2. **Prerelease Handling** — Include by default? **→ No, exclude. Add `--prerelease` flag later**
+3. **Multiple Binaries in Archive** — Which to choose? **→ Use `binary_name` from spec, or match repo name**
+4. **Checksum Failure Policy** — Fail or warn? **→ Fail if checksum exists but mismatches; warn if no checksum**
+
+</details>
+
+### 9.2 RuntimePool + Node Download
+
+**Size:** M  
+**Dependencies:** None  
+**Status:** Ready for implementation
+
+Implement Node.js runtime management:
+
+- Download Node from nodejs.org with SHA256 verification
+- Store in `~/.local/share/fetchbin/toolchains/node/{version}/`
+- Track installed versions in manifest
+- Auto-prune unused versions
+
+<details>
+<summary><strong>Implementation Plan</strong> (click to expand)</summary>
+
+#### Files to Modify
+
+| File                           | Changes                                                                                          |
+| ------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `fetchbin/src/runtime/mod.rs`  | Implement `RuntimePool` struct fully                                                             |
+| `fetchbin/src/runtime/node.rs` | Implement `NodeVersionIndex`, `download_node()`                                                  |
+| `fetchbin/src/error.rs`        | Add `UnsupportedPlatform`, `NoCompatibleNode`, `NodeDownloadFailed`, `ChecksumMismatch` variants |
+
+#### Key Types
+
+```rust
+pub struct NodeVersionIndex {
+    pub versions: Vec<NodeVersionInfo>,
+}
+
+pub struct NodeVersionInfo {
+    pub version: String,      // e.g., "22.2.0"
+    pub lts: Option<String>,  // e.g., "Jod" or None
+    pub date: String,
+}
+
+impl RuntimePool {
+    pub fn load(data_dir: PathBuf) -> Result<Self, RuntimeError>;
+    pub fn get_node(&mut self, requirement: Option<&str>) -> Result<NodeRuntime, RuntimeError>;
+    pub fn update(&mut self) -> Result<RuntimeUpdateReport, RuntimeError>;
+    pub fn prune(&mut self, used_versions: &HashSet<String>) -> Result<PruneReport, RuntimeError>;
+}
+```
+
+#### Download Flow
+
+1. Build URL: `https://nodejs.org/dist/v{version}/node-v{version}-{os}-{arch}.tar.gz`
+2. Fetch `SHASUMS256.txt` from same directory
+3. Download tarball, verify SHA256
+4. Extract to `toolchains/node/{version}/`
+
+#### Test Cases
+
+- `test_parse_shasum` — Parse hash from SHASUMS256.txt format
+- `test_node_download_url_linux_x64` — Correct URL construction
+- `test_version_index_find_compatible` — Semver matching logic
+- `test_version_index_prefers_lts` — LTS preference
+- `test_get_node_uses_cached` — Returns installed without download
+- `test_prune_removes_unused` — Deletes versions not in used set
+
+#### Blocking Questions
+
+1. **Version index caching** — Cache to disk? **→ No caching for v1, always fetch**
+2. **Extraction structure** — Flatten or keep tarball structure? **→ Keep tarball structure**
+3. **Concurrent downloads** — File locking needed? **→ Defer, assume single-process**
+
+</details>
+
+### 9.3 pnpm Bootstrap
+
+**Size:** S  
+**Dependencies:** 9.2
+
+Download pnpm standalone binary:
+
+- Fetch from GitHub releases
+- Store in `~/.local/share/fetchbin/toolchains/pnpm/{version}/`
+- Verify checksum
+
+### 9.4 NpmSource Implementation
+
+**Size:** L  
+**Dependencies:** 9.2, 9.3  
+**Status:** Ready for implementation (after 9.2, 9.3)
+
+Implement npm package installation:
+
+- Query npm registry for package metadata
+- Check `engines.node` for version requirements
+- Install with `--ignore-scripts` by default
+- Isolate each package in own node_modules
+- Auto-detect binary names from package.json
+
+<details>
+<summary><strong>Implementation Plan</strong> (click to expand)</summary>
+
+#### Files to Modify
+
+| File                           | Changes                                                                             |
+| ------------------------------ | ----------------------------------------------------------------------------------- |
+| `fetchbin/src/source/npm.rs`   | Full `BinarySource` trait implementation                                            |
+| `fetchbin/src/error.rs`        | Add `NpmRegistry`, `BinaryNotFound`, `RequiresScripts`, `MultipleBinaries` variants |
+| `fetchbin/src/runtime/pnpm.rs` | Implement pnpm acquisition                                                          |
+
+#### Key Types
+
+```rust
+struct NpmPackageMetadata {
+    name: String,
+    dist_tags: DistTags,
+    versions: HashMap<String, NpmVersionMetadata>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum BinField {
+    Single(String),                    // "bin": "./cli.js"
+    Multiple(HashMap<String, String>), // "bin": { "turbo": "./bin/turbo" }
+}
+```
+
+#### npm Registry API
+
+- Endpoint: `https://registry.npmjs.org/{package}`
+- Handle scoped packages: `@scope/pkg` → URL-encode as `@scope%2Fpackage`
+- Parse `dist-tags.latest`, `versions[x].engines.node`, `versions[x].bin`
+
+#### Binary Discovery Algorithm
+
+1. If `bin` is a string → binary name = package name
+2. If `bin` is an object → keys are binary names
+3. If no `bin` field → error
+
+#### Installation Flow
+
+```bash
+cd store/npm/{package}/{version}/
+echo '{ "dependencies": { "{package}": "{version}" } }' > package.json
+pnpm add --ignore-scripts {package}@{version}
+ln -s node_modules/{package}/bin/{binary} ./{binary}
+```
+
+#### Test Cases
+
+- `parse_single_bin` — Parse `"bin": "./cli.js"`
+- `parse_multiple_bins` — Parse `"bin": { "a": "...", "b": "..." }`
+- `parse_engines_node` — Extract node version requirement
+- `resolve_latest_version` — Mock registry, verify latest tag
+- `scoped_package_url` — Verify `@scope/pkg` encodes correctly
+- `integrity_verification` — SRI hash parsing and validation
+
+#### Blocking Questions
+
+1. **RuntimePool.get_node() prerequisite** — Must implement 9.2 first
+2. **--allow-scripts flag** — Include in v1? **→ No, defer to future PR**
+3. **Multiple binary handling** — Prompt or error? **→ Error with `MultipleBinaries`; add `--binary` flag later**
+
+#### Dependencies to Add
+
+```toml
+base64 = "0.21"  # For SRI hash decoding (sha512-base64)
+```
+
+</details>
+
+### 9.5 cargo-binstall Bootstrap
+
+**Size:** S  
+**Dependencies:** 9.1 (uses GitHubSource internally)
+
+Bootstrap cargo-binstall from GitHub releases:
+
+- Download cargo-binstall binary
+- Store in toolchains directory
+- Self-bootstrap using GitHubSource
+
+### 9.6 CargoSource Implementation
+
+**Size:** M  
+**Dependencies:** 9.5
+
+Implement cargo-binstall integration:
+
+- Query crates.io for versions
+- Run binstall with isolated CARGO_HOME
+- Extract and symlink binaries
+
+### 9.7 CLI Wiring
+
+**Size:** M  
+**Dependencies:** 9.1, 9.4, 9.6
+
+Wire CLI commands to implementations:
+
+- `fetchbin install npm:turbo` → NpmSource
+- `fetchbin install cargo:ripgrep` → CargoSource
+- `fetchbin install github:user/repo` → GitHubSource
+- `fetchbin list`, `update`, `remove`
+
+### 9.8 bkt Integration
+
+**Size:** L  
+**Dependencies:** 9.7  
+**Status:** ✅ Complete
+
+Create `BinarySubsystem` in bkt:
+
+- Implement `Subsystem` trait
+- Sync from `host-binaries.json` manifest
+- Capture from fetchbin state
+- PR workflow integration
+
+**Verified working:**
+
+```bash
+bkt fetchbin add npm:turbo      # Add to manifest
+bkt fetchbin list               # Show manifest vs installed
+bkt fetchbin sync               # Install from manifest
+bkt fetchbin capture            # Generate manifest from installed
+bkt fetchbin remove turbo       # Remove from manifest
+```
+
+<details>
+<summary><strong>Implementation Plan</strong> (click to expand)</summary>
+
+#### Files to Create
+
+| File                                | Purpose                    |
+| ----------------------------------- | -------------------------- |
+| `bkt/src/commands/binary.rs`        | CLI command implementation |
+| `bkt/src/manifest/binary.rs`        | Manifest types             |
+| `schemas/host-binaries.schema.json` | JSON Schema                |
+| `manifests/host-binaries.json`      | Initial empty manifest     |
+
+#### Files to Modify
+
+| File                      | Changes                                   |
+| ------------------------- | ----------------------------------------- |
+| `bkt/Cargo.toml`          | Add `fetchbin = { path = "../fetchbin" }` |
+| `bkt/src/commands/mod.rs` | Add `pub mod binary;`                     |
+| `bkt/src/manifest/mod.rs` | Add `pub mod binary;`                     |
+| `bkt/src/subsystem.rs`    | Add `BinarySubsystem`, register           |
+
+#### Manifest Format (`manifests/host-binaries.json`)
+
+```json
+{
+  "binaries": [
+    {
+      "name": "turbo",
+      "source": { "type": "npm", "package": "turbo", "version": "2.3.4" }
+    },
+    {
+      "name": "lazygit",
+      "source": {
+        "type": "github",
+        "repo": "jesseduffield/lazygit",
+        "version": "v0.44.0"
+      }
+    }
+  ]
+}
+```
+
+#### Commands
+
+- `bkt binary add npm:turbo` — Add to manifest, optionally install
+- `bkt binary remove turbo` — Remove from manifest
+- `bkt binary list` — Show manifest vs installed status
+- `bkt binary sync` — Install missing binaries from manifest
+- `bkt binary capture` — Generate manifest from fetchbin state
+
+#### Integration Approach
+
+Use library integration (import fetchbin as dependency) for type safety:
+
+```rust
+use fetchbin::{Manifest, PackageSpec, source::BinarySource};
+```
+
+#### Test Cases
+
+- `test_binary_manifest_roundtrip` — Serialize/deserialize
+- `test_binary_sync_plan_detects_missing` — Plan shows install ops
+- `test_binary_capture_from_fetchbin` — Read fetchbin state
+
+</details>
 
 ---
 
@@ -118,7 +577,7 @@ bkt distrobox capture --packages bootc-dev
 **Source:** Gap Analysis  
 **Size:** M  
 **Dependencies:** None  
-**Status:** Not Started
+**Status:** ✅ Complete
 
 ### Problem
 
@@ -165,7 +624,7 @@ bkt apply
 **Source:** Gap Analysis  
 **Size:** M  
 **Dependencies:** None  
-**Status:** Not Started
+**Status:** ✅ Complete
 
 ### Problem
 
