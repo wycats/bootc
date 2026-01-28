@@ -14,6 +14,7 @@ pub mod distrobox;
 pub mod doctor;
 pub mod drift;
 pub mod extension;
+pub mod fetchbin;
 pub mod flatpak;
 pub mod gsetting;
 pub mod homebrew;
