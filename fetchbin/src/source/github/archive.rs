@@ -119,7 +119,8 @@ fn select_binary(paths: &[PathBuf], binary_name: &str) -> Result<PathBuf, FetchE
         }
 
         return Err(FetchError::Parse(format!(
-            "multiple binaries found for {binary_name}"
+            "archive contains {} files but none match expected binary name '{binary_name}'",
+            paths.len()
         )));
     }
 
@@ -134,13 +135,6 @@ mod tests {
 
     #[test]
     fn test_detect_archive_type() {
-        assert_eq!(detect_archive_type("tool.tar.gz"), ArchiveType::TarGz);
-        assert_eq!(detect_archive_type("tool.zip"), ArchiveType::Zip);
-        assert_eq!(detect_archive_type("tool"), ArchiveType::Raw);
-    }
-
-    #[test]
-    fn test_archive_type_detection() {
         assert_eq!(detect_archive_type("tool.tar.gz"), ArchiveType::TarGz);
         assert_eq!(detect_archive_type("tool.zip"), ArchiveType::Zip);
         assert_eq!(detect_archive_type("tool"), ArchiveType::Raw);
