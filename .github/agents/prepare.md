@@ -117,9 +117,3 @@ Structure your output as:
 - **Plan appears obsolete**: Codebase has diverged significantly → Flag for user review.
 - **Conflicting sources of truth**: Multiple documents disagree → Stop and report.
 - **Missing critical context**: Cannot assess readiness without information that doesn't exist → Escalate.
-
-## When to Escalate
-
-- Plan requires clarification only the user can provide → Ask.
-- Codebase state suggests the plan is obsolete → Flag for user review.
-- Multiple conflicting sources of truth → Stop and report.
