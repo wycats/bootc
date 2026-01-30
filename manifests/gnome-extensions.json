@@ -5,7 +5,10 @@
     "appindicatorsupport@rgcjonas.gmail.com",
     "block-caribou-36@lxylxy123456.ercli.dev",
     "blur-my-shell@aunetx",
-    "burn-my-windows@schneegans.github.com",
+    {
+      "id": "burn-my-windows@schneegans.github.com",
+      "enabled": false
+    },
     "caffeine@patapon.info",
     "compiz-alike-magic-lamp-effect@hermes83.github.com",
     "compiz-windows-effect@hermes83.github.com",
