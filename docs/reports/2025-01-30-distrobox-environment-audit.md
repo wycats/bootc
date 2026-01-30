@@ -22,6 +22,7 @@ A comprehensive audit of the distrobox environment revealed significant gaps bet
 ## Part 1: Runtime Environment State
 
 ### Current Context
+
 - **Host:** bazzite (Fedora-based bootc)
 - **Container:** `bootc-dev` (Up 22+ hours, image: `ghcr.io/wycats/bootc-toolbox:latest`)
 - **Terminal:** Running on host (no `CONTAINER_ID`, no `/run/.containerenv`)
@@ -34,21 +35,24 @@ A comprehensive audit of the distrobox environment revealed significant gaps bet
 /usr/local/sbin
 /usr/local/bin
 /usr/bin
+
 ```
 
 **Actual (VS Code terminal):**
 ```
-~/.config/Code/.../debugCommand    (VS Code injected)
-~/.config/Code/.../copilotCli      (VS Code injected)
-~/.local/share/pnpm                (unexpected)
-~/.local/bin/distrobox             ✓
-~/.local/bin                       ✓
-/usr/local/sbin                    ✓
-/usr/local/bin                     ✓
-/usr/bin                           ✓
-/home/linuxbrew/.linuxbrew/bin     (×3 duplicates!)
-/home/linuxbrew/.linuxbrew/sbin    (×3 duplicates!)
-```
+
+~/.config/Code/.../debugCommand (VS Code injected)
+~/.config/Code/.../copilotCli (VS Code injected)
+~/.local/share/pnpm (unexpected)
+~/.local/bin/distrobox ✓
+~/.local/bin ✓
+/usr/local/sbin ✓
+/usr/local/bin ✓
+/usr/bin ✓
+/home/linuxbrew/.linuxbrew/bin (×3 duplicates!)
+/home/linuxbrew/.linuxbrew/sbin (×3 duplicates!)
+
+````
 
 **Issues:**
 - Linuxbrew paths appear 3 times each
@@ -120,7 +124,7 @@ if need_cmd shim; then
 else
   log "shim command not found; skipping host shims"  # ← This happens!
 fi
-```
+````
 
 **Fix:** Change `shim` to `bkt shim` or add a `shim` alias.
 
@@ -139,20 +143,15 @@ fi
 ### 4.1 Documentation Patch Plan (14 edits)
 
 **Priority 1 (Critical):**
+
 1. Fix ARCHITECTURE.md export location (`/usr/bin` → `~/.local/bin/distrobox`)
 2. Fix ARCHITECTURE.md delegation table (remove flatpak-spawn claims)
 3. Fix WORKFLOW.md "where to run bkt" section
 4. Fix README.md delegation claim
 
-**Priority 2 (High):**
-5. Update RFC-0017 PATH examples (use complete PATH)
-6. Update RFC-0017 manifest examples (use current schema)
-7. Update HANDOFF.md PATH instructions
+**Priority 2 (High):** 5. Update RFC-0017 PATH examples (use complete PATH) 6. Update RFC-0017 manifest examples (use current schema) 7. Update HANDOFF.md PATH instructions
 
-**Priority 3 (Medium):**
-8. Mark distrobox capture as implemented (not "planned")
-9. Add troubleshooting section to WORKFLOW.md
-10. Document VS Code PATH injection behavior
+**Priority 3 (Medium):** 8. Mark distrobox capture as implemented (not "planned") 9. Add troubleshooting section to WORKFLOW.md 10. Document VS Code PATH injection behavior
 
 ### 4.2 Bootstrap Script Fix
 
@@ -169,12 +168,14 @@ if need_cmd bkt; then
 ### 4.3 PATH Health Check for `bkt doctor`
 
 Add comprehensive PATH validation:
+
 - Detect duplicates
 - Check for forbidden paths (~/.cargo/bin on host)
 - Verify ordering (distrobox shims first)
 - Report unexpected entries
 
 **Proposed checks:**
+
 - `PATH (duplicates)` — fail if any entry appears more than once
 - `PATH (forbidden)` — fail if toolchain paths appear on host
 - `PATH (missing)` — fail if required entries are absent
@@ -201,6 +202,7 @@ Add comprehensive PATH validation:
 ## Appendix A: Files Referenced
 
 ### Documentation
+
 - [docs/VISION.md](../VISION.md) — Canonical PATH policy
 - [docs/ARCHITECTURE.md](../ARCHITECTURE.md) — Runtime context, delegation
 - [docs/WORKFLOW.md](../WORKFLOW.md) — User-facing how-to
@@ -208,11 +210,13 @@ Add comprehensive PATH validation:
 - [docs/rfcs/0018-host-only-shims.md](../rfcs/0018-host-only-shims.md) — Host shim design
 
 ### Configuration
+
 - [manifests/distrobox.json](../../manifests/distrobox.json) — Container definition
 - [manifests/host-shims.json](../../manifests/host-shims.json) — Host shim manifest
 - [~/.config/environment.d/10-distrobox-exports.conf] — Host PATH config
 
 ### Code
+
 - [scripts/bootc-bootstrap](../../scripts/bootc-bootstrap) — First-login setup
 - [bkt/src/commands/shim.rs](../../bkt/src/commands/shim.rs) — Shim generation
 - [bkt/src/commands/doctor.rs](../../bkt/src/commands/doctor.rs) — Health checks
