@@ -3,14 +3,34 @@ description: "The custom agent is used to explore the codebase"
 model: Claude Opus 4.5 (vercelAiGateway)
 tools:
   [
+    "execute/testFailure",
+    "execute/getTerminalOutput",
+    "execute/runTests",
     "read",
     "search",
-    "search/codebase",
+    "web",
     "agent",
     "exosuit.exosuit-context/status",
     "exosuit.exosuit-context/plan",
     "exosuit.exosuit-context/phase",
+    "exosuit.exosuit-context/steering",
     "exosuit.exosuit-context/context",
+    "exosuit.exosuit-context/list-tasks",
+    "exosuit.exosuit-context/rfc-create",
+    "exosuit.exosuit-context/rfc-promote",
+    "exosuit.exosuit-context/rfc-list",
+    "exosuit.exosuit-context/epoch-start",
+    "exosuit.exosuit-context/epoch-finish",
+    "exosuit.exosuit-context/epoch-list",
+    "exosuit.exosuit-context/logs",
+    "github.vscode-pull-request-github/issue_fetch",
+    "github.vscode-pull-request-github/suggest-fix",
+    "github.vscode-pull-request-github/searchSyntax",
+    "github.vscode-pull-request-github/doSearch",
+    "github.vscode-pull-request-github/renderIssues",
+    "github.vscode-pull-request-github/activePullRequest",
+    "github.vscode-pull-request-github/openPullRequest",
+    "todo",
   ]
 ---
 
