@@ -60,6 +60,7 @@ impl Default for NpmSource {
 
 #[derive(Debug, Deserialize)]
 struct NpmPackageMetadata {
+    #[allow(dead_code)]
     name: String,
     #[serde(rename = "dist-tags")]
     dist_tags: DistTags,

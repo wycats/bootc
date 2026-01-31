@@ -57,6 +57,7 @@ struct CratesIoResponse {
 
 #[derive(Debug, Deserialize)]
 struct CrateInfo {
+    #[allow(dead_code)]
     name: String,
     max_version: String,
 }

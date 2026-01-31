@@ -4,6 +4,7 @@ use serde::Deserialize;
 pub struct Release {
     pub tag_name: String,
     #[serde(default)]
+    #[allow(dead_code)]
     pub name: Option<String>,
     #[serde(default)]
     pub prerelease: bool,
@@ -19,6 +20,7 @@ pub struct Asset {
     #[serde(default)]
     pub browser_download_url: String,
     #[serde(default)]
+    #[allow(dead_code)]
     pub size: u64,
 }
 

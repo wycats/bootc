@@ -201,13 +201,6 @@ fn node_download_filename(version: &str, platform: &Platform) -> Result<String, 
     Ok(format!("node-v{version}-{slug}.tar.gz"))
 }
 
-fn node_download_url(version: &str, platform: &Platform) -> Result<String, RuntimeError> {
-    let filename = node_download_filename(version, platform)?;
-    Ok(format!(
-        "https://nodejs.org/dist/v{version}/{filename}"
-    ))
-}
-
 fn node_platform_slug(platform: &Platform) -> Result<&'static str, RuntimeError> {
     match (&platform.os, &platform.arch) {
         (Os::Linux, Arch::X86_64) => Ok("linux-x64"),
