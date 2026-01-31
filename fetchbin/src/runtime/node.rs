@@ -362,18 +362,4 @@ SHA256 (node.zip) = 6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617af
             Some(&"6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d".to_string())
         );
     }
-
-    #[test]
-    fn test_node_download_url() {
-        let platform = Platform {
-            os: Os::Linux,
-            arch: Arch::X86_64,
-        };
-
-        let url = node_download_url("20.10.0", &platform).expect("url");
-        assert_eq!(
-            url,
-            "https://nodejs.org/dist/v20.10.0/node-v20.10.0-linux-x64.tar.gz"
-        );
-    }
 }

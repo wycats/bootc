@@ -12,8 +12,6 @@ tools:
     "exosuit.exosuit-context/phase",
     "exosuit.exosuit-context/steering",
     "exosuit.exosuit-context/context",
-    "exosuit.exosuit-context/idea",
-    "exosuit.exosuit-context/inbox",
   ]
 ---
 
