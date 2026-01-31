@@ -29,6 +29,30 @@
       "key": "gtk-theme",
       "value": "'adw-gtk3'",
       "comment": "Use adw-gtk3 for GTK3 apps (matches libadwaita style)"
+    },
+    {
+      "schema": "org.gnome.shell.keybindings",
+      "key": "toggle-overview",
+      "value": "['<Super>']",
+      "comment": "Ensure Super opens overview (can drift on GNOME updates)"
+    },
+    {
+      "schema": "org.gnome.mutter",
+      "key": "overlay-key",
+      "value": "'Super_L'",
+      "comment": "Left Super key triggers overlay (pairs with toggle-overview)"
+    },
+    {
+      "schema": "org.gnome.shell.keybindings",
+      "key": "toggle-overview",
+      "value": "['<Super>']",
+      "comment": "Ensure Super opens overview (can drift on GNOME updates)"
+    },
+    {
+      "schema": "org.gnome.mutter",
+      "key": "overlay-key",
+      "value": "'Super_L'",
+      "comment": "Left Super key triggers overlay (pairs with toggle-overview)"
     }
   ]
 }

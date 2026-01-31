@@ -11,3 +11,6 @@ scripts/bkt
 
 # Base image package cache
 .cache/
+
+**/target/
+**/node_modules/

@@ -1,4 +1,13 @@
-# Context Management Strategy
+# Copilot Instructions
+
+## Git Workflow
+
+When asked to commit and/or create a PR:
+1. **Always create a feature branch** - Never commit directly to `main`
+2. **Use logical commits** - Split changes into meaningful commits (e.g., separate commits for new features, bug fixes, documentation)
+3. **One PR per feature set** - Group related changes into a single PR with multiple commits
+
+## Context Management Strategy
 
 Treat the Main Chat context window as a scarce resource to be conserved. Apply the following heuristics to determine whether to execute a task directly or delegate it to a subagent, and how to transfer information effectively.
 

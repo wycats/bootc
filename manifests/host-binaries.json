@@ -1,0 +1,4 @@
+{
+  "$schema": "../schemas/host-binaries.schema.json",
+  "binaries": []
+}
