@@ -1,9 +1,25 @@
 # RFC 0001: Command Punning Philosophy
 
+- **Status**: Foundational (Terminology Evolved)
 - Feature Name: `command_punning`
 - Start Date: 2025-12-31
 - RFC PR: (leave this empty until PR is opened)
 - Tracking Issue: (leave this empty)
+
+> **ℹ️ Terminology Note**
+>
+> This RFC establishes the foundational **philosophy** of command punning, which
+> remains the core design principle of `bkt`. However, the specific command
+> examples have evolved:
+>
+> | RFC 0001 Example | Current Implementation | Notes |
+> |------------------|------------------------|-------|
+> | `bkt dnf install` | `bkt system add` | See RFC-0020 |
+> | `bkt dev dnf install` | `bkt dev install` | See RFC-0020 |
+> | `bkt image` prefix | Not implemented | PR-only mode uses `--pr-only` flag |
+>
+> The **philosophy** (immediate effect + persistence + PR propagation) is fully
+> implemented. See [RFC-0020](0020-dev-and-system-commands.md) for current command structure.
 
 ## Summary
 
