@@ -221,7 +221,6 @@ COPY manifests/host-shims.json /usr/share/bootc-bootstrap/host-shims.json
 COPY repo.json /usr/share/bootc/repo.json
 COPY scripts/bootc-bootstrap /usr/bin/bootc-bootstrap
 COPY scripts/bootc-apply /usr/bin/bootc-apply
-COPY scripts/check-drift /usr/bin/check-drift
 COPY scripts/bootc-repo /usr/bin/bootc-repo
 # bkt CLI (pre-built by CI, placed in scripts/ during workflow)
 COPY scripts/bkt /usr/bin/bkt
@@ -230,7 +229,7 @@ COPY systemd/user/bootc-bootstrap.service /usr/lib/systemd/user/bootc-bootstrap.
 COPY systemd/user/bootc-capture.service /usr/lib/systemd/user/bootc-capture.service
 COPY systemd/user/bootc-capture.timer /usr/lib/systemd/user/bootc-capture.timer
 COPY systemd/system/bootc-apply.service /usr/lib/systemd/system/bootc-apply.service
-RUN chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/check-drift /usr/bin/bootc-repo /usr/bin/bkt && \
+RUN chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/bootc-repo /usr/bin/bkt && \
     mkdir -p /usr/lib/systemd/user/default.target.wants && \
     ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service && \
     mkdir -p /usr/lib/systemd/user/timers.target.wants && \

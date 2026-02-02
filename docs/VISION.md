@@ -130,6 +130,32 @@ This means:
 - **No reboot surprises** — What you see now is what you get after reboot (via capture mechanism)
 - **Full reproducibility** — A fresh system can be reconstructed from manifests
 
+### Technical Constraints
+
+#### No Custom Python Scripts
+
+**Axiom**: This repository must not contain or depend on custom Python scripts.
+
+All tooling in this repository is implemented in Rust (the `bkt` CLI) or minimal shell scripts for bootstrap/glue. Python is explicitly excluded because:
+
+1. **Dependency complexity** — Python scripts require a Python runtime and often additional packages, adding fragile dependencies to the immutable image
+2. **Two languages, one job** — Rust already handles all complex logic; adding Python creates maintenance burden and context-switching
+3. **Reproducibility** — Python version and package management (pip, venv, system packages) introduces variability that conflicts with the immutable image philosophy
+4. **Shell suffices for glue** — Simple orchestration tasks use POSIX shell; complex logic belongs in Rust
+
+**Allowed:**
+
+- Rust code (`bkt/`, `fetchbin/`)
+- Minimal shell scripts (`scripts/bootc-apply`, `scripts/bootc-bootstrap`)
+- Containerfile/Dockerfile syntax
+- JSON manifests
+
+**Not allowed:**
+
+- Python scripts (`.py` files)
+- Dependencies on Python packages
+- Shelling out to Python from Rust or shell scripts
+
 ## The Distrobox Strategy
 
 Development tools (compilers, runtimes, package managers) live in a distrobox container:

@@ -14,3 +14,6 @@ scripts/bkt
 
 **/target/
 **/node_modules/
+# Editor/tool logs
+.log/
+.logs/
