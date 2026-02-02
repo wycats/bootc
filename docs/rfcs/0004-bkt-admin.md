@@ -1,9 +1,26 @@
 # RFC 0004: System Administration (`bkt admin`)
 
+- **Status**: Partially Implemented
 - Feature Name: `bkt_admin`
 - Start Date: 2025-12-31
 - RFC PR: (leave this empty until PR is opened)
 - Tracking Issue: (leave this empty)
+
+> **ℹ️ Implementation Status**
+>
+> | Feature | Status | Notes |
+> |---------|--------|-------|
+> | `bkt admin kargs` | ✅ Implemented | Manifest-only; see RFC-0036 for enhancement |
+> | `bkt admin systemd` | ✅ Implemented | Enable/disable/mask units |
+> | `bkt admin systemctl` | ✅ Implemented | Direct systemctl wrapper |
+> | `bkt admin bootc` | ✅ Implemented | bootc operations |
+> | udev rules | ❌ Not started | |
+> | SELinux policies | ❌ Not started | |
+> | Firmware settings | ❌ Not started | |
+>
+> **Note:** The kernel arguments section describes `rpm-ostree kargs` approach.
+> [RFC-0036](0036-system-kargs.md) proposes enhancing `bkt admin kargs` to use
+> bootc-native `kargs.d/` TOML files instead.
 
 ## Summary
 

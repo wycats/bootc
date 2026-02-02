@@ -1,9 +1,22 @@
 # RFC 0007: Configuration Drift Detection
 
+- **Status**: Deferred
 - Feature Name: `drift_detection`
 - Start Date: 2025-12-31
 - RFC PR: (leave this empty until PR is opened)
 - Tracking Issue: (leave this empty)
+
+> **⏸️ Implementation Deferred**
+>
+> The `bkt drift` command exists but is a stub that directs users to
+> `bkt capture --dry-run` as an interim solution.
+>
+> The original implementation relied on a Python script, which was removed
+> per the project's "No Custom Python Scripts" axiom (see [VISION.md](../VISION.md)).
+>
+> A native Rust implementation following this RFC's design is planned but
+> not yet prioritized. The `bkt capture` workflow provides equivalent
+> functionality for most use cases.
 
 ## Summary
 
