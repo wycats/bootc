@@ -35,7 +35,20 @@ RUN set -eu; \
 # === END COPR_REPOS ===
 
 # === KERNEL_ARGUMENTS (managed by bkt) ===
-# No kernel arguments configured
+# Kernel arguments are managed via /usr/lib/bootc/kargs.d/*.toml
+# These are applied by bootc on upgrade and persist across reboots
+RUN mkdir -p /usr/lib/bootc/kargs.d && \
+    printf '%s\n' \
+        '# Memory management optimizations' \
+        '# zswap: compress swap pages in RAM before writing to disk' \
+        '# Reduces swap I/O and improves responsiveness under memory pressure' \
+        'kargs = [' \
+        '    "zswap.enabled=1",' \
+        '    "zswap.compressor=lz4",' \
+        '    "zswap.zpool=zsmalloc",' \
+        '    "zswap.max_pool_percent=25"' \
+        ']' \
+        > /usr/lib/bootc/kargs.d/10-zswap.toml
 # === END KERNEL_ARGUMENTS ===
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
@@ -243,6 +256,9 @@ COPY ujust/60-custom.just /usr/share/ublue-os/just/60-custom.just
 
 # Integrated topgrade configuration
 COPY system/etc/topgrade.toml /etc/topgrade.toml
+
+# VM tuning for reduced degradation over time
+COPY system/etc/sysctl.d/99-bootc-vm-tuning.conf /etc/sysctl.d/99-bootc-vm-tuning.conf
 
 # Optional: remote play / console mode (off by default; enabled via `ujust enable-remote-play`)
 RUN mkdir -p /usr/share/bootc-optional/remote-play/bin \
