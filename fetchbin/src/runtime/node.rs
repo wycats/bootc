@@ -85,9 +85,7 @@ impl NodeVersionIndex {
         }
 
         let normalized = requirement.trim_start_matches('v');
-        self.versions
-            .iter()
-            .find(|info| info.version == normalized)
+        self.versions.iter().find(|info| info.version == normalized)
     }
 
     pub fn current_lts(&self) -> Option<&NodeVersionInfo> {
@@ -95,8 +93,8 @@ impl NodeVersionIndex {
     }
 
     fn parse_json(content: &str) -> Result<Self, RuntimeError> {
-        let raw: Vec<RawNodeVersionInfo> =
-            serde_json::from_str(content).map_err(|err| RuntimeError::VersionIndexFetch(err.to_string()))?;
+        let raw: Vec<RawNodeVersionInfo> = serde_json::from_str(content)
+            .map_err(|err| RuntimeError::VersionIndexFetch(err.to_string()))?;
         let versions = raw
             .into_iter()
             .map(|info| NodeVersionInfo {
@@ -143,9 +141,9 @@ pub fn download_node(
         })?;
 
     let checksums = parse_shasums(&shasum_content)?;
-    let expected = checksums.get(&filename).ok_or_else(|| {
-        RuntimeError::ShasumParse(format!("missing checksum for {filename}"))
-    })?;
+    let expected = checksums
+        .get(&filename)
+        .ok_or_else(|| RuntimeError::ShasumParse(format!("missing checksum for {filename}")))?;
 
     let archive_bytes = client
         .get(archive_url)

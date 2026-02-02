@@ -23,6 +23,7 @@ On immutable (bootc/ostree) systems, `/usr` is read-only. This creates friction 
 ### Current State
 
 Today, users must either:
+
 - Wait for a full image rebuild and reboot (slow, disruptive)
 - Use `rpm-ostree override replace` (persistent, requires RPM packaging)
 - Manually discover and use `rpm-ostree usroverlay` (undocumented in our workflow)
@@ -30,6 +31,7 @@ Today, users must either:
 ### The Opportunity
 
 `rpm-ostree usroverlay` creates a **transient writable overlay** on `/usr`:
+
 - Changes are **ephemeral** (discarded on reboot)
 - No RPM packaging required
 - Immediate effect (no reboot needed)
@@ -43,11 +45,11 @@ This aligns with our ephemeral manifest concept (RFC 0021) but for system binari
 
 #### Ephemeral vs Persistent Modifications
 
-| Modification Type | Mechanism | Survives Reboot | Use Case |
-|-------------------|-----------|-----------------|----------|
-| **Ephemeral** | `usroverlay` | No | Development, testing, hotfixes |
-| **Persistent (layered)** | `rpm-ostree install` | Yes | Permanent additions |
-| **Persistent (image)** | Containerfile | Yes | Base system |
+| Modification Type        | Mechanism            | Survives Reboot | Use Case                       |
+| ------------------------ | -------------------- | --------------- | ------------------------------ |
+| **Ephemeral**            | `usroverlay`         | No              | Development, testing, hotfixes |
+| **Persistent (layered)** | `rpm-ostree install` | Yes             | Permanent additions            |
+| **Persistent (image)**   | Containerfile        | Yes             | Base system                    |
 
 #### The Idempotency Contract
 
@@ -59,9 +61,10 @@ This aligns with our ephemeral manifest concept (RFC 0021) but for system binari
 4. **Recoverable**: System boots cleanly without the overlay
 
 This means we **never** use usroverlay for one-off manual changes. Instead:
+
 - Changes are captured in a manifest or script
 - The overlay is applied programmatically
-- The manifest is the source of truth for what *should* be overlaid
+- The manifest is the source of truth for what _should_ be overlaid
 
 ### New Commands
 
@@ -184,17 +187,17 @@ sudo rm /var/lib/bkt/disable-bootc-apply
 pub enum UsroverlayAction {
     /// Enable writable overlay on /usr
     Enable,
-    
+
     /// Show overlay status and modified files
     Status,
-    
+
     /// Apply development binaries from local build
     ApplyDev {
         /// Also copy bootstrap scripts
         #[arg(long)]
         with_scripts: bool,
     },
-    
+
     /// Show instructions to disable (requires reboot)
     Disable,
 }
@@ -208,15 +211,15 @@ impl UsroverlayAction {
                     println!("Overlay already active.");
                     return Ok(());
                 }
-                
+
                 // Enable via polkit (requires wheel group)
                 run_privileged(&["rpm-ostree", "usroverlay"])?;
-                
+
                 println!("Development mode enabled.");
                 println!("All changes to /usr will be discarded on reboot.");
                 Ok(())
             }
-            
+
             Self::Status => {
                 if is_usroverlay_active()? {
                     println!("Overlay: active");
@@ -229,20 +232,20 @@ impl UsroverlayAction {
                 }
                 Ok(())
             }
-            
+
             Self::ApplyDev { with_scripts } => {
                 ensure_usroverlay_active()?;
-                
+
                 // Copy bkt binary
                 let cargo_bin = dirs::home_dir()
                     .unwrap()
                     .join(".cargo/bin/bkt");
-                
+
                 if cargo_bin.exists() {
                     copy_privileged(&cargo_bin, "/usr/bin/bkt")?;
                     println!("Copied {} -> /usr/bin/bkt", cargo_bin.display());
                 }
-                
+
                 if *with_scripts {
                     let repo_root = find_repo_root()?;
                     for script in ["bootc-apply", "bootc-bootstrap"] {
@@ -254,11 +257,11 @@ impl UsroverlayAction {
                         }
                     }
                 }
-                
+
                 println!("✓ Development binaries applied (ephemeral until reboot)");
                 Ok(())
             }
-            
+
             Self::Disable => {
                 println!("Note: Overlay changes persist until reboot.");
                 println!("Run 'systemctl reboot' to restore original /usr.");
@@ -285,7 +288,7 @@ pub struct InstallLocalArgs {
     /// Also install bootstrap scripts
     #[arg(long)]
     with_scripts: bool,
-    
+
     /// Skip cargo build (use existing binary)
     #[arg(long)]
     no_build: bool,
@@ -294,7 +297,7 @@ pub struct InstallLocalArgs {
 impl InstallLocalArgs {
     pub fn run(&self) -> Result<()> {
         let repo_root = find_repo_root()?;
-        
+
         // Build if needed
         if !self.no_build {
             println!("Building bkt in release mode...");
@@ -302,23 +305,23 @@ impl InstallLocalArgs {
                 .args(["build", "--release", "--manifest-path"])
                 .arg(repo_root.join("bkt/Cargo.toml"))
                 .status()?;
-            
+
             if !status.success() {
                 anyhow::bail!("Build failed");
             }
         }
-        
+
         // Enable overlay
         if !is_usroverlay_active()? {
             println!("Enabling usroverlay...");
             run_privileged(&["rpm-ostree", "usroverlay"])?;
         }
-        
+
         // Install binary
         let built_binary = repo_root.join("bkt/target/release/bkt");
         copy_privileged(&built_binary, "/usr/bin/bkt")?;
         println!("Installed /usr/bin/bkt");
-        
+
         if self.with_scripts {
             for script in ["bootc-apply", "bootc-bootstrap"] {
                 let src = repo_root.join("scripts").join(script);
@@ -326,7 +329,7 @@ impl InstallLocalArgs {
                 println!("Installed /usr/bin/{}", script);
             }
         }
-        
+
         println!("✓ Local bkt installed (ephemeral until reboot)");
         Ok(())
     }
@@ -344,12 +347,12 @@ The implementation ensures idempotency:
 
 ### Integration with Existing Commands
 
-| Existing Command | Usroverlay Interaction |
-|------------------|------------------------|
-| `bkt apply` | Works normally (applies to running system) |
-| `bkt capture` | Works normally (captures from running system) |
+| Existing Command          | Usroverlay Interaction                         |
+| ------------------------- | ---------------------------------------------- |
+| `bkt apply`               | Works normally (applies to running system)     |
+| `bkt capture`             | Works normally (captures from running system)  |
 | `bkt admin bootc upgrade` | Warns if overlay active (changes will be lost) |
-| `bkt drift check` | Should detect overlay modifications |
+| `bkt drift check`         | Should detect overlay modifications            |
 
 ### Drift Detection Integration
 
@@ -378,16 +381,17 @@ bkt drift check
 
 ### Why usroverlay over alternatives?
 
-| Alternative | Drawback |
-|-------------|----------|
-| `rpm-ostree override replace` | Requires RPM, persistent (survives reboot) |
-| `rpm-ostree install` | Requires RPM, persistent |
-| Symlinks from /var | Doesn't work for all binaries, SELinux issues |
-| Container-based testing | Can't test system service integration |
+| Alternative                   | Drawback                                      |
+| ----------------------------- | --------------------------------------------- |
+| `rpm-ostree override replace` | Requires RPM, persistent (survives reboot)    |
+| `rpm-ostree install`          | Requires RPM, persistent                      |
+| Symlinks from /var            | Doesn't work for all binaries, SELinux issues |
+| Container-based testing       | Can't test system service integration         |
 
 ### Why not make it automatic?
 
 We explicitly **don't** auto-enable usroverlay because:
+
 1. It requires explicit user intent (security)
 2. Users should know their changes are ephemeral
 3. Aligns with plan→confirm→execute philosophy
@@ -419,21 +423,21 @@ For users unfamiliar with immutable OS patterns, here's a glossary of related co
 
 ### Core Concepts
 
-| Concept | Description |
-|---------|-------------|
+| Concept          | Description                                                           |
+| ---------------- | --------------------------------------------------------------------- |
 | **Immutable OS** | Operating system where `/usr` is read-only; changes require new image |
-| **bootc** | Container-native approach to immutable OS (OCI images as OS) |
-| **ostree** | Content-addressed filesystem for OS images (like git for filesystems) |
-| **rpm-ostree** | Hybrid package/image system combining ostree with RPM |
+| **bootc**        | Container-native approach to immutable OS (OCI images as OS)          |
+| **ostree**       | Content-addressed filesystem for OS images (like git for filesystems) |
+| **rpm-ostree**   | Hybrid package/image system combining ostree with RPM                 |
 
 ### Modification Mechanisms
 
-| Mechanism | Persistence | Use Case |
-|-----------|-------------|----------|
-| **Layered packages** | Persistent | Add packages not in base image |
-| **Overrides** | Persistent | Replace base packages with different versions |
-| **usroverlay** | Ephemeral | Development, testing, hotfixes |
-| **apply-live** | Until reboot | Apply staged changes without reboot |
+| Mechanism            | Persistence  | Use Case                                      |
+| -------------------- | ------------ | --------------------------------------------- |
+| **Layered packages** | Persistent   | Add packages not in base image                |
+| **Overrides**        | Persistent   | Replace base packages with different versions |
+| **usroverlay**       | Ephemeral    | Development, testing, hotfixes                |
+| **apply-live**       | Until reboot | Apply staged changes without reboot           |
 
 ### Related Commands
 

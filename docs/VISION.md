@@ -51,13 +51,13 @@ This principle inverts the traditional "edit config, then apply" model:
 
 The two-tier architecture can be further subdivided by persistence characteristics:
 
-| Domain | Immediate Mechanism | Persistence Mechanism | Survives Reboot? |
-|--------|---------------------|----------------------|------------------|
-| **Tier 2: User-space** | Direct tools (GNOME Software, Extension Manager, Settings) | `bkt capture` → manifest | ✅ Yes |
-| **Tier 1b: usr binaries** | `bootc usr-overlay` | Encode in Containerfile → rebuild image | ❌ No (until image rebuild) |
-| **Tier 1a: Base image packages** | ❌ None (deferred) | `bkt system add` → PR → rebuild → reboot | ❌ No (requires full cycle) |
-| **Distrobox container** | `bkt dev install` / direct `dnf` | `bkt capture` → manifest | ✅ Yes |
-| **Host binaries (fetchbin)** | `bkt fetchbin install` | Manifest in `~/.local/share/fetchbin` | ✅ Yes |
+| Domain                           | Immediate Mechanism                                        | Persistence Mechanism                    | Survives Reboot?            |
+| -------------------------------- | ---------------------------------------------------------- | ---------------------------------------- | --------------------------- |
+| **Tier 2: User-space**           | Direct tools (GNOME Software, Extension Manager, Settings) | `bkt capture` → manifest                 | ✅ Yes                      |
+| **Tier 1b: usr binaries**        | `bootc usr-overlay`                                        | Encode in Containerfile → rebuild image  | ❌ No (until image rebuild) |
+| **Tier 1a: Base image packages** | ❌ None (deferred)                                         | `bkt system add` → PR → rebuild → reboot | ❌ No (requires full cycle) |
+| **Distrobox container**          | `bkt dev install` / direct `dnf`                           | `bkt capture` → manifest                 | ✅ Yes                      |
+| **Host binaries (fetchbin)**     | `bkt fetchbin install`                                     | Manifest in `~/.local/share/fetchbin`    | ✅ Yes                      |
 
 ### The Three Patterns
 
