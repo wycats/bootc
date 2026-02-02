@@ -3,7 +3,7 @@
 use crate::manifest::{
     BaseImageAssumptions, ChangelogEntry, DistroboxManifest, FlatpakApp, FlatpakAppsManifest,
     FlatpakRemote, FlatpakRemotesManifest, GSetting, GSettingsManifest, GnomeExtensionsManifest,
-    HomebrewManifest, Shim, ShimsManifest, UpstreamManifest, VersionMetadata,
+    HomebrewManifest, HostBinariesManifest, Shim, ShimsManifest, UpstreamManifest, VersionMetadata,
 };
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -112,6 +112,11 @@ const SCHEMAS: &[SchemaInfo] = &[
         filename: "homebrew.schema.json",
         description: "The homebrew.json manifest (Homebrew/Linuxbrew packages)",
     },
+    SchemaInfo {
+        name: "HostBinariesManifest",
+        filename: "host-binaries.schema.json",
+        description: "The host-binaries.json manifest (binaries installed via fetchbin)",
+    },
 ];
 
 /// Generate all schemas and return them as (filename, json) pairs.
@@ -176,6 +181,10 @@ fn generate_all_schemas() -> Vec<(&'static str, String)> {
         (
             "homebrew.schema.json",
             serde_json::to_string_pretty(&schema_for!(HomebrewManifest)).unwrap(),
+        ),
+        (
+            "host-binaries.schema.json",
+            serde_json::to_string_pretty(&schema_for!(HostBinariesManifest)).unwrap(),
         ),
     ]
 }
