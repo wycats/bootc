@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HostBinariesManifest",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "binaries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/HostBinary"
+      }
+    }
+  },
+  "required": [
+    "binaries"
+  ],
+  "$defs": {
+    "HostBinary": {
+      "type": "object",
+      "properties": {
+        "binary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/HostBinarySource"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "source"
+      ]
+    },
+    "HostBinarySource": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "package": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "npm"
+            }
+          },
+          "required": [
+            "type",
+            "package"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "crate_name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "cargo"
+            }
+          },
+          "required": [
+            "type",
+            "crate_name"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "asset_pattern": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null
+            },
+            "repo": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "github"
+            }
+          },
+          "required": [
+            "type",
+            "repo"
+          ]
+        }
+      ]
+    }
+  }
+}

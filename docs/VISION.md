@@ -36,6 +36,100 @@ Changes here take effect **immediately**:
 
 These are the primary domain for the capture-first workflow.
 
+## The Immediate Development Axiom
+
+> **The running system is the source of truth. Changes should take effect immediately wherever possible, then be captured into manifests so they persist across reboots and can be replayed on fresh systems.**
+
+This principle inverts the traditional "edit config, then apply" model:
+
+1. **Make changes interactively** using familiar tools (GUI apps, CLI commands)
+2. **Changes take effect immediately** on the running system
+3. **Capture to manifests** records the change for persistence and reproducibility
+4. **Manifests are derived artifacts**, not the primary interface
+
+### The Persistence Model
+
+The two-tier architecture can be further subdivided by persistence characteristics:
+
+| Domain | Immediate Mechanism | Persistence Mechanism | Survives Reboot? |
+|--------|---------------------|----------------------|------------------|
+| **Tier 2: User-space** | Direct tools (GNOME Software, Extension Manager, Settings) | `bkt capture` → manifest | ✅ Yes |
+| **Tier 1b: usr binaries** | `bootc usr-overlay` | Encode in Containerfile → rebuild image | ❌ No (until image rebuild) |
+| **Tier 1a: Base image packages** | ❌ None (deferred) | `bkt system add` → PR → rebuild → reboot | ❌ No (requires full cycle) |
+| **Distrobox container** | `bkt dev install` / direct `dnf` | `bkt capture` → manifest | ✅ Yes |
+| **Host binaries (fetchbin)** | `bkt fetchbin install` | Manifest in `~/.local/share/fetchbin` | ✅ Yes |
+
+### The Three Patterns
+
+#### Pattern 1: Native Tool + Capture
+
+For domains with existing GUI/CLI tools, the workflow is:
+
+```
+User action (GNOME Software, Extension Manager, Settings)
+    ↓
+Change takes effect immediately
+    ↓
+bkt capture → manifest updated
+    ↓
+git commit/push (manual or auto)
+```
+
+**Examples:** Flatpaks, GNOME extensions, gsettings
+
+#### Pattern 2: bkt Command = Execute + Record
+
+For domains without native tools, or where we want atomic execute+record:
+
+```
+bkt <subsystem> install <thing>
+    ↓
+Executes immediately (dnf, fetchbin, etc.)
+    ↓
+Records to manifest automatically
+    ↓
+Optionally creates PR
+```
+
+**Examples:** `bkt dev install`, `bkt fetchbin install`, `bkt flatpak add`
+
+This is the **command punning** philosophy: commands that execute immediately AND propagate changes to the distribution. The `--pr` / `--local` / `--pr-only` flags control propagation:
+
+- Default: Execute + create PR
+- `--local`: Execute only (for testing)
+- `--pr-only`: PR only (for remote preparation)
+
+#### Pattern 3: Overlay + Encode
+
+For Tier 1 changes that need immediate testing:
+
+```
+bootc usr-overlay (enable writable /usr)
+    ↓
+Make changes (copy binaries, edit scripts)
+    ↓
+Test on running system
+    ↓
+Encode in Containerfile/scripts
+    ↓
+Rebuild image → changes persist
+```
+
+**Examples:** Testing new bkt versions, hotfixing system scripts
+
+See [RFC 0034: Usroverlay Integration](rfcs/0034-usroverlay-integration.md) for details.
+
+### The Guiding Principle
+
+> **"You are maintaining your own distribution. Every local change should persist. Every persistent change should be auditable."**
+
+This means:
+
+- **No silent drift** — Changes made interactively are captured, not lost
+- **No manual bookkeeping** — The system tracks what you did
+- **No reboot surprises** — What you see now is what you get after reboot (via capture mechanism)
+- **Full reproducibility** — A fresh system can be reconstructed from manifests
+
 ## The Distrobox Strategy
 
 Development tools (compilers, runtimes, package managers) live in a distrobox container:

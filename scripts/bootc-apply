@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# bootc-apply: Apply bkt manifests after image deployment
+# bootc-apply: Capture layered packages after image deployment
 #
-# This script runs at boot to sync system packages from manifests.
-# It uses a marker file to detect if we've already applied to this
-# deployment, avoiding unnecessary work on regular reboots.
+# This script runs at boot to capture any rpm-ostree layered packages
+# into the manifest. It uses a marker file to detect if we've already
+# processed this deployment, avoiding unnecessary work on regular reboots.
 #
 # Marker file: /var/lib/bkt/last-applied-deployment
-# Contains the rpm-ostree deployment checksum of the last successful apply.
+# Contains the rpm-ostree deployment checksum of the last successful capture.
 
 set -euo pipefail
 
@@ -110,15 +110,15 @@ main() {
         log "First run - no previous deployment marker found"
     fi
 
-    # Run bkt dnf sync with --now to apply changes live (no reboot needed)
-    log "Running: bkt dnf sync --now"
+    # Capture any rpm-ostree layered packages into manifest
+    log "Running: bkt system capture --apply"
 
-    if bkt dnf sync --now; then
-        log "bkt dnf sync completed successfully"
+    if bkt system capture --apply; then
+        log "bkt system capture completed successfully"
         write_marker "${current_deployment}"
     else
         local exit_code=$?
-        log_error "bkt dnf sync failed with exit code ${exit_code}"
+        log_error "bkt system capture failed with exit code ${exit_code}"
         # Don't write marker on failure - will retry next boot
         exit "${exit_code}"
     fi

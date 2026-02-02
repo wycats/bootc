@@ -118,6 +118,9 @@ pub enum Commands {
     #[command(name = "appimage", alias = "ai")]
     AppImage(commands::appimage::AppImageArgs),
 
+    /// Manage host binaries via fetchbin
+    Fetchbin(commands::fetchbin::FetchbinArgs),
+
     /// Manage host shims for toolbox
     Shim(commands::shim::ShimArgs),
 
@@ -209,6 +212,7 @@ fn main() -> Result<()> {
         Commands::Flatpak(args) => commands::flatpak::run(args, &plan),
         Commands::Distrobox(args) => commands::distrobox::run(args, &plan),
         Commands::AppImage(args) => commands::appimage::run(args, &plan),
+        Commands::Fetchbin(args) => commands::fetchbin::run(args, &plan),
         Commands::Shim(args) => commands::shim::run(args, &plan),
         Commands::Extension(args) => commands::extension::run(args, &plan),
         Commands::Gsetting(args) => commands::gsetting::run(args, &plan),

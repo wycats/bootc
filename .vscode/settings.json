@@ -3,5 +3,15 @@
     "bkt": true,
     "/home/wycats/.cargo/bin/bkt": true,
     "\"$HOME/.local/bin/bkt\"": true
+  },
+  "files.exclude": {
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true,
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/target": true
   }
 }

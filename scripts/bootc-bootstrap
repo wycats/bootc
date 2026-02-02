@@ -174,12 +174,12 @@ apply_gsettings() {
 
 apply_host_shims() {
   # Generate host shims from manifest
-  # The 'shim' command handles merging system + user manifests
-  if need_cmd shim; then
+  # The 'bkt shim' command handles merging system + user manifests
+  if need_cmd bkt; then
     log "Syncing host shims"
-    shim sync || log "shim sync failed (non-fatal)"
+    bkt shim sync || log "bkt shim sync failed (non-fatal)"
   else
-    log "shim command not found; skipping host shims"
+    log "bkt command not found; skipping host shims"
   fi
 }
 

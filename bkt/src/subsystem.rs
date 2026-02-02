@@ -356,6 +356,7 @@ impl SubsystemRegistry {
                 Box::new(GsettingSubsystem),
                 Box::new(ShimSubsystem),
                 Box::new(AppImageSubsystem),
+                Box::new(FetchbinSubsystem),
                 Box::new(HomebrewSubsystem),
                 Box::new(SystemSubsystem),
             ],
@@ -1122,6 +1123,63 @@ impl Subsystem for AppImageSubsystem {
 }
 
 impl Manifest for AppImageAppsManifest {
+    fn to_json(&self) -> Result<String> {
+        Ok(serde_json::to_string_pretty(self)?)
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Fetchbin Subsystem
+// ----------------------------------------------------------------------------
+
+use crate::commands::fetchbin::{FetchbinCaptureCommand, FetchbinSyncCommand};
+use crate::manifest::HostBinariesManifest;
+
+/// Fetchbin host binaries subsystem.
+pub struct FetchbinSubsystem;
+
+impl Subsystem for FetchbinSubsystem {
+    fn name(&self) -> &'static str {
+        "Fetchbin"
+    }
+
+    fn id(&self) -> &'static str {
+        "fetchbin"
+    }
+
+    fn phase(&self) -> ExecutionPhase {
+        ExecutionPhase::Packages
+    }
+
+    fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
+        let manifest = HostBinariesManifest::load_from_dir(&ctx.repo_root.join("manifests"))?;
+        Ok(Box::new(manifest))
+    }
+
+    fn capture(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
+        let plan = FetchbinCaptureCommand.plan(ctx)?;
+        if plan.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(Box::new(plan)))
+        }
+    }
+
+    fn sync(
+        &self,
+        ctx: &PlanContext,
+        _config: &SubsystemConfig,
+    ) -> Result<Option<Box<dyn DynPlan>>> {
+        let plan = FetchbinSyncCommand.plan(ctx)?;
+        if plan.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(Box::new(plan)))
+        }
+    }
+}
+
+impl Manifest for HostBinariesManifest {
     fn to_json(&self) -> Result<String> {
         Ok(serde_json::to_string_pretty(self)?)
     }

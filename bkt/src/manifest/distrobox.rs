@@ -3,7 +3,7 @@
 use anyhow::{Context, Result, bail};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -140,6 +140,17 @@ impl DistroboxManifest {
 }
 
 impl DistroboxContainer {
+    /// Merge captured packages into the container definition.
+    pub fn merge_packages(&mut self, captured: Vec<String>) {
+        let existing: HashSet<_> = self.packages.iter().cloned().collect();
+        for pkg in captured {
+            if !existing.contains(&pkg) {
+                self.packages.push(pkg);
+            }
+        }
+        self.packages.sort();
+    }
+
     /// Validate container settings.
     pub fn validate(&self, name: &str) -> Result<()> {
         if self.image.trim().is_empty() {
