@@ -3,25 +3,14 @@ description: "Gathers raw information from the codebase for a parent agent. Retu
 model: GPT-5.2-Codex (vercelAiGateway)
 tools:
   [
+    "execute/testFailure",
     "execute/getTerminalOutput",
+    "execute/runTask",
     "execute/runInTerminal",
+    "execute/runTests",
     "read",
     "search",
     "web",
-    "github/get_commit",
-    "github/get_file_contents",
-    "github/issue_read",
-    "github/list_branches",
-    "github/list_commits",
-    "github/list_issue_types",
-    "github/list_issues",
-    "github/list_pull_requests",
-    "github/pull_request_read",
-    "github/search_code",
-    "github/search_issues",
-    "github/search_pull_requests",
-    "github/search_repositories",
-    "github/search_users",
     "agent",
     "exosuit.exosuit-context/status",
     "exosuit.exosuit-context/plan",
@@ -36,14 +25,6 @@ tools:
     "exosuit.exosuit-context/epoch-finish",
     "exosuit.exosuit-context/epoch-list",
     "exosuit.exosuit-context/logs",
-    "github.vscode-pull-request-github/issue_fetch",
-    "github.vscode-pull-request-github/suggest-fix",
-    "github.vscode-pull-request-github/searchSyntax",
-    "github.vscode-pull-request-github/doSearch",
-    "github.vscode-pull-request-github/renderIssues",
-    "github.vscode-pull-request-github/activePullRequest",
-    "github.vscode-pull-request-github/openPullRequest",
-    "todo",
   ]
 ---
 
