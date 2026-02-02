@@ -1,9 +1,21 @@
 # RFC 0003: Developer Tools (`bkt dev`)
 
+- **Status**: Partially Superseded
+- **Superseded by**: RFC-0020 (Dev and System Commands)
 - Feature Name: `bkt_dev`
 - Start Date: 2025-12-31
 - RFC PR: (leave this empty until PR is opened)
 - Tracking Issue: (leave this empty)
+
+> **⚠️ This RFC has been partially superseded.**
+>
+> The `bkt dev dnf` delegation described here has been replaced by
+> [RFC-0020: Dev and System Commands](0020-dev-and-system-commands.md), which
+> implements `bkt dev install/remove/sync/capture` for toolbox packages.
+>
+> The broader vision of `bkt dev` managing language runtimes (`bkt dev rustup`,
+> `bkt dev npm`, etc.) remains unimplemented. If this functionality is desired,
+> a new RFC should be created that builds on RFC-0020's foundation.
 
 ## Summary
 
