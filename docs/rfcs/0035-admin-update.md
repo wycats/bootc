@@ -56,22 +56,26 @@ Flags:
 
 1. **Capture phase**
    - Run `bkt capture` unless `--skip-capture`
-  - If capture finds changes, commit and push them (or open a PR when `--pr` is set)
-  - If the working tree is dirty before capture, warn and require `--force` (unless `--dry-run`)
+
+- If capture finds changes, commit and push them (or open a PR when `--pr` is set)
+- If the working tree is dirty before capture, warn and require `--force` (unless `--dry-run`)
 
 2. **Wait for CI phase**
-  - Track the commit SHA that was pushed (or PR head SHA)
-  - Poll GitHub Actions for the commit status
-  - Stop immediately if the build fails
+
+- Track the commit SHA that was pushed (or PR head SHA)
+- Poll GitHub Actions for the commit status
+- Stop immediately if the build fails
 
 3. **Image readiness phase**
-  - Poll the registry for the expected image digest
-  - Confirm the image metadata matches the commit SHA
+
+- Poll the registry for the expected image digest
+- Confirm the image metadata matches the commit SHA
 
 4. **Upgrade phase**
-  - Run `bootc upgrade`
-  - Wait for download completion
-  - Report the staged image details (digest, timestamp, image ref)
+
+- Run `bootc upgrade`
+- Wait for download completion
+- Report the staged image details (digest, timestamp, image ref)
 
 5. **Optional reboot**
    - If `--reboot`, reboot after successful staging
@@ -123,13 +127,13 @@ $ bkt admin update
 
 ## Challenges and Solutions
 
-| Challenge | Proposed Solution |
-| --- | --- |
+| Challenge                              | Proposed Solution                                              |
+| -------------------------------------- | -------------------------------------------------------------- |
 | How to know CI is building our commit? | Track commit SHA, poll GitHub Actions API for runs on that SHA |
-| How to know image is ready? | Poll registry for digest with metadata matching the commit SHA |
-| What if CI fails? | Report failure, stop before upgrade |
-| What if user has uncommitted work? | Warn and require `--force` or abort |
-| How long to wait? | Configurable timeout, default 30 minutes |
+| How to know image is ready?            | Poll registry for digest with metadata matching the commit SHA |
+| What if CI fails?                      | Report failure, stop before upgrade                            |
+| What if user has uncommitted work?     | Warn and require `--force` or abort                            |
+| How long to wait?                      | Configurable timeout, default 30 minutes                       |
 
 ## Reference-level Explanation
 
@@ -145,11 +149,11 @@ $ bkt admin update
 
 - When `--skip-capture` is not set:
   1. Check for a clean working tree.
-    - If dirty, warn and require `--force` (unless `--dry-run`).
+  - If dirty, warn and require `--force` (unless `--dry-run`).
   2. Run `bkt capture`.
   3. If capture changes files:
      - Create a commit (e.g. `capture: update manifests`)
-    - Push to the configured remote (or open a PR when `--pr` is set)
+  - Push to the configured remote (or open a PR when `--pr` is set)
   4. If no changes, skip commit/push and keep current HEAD SHA.
 
 #### PR Flow (`--pr`)
@@ -203,13 +207,13 @@ $ bkt admin update
 
 ### Data Flow and State
 
-| Phase | Input | Output | Notes |
-| --- | --- | --- | --- |
-| Capture | working tree, system state | commit SHA | No-op if no drift |
-| CI Wait | commit SHA | success + workflow URL | Failure stops flow |
-| Image Ready | image ref + metadata | digest | Must match commit SHA |
-| Upgrade | image ref + digest | staged deployment | `bootc upgrade` is authoritative |
-| Reboot | staged deployment | system reboot | Optional |
+| Phase       | Input                      | Output                 | Notes                            |
+| ----------- | -------------------------- | ---------------------- | -------------------------------- |
+| Capture     | working tree, system state | commit SHA             | No-op if no drift                |
+| CI Wait     | commit SHA                 | success + workflow URL | Failure stops flow               |
+| Image Ready | image ref + metadata       | digest                 | Must match commit SHA            |
+| Upgrade     | image ref + digest         | staged deployment      | `bootc upgrade` is authoritative |
+| Reboot      | staged deployment          | system reboot          | Optional                         |
 
 ## Rationale and Alternatives
 

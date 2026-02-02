@@ -9,12 +9,11 @@
 //! - Extensions are enabled/disabled manually
 //! - Settings are changed via the UI
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
 use owo_colors::OwoColorize;
 use std::env;
 use std::path::PathBuf;
-use std::process::Command;
 
 use crate::manifest::find_repo_root;
 use crate::output::Output;
@@ -90,77 +89,45 @@ fn get_repo_root() -> Result<PathBuf> {
 
 fn handle_check(
     category: Option<DriftCategory>,
-    format: OutputFormat,
-    no_host: bool,
+    _format: OutputFormat,
+    _no_host: bool,
 ) -> Result<()> {
-    let repo_root = get_repo_root()?;
-    let script_path = repo_root.join("scripts").join("check-drift");
+    // TODO: Implement drift detection natively in Rust
+    // See RFC 0007 for the full design
+    //
+    // The previous implementation depended on a Python script which violates
+    // the project's "No Custom Python Scripts" axiom (see docs/VISION.md).
+    //
+    // For now, this command explains what drift detection will do and
+    // directs users to use `bkt capture` to detect changes.
 
-    if !script_path.exists() {
-        bail!(
-            "Drift detection script not found at {}. \
-             Make sure you're running from the bootc repository.",
-            script_path.display()
-        );
-    }
-
-    let mut cmd = Command::new("python3");
-    cmd.arg(&script_path);
-    cmd.current_dir(&repo_root);
-
-    // Add format flag
-    match format {
-        OutputFormat::Json => {
-            cmd.arg("--json");
-        }
-        OutputFormat::Human => {}
-    }
-
-    // Add no-host flag
-    if no_host {
-        cmd.arg("--no-host");
-    }
-
-    // Add category filter (the Python script doesn't support this yet, but we prepare for it)
-    if let Some(cat) = &category
-        && !matches!(cat, DriftCategory::All)
-    {
-        Output::warning(format!(
-            "Category filter '{:?}' is not yet supported. Running full drift check.",
-            cat
-        ));
-    }
-
-    Output::info("Running drift detection...");
-    Output::info(format!("Repository: {}", repo_root.display()));
+    Output::warning("Drift detection is not yet implemented in Rust.");
     println!();
 
-    let status = cmd
-        .status()
-        .with_context(|| format!("Failed to run {}", script_path.display()))?;
-
-    match status.code() {
-        Some(0) => {
-            println!();
-            Output::success("No drift detected (or only optional-tier changes).");
-            Ok(())
-        }
-        Some(1) => {
-            println!();
-            Output::warning("Drift detected in baked or bootstrapped tiers.");
-            Output::info("Review the output above to see what has drifted.");
-            Ok(())
-        }
-        Some(2) => {
-            bail!("Error collecting system state. Check the output above for details.");
-        }
-        Some(code) => {
-            bail!("Drift check exited with unexpected code: {}", code);
-        }
-        None => {
-            bail!("Drift check was terminated by a signal.");
-        }
+    if let Some(cat) = category {
+        Output::info(format!("Category filter: {:?}", cat));
     }
+
+    println!();
+    println!("Drift detection will compare your system state against manifests.");
+    println!("For now, you can use these alternatives:");
+    println!();
+    println!(
+        "  {} - Capture current system state to manifests",
+        "bkt capture".cyan()
+    );
+    println!(
+        "  {} - Show what capture would change",
+        "bkt capture --dry-run".cyan()
+    );
+    println!("  {} - See git diff after capture", "git diff".cyan());
+    println!();
+    println!(
+        "Run {} for more information about drift detection.",
+        "bkt drift explain".cyan()
+    );
+
+    Ok(())
 }
 
 fn handle_status() -> Result<()> {

@@ -51,13 +51,13 @@ This principle inverts the traditional "edit config, then apply" model:
 
 The two-tier architecture can be further subdivided by persistence characteristics:
 
-| Domain | Immediate Mechanism | Persistence Mechanism | Survives Reboot? |
-|--------|---------------------|----------------------|------------------|
-| **Tier 2: User-space** | Direct tools (GNOME Software, Extension Manager, Settings) | `bkt capture` → manifest | ✅ Yes |
-| **Tier 1b: usr binaries** | `bootc usr-overlay` | Encode in Containerfile → rebuild image | ❌ No (until image rebuild) |
-| **Tier 1a: Base image packages** | ❌ None (deferred) | `bkt system add` → PR → rebuild → reboot | ❌ No (requires full cycle) |
-| **Distrobox container** | `bkt dev install` / direct `dnf` | `bkt capture` → manifest | ✅ Yes |
-| **Host binaries (fetchbin)** | `bkt fetchbin install` | Manifest in `~/.local/share/fetchbin` | ✅ Yes |
+| Domain                           | Immediate Mechanism                                        | Persistence Mechanism                    | Survives Reboot?            |
+| -------------------------------- | ---------------------------------------------------------- | ---------------------------------------- | --------------------------- |
+| **Tier 2: User-space**           | Direct tools (GNOME Software, Extension Manager, Settings) | `bkt capture` → manifest                 | ✅ Yes                      |
+| **Tier 1b: usr binaries**        | `bootc usr-overlay`                                        | Encode in Containerfile → rebuild image  | ❌ No (until image rebuild) |
+| **Tier 1a: Base image packages** | ❌ None (deferred)                                         | `bkt system add` → PR → rebuild → reboot | ❌ No (requires full cycle) |
+| **Distrobox container**          | `bkt dev install` / direct `dnf`                           | `bkt capture` → manifest                 | ✅ Yes                      |
+| **Host binaries (fetchbin)**     | `bkt fetchbin install`                                     | Manifest in `~/.local/share/fetchbin`    | ✅ Yes                      |
 
 ### The Three Patterns
 
@@ -129,6 +129,32 @@ This means:
 - **No manual bookkeeping** — The system tracks what you did
 - **No reboot surprises** — What you see now is what you get after reboot (via capture mechanism)
 - **Full reproducibility** — A fresh system can be reconstructed from manifests
+
+### Technical Constraints
+
+#### No Custom Python Scripts
+
+**Axiom**: This repository must not contain or depend on custom Python scripts.
+
+All tooling in this repository is implemented in Rust (the `bkt` CLI) or minimal shell scripts for bootstrap/glue. Python is explicitly excluded because:
+
+1. **Dependency complexity** — Python scripts require a Python runtime and often additional packages, adding fragile dependencies to the immutable image
+2. **Two languages, one job** — Rust already handles all complex logic; adding Python creates maintenance burden and context-switching
+3. **Reproducibility** — Python version and package management (pip, venv, system packages) introduces variability that conflicts with the immutable image philosophy
+4. **Shell suffices for glue** — Simple orchestration tasks use POSIX shell; complex logic belongs in Rust
+
+**Allowed:**
+
+- Rust code (`bkt/`, `fetchbin/`)
+- Minimal shell scripts (`scripts/bootc-apply`, `scripts/bootc-bootstrap`)
+- Containerfile/Dockerfile syntax
+- JSON manifests
+
+**Not allowed:**
+
+- Python scripts (`.py` files)
+- Dependencies on Python packages
+- Shelling out to Python from Rust or shell scripts
 
 ## The Distrobox Strategy
 

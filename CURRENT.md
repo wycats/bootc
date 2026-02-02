@@ -21,11 +21,11 @@
 
 All P0 issues have been fixed.
 
-| Issue                       | File                      | Status | Commit |
-| --------------------------- | ------------------------- | ------ | ------ |
-| ✅ `bootc-apply` fixed      | `scripts/bootc-apply`     | Done   | 90571b3 |
-| ✅ `bootc-bootstrap` fixed  | `scripts/bootc-bootstrap` | Done   | 90571b3 |
-| ✅ Export location fixed    | `docs/ARCHITECTURE.md`    | Done   | df8e4b8 |
+| Issue                      | File                      | Status | Commit  |
+| -------------------------- | ------------------------- | ------ | ------- |
+| ✅ `bootc-apply` fixed     | `scripts/bootc-apply`     | Done   | 90571b3 |
+| ✅ `bootc-bootstrap` fixed | `scripts/bootc-bootstrap` | Done   | 90571b3 |
+| ✅ Export location fixed   | `docs/ARCHITECTURE.md`    | Done   | df8e4b8 |
 
 **Evidence:** [2025-01-30-roadmap.md](docs/reports/2025-01-30-roadmap.md)
 
