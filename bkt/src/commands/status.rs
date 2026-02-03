@@ -122,6 +122,12 @@ pub struct ExtensionStatus {
     total: usize,
     installed: usize,
     enabled: usize,
+    /// Extensions that should be enabled but aren't
+    to_enable: usize,
+    /// Extensions that should be disabled but are currently enabled
+    to_disable: usize,
+    /// Extensions that should be installed but disabled
+    to_install_disabled: usize,
     /// Extensions enabled but not in manifest
     untracked: usize,
 }
@@ -288,12 +294,6 @@ fn get_gsetting(schema: &str, key: &str) -> Option<String> {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
 }
 
-/// Get the shims directory.
-fn shims_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/home".to_string());
-    PathBuf::from(home).join(".local/bin")
-}
-
 pub fn run(args: StatusArgs) -> Result<()> {
     debug!("Gathering status information");
 
@@ -349,16 +349,38 @@ pub fn run(args: StatusArgs) -> Result<()> {
             merged.extensions.iter().map(|s| s.id()).collect();
 
         let total = merged.extensions.len();
-        let installed = merged
-            .extensions
-            .iter()
-            .filter(|u| is_extension_installed(u.id()))
-            .count();
-        let enabled = merged
-            .extensions
-            .iter()
-            .filter(|u| enabled_extensions.contains(u.id()))
-            .count();
+        let mut installed = 0;
+        let mut enabled = 0;
+        let mut to_enable = 0;
+        let mut to_disable = 0;
+        let mut to_install_disabled = 0;
+
+        for extension in &merged.extensions {
+            let is_installed = is_extension_installed(extension.id());
+            let is_enabled = enabled_extensions.contains(extension.id());
+
+            if is_installed {
+                installed += 1;
+            }
+
+            if is_enabled {
+                enabled += 1;
+            }
+
+            if extension.enabled() {
+                // Should be enabled
+                if !is_enabled {
+                    to_enable += 1;
+                }
+            } else {
+                // Should be disabled
+                if is_enabled {
+                    to_disable += 1;
+                } else if !is_installed {
+                    to_install_disabled += 1;
+                }
+            }
+        }
 
         // Find untracked extensions (enabled but not in manifest)
         let untracked = enabled_extensions
@@ -370,6 +392,9 @@ pub fn run(args: StatusArgs) -> Result<()> {
             total,
             installed,
             enabled,
+            to_enable,
+            to_disable,
+            to_install_disabled,
             untracked,
         }
     };
@@ -405,7 +430,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
         let user = ShimsManifest::load_user().unwrap_or_default();
         let merged = ShimsManifest::merged(&system, &user);
 
-        let shims_dir = shims_dir();
+        let shims_dir = ShimsManifest::shims_dir();
         let total = merged.shims.len();
         let synced = merged
             .shims
@@ -448,7 +473,8 @@ pub fn run(args: StatusArgs) -> Result<()> {
     // pending_sync: items that need to be applied from manifest → system
     // pending_capture: items on system that aren't in manifest (untracked)
     let pending_sync = manifest_status.flatpaks.pending
-        + (manifest_status.extensions.total - manifest_status.extensions.enabled)
+        + manifest_status.extensions.to_enable
+        + manifest_status.extensions.to_install_disabled
         + manifest_status.gsettings.drifted // drifted = needs sync, not capture
         + (manifest_status.shims.total - manifest_status.shims.synced)
         + manifest_status.skel.differs;
@@ -639,12 +665,30 @@ fn print_table_output(report: &StatusReport, verbose: bool) {
     );
 
     // Extensions
-    let ext_pending = report.manifests.extensions.total - report.manifests.extensions.enabled;
-    let ext_info = if ext_pending > 0 {
+    let ext_to_enable = report.manifests.extensions.to_enable;
+    let ext_to_disable = report.manifests.extensions.to_disable;
+    let ext_to_install_disabled = report.manifests.extensions.to_install_disabled;
+    let ext_info = if ext_to_enable > 0 || ext_to_disable > 0 || ext_to_install_disabled > 0 {
+        let mut pending_parts = Vec::new();
+        if ext_to_enable > 0 {
+            pending_parts.push(format!("{} to enable", ext_to_enable.to_string().yellow()));
+        }
+        if ext_to_disable > 0 {
+            pending_parts.push(format!(
+                "{} to disable",
+                ext_to_disable.to_string().yellow()
+            ));
+        }
+        if ext_to_install_disabled > 0 {
+            pending_parts.push(format!(
+                "{} to install disabled",
+                ext_to_install_disabled.to_string().yellow()
+            ));
+        }
         format!(
-            "{} extensions ({} to enable)",
+            "{} extensions ({})",
             report.manifests.extensions.total,
-            ext_pending.to_string().yellow()
+            pending_parts.join(", ")
         )
     } else {
         format!(
@@ -933,6 +977,9 @@ mod tests {
                 total: 5,
                 installed: 4,
                 enabled: 3,
+                to_enable: 2,
+                to_disable: 0,
+                to_install_disabled: 0,
                 untracked: 1,
             },
             gsettings: GSettingStatus {
@@ -950,9 +997,10 @@ mod tests {
             },
         };
 
-        // Pending sync = pending flatpaks + (extensions not enabled) + drifted gsettings + (shims not synced) + skel differs
+        // Pending sync = pending flatpaks + (extensions to enable) + (disabled extensions to install) + drifted gsettings + (shims not synced) + skel differs
         let pending_sync = manifest.flatpaks.pending
-            + (manifest.extensions.total - manifest.extensions.enabled)
+            + manifest.extensions.to_enable
+            + manifest.extensions.to_install_disabled
             + manifest.gsettings.drifted // drifted = needs sync, not capture
             + (manifest.shims.total - manifest.shims.synced)
             + manifest.skel.differs;
@@ -980,6 +1028,9 @@ mod tests {
                     total: 0,
                     installed: 0,
                     enabled: 0,
+                    to_enable: 0,
+                    to_disable: 0,
+                    to_install_disabled: 0,
                     untracked: 0,
                 },
                 gsettings: GSettingStatus {
@@ -1053,6 +1104,9 @@ mod tests {
                     total: 0,
                     installed: 0,
                     enabled: 0,
+                    to_enable: 0,
+                    to_disable: 0,
+                    to_install_disabled: 0,
                     untracked: 0,
                 },
                 gsettings: GSettingStatus {
