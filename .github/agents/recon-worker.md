@@ -1,6 +1,6 @@
 ---
 description: "Gathers raw information from the codebase for a parent agent. Returns findings without interpretation."
-model: GPT-5.2-Codex (vercelAiGateway)
+model: GPT-5.2-Codex (vercel)
 tools:
   [
     "execute/testFailure",
@@ -12,19 +12,20 @@ tools:
     "search",
     "web",
     "agent",
-    "exosuit.exosuit-context/status",
-    "exosuit.exosuit-context/plan",
-    "exosuit.exosuit-context/phase",
-    "exosuit.exosuit-context/steering",
     "exosuit.exosuit-context/context",
-    "exosuit.exosuit-context/list-tasks",
-    "exosuit.exosuit-context/rfc-create",
-    "exosuit.exosuit-context/rfc-promote",
-    "exosuit.exosuit-context/rfc-list",
-    "exosuit.exosuit-context/epoch-start",
     "exosuit.exosuit-context/epoch-finish",
     "exosuit.exosuit-context/epoch-list",
+    "exosuit.exosuit-context/epoch-start",
+    "exosuit.exosuit-context/list-tasks",
     "exosuit.exosuit-context/logs",
+    "exosuit.exosuit-context/phase",
+    "exosuit.exosuit-context/plan",
+    "exosuit.exosuit-context/rfc-create",
+    "exosuit.exosuit-context/rfc-list",
+    "exosuit.exosuit-context/rfc-promote",
+    "exosuit.exosuit-context/status",
+    "exosuit.exosuit-context/steering",
+    "todo",
   ]
 ---
 

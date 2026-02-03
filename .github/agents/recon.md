@@ -1,24 +1,28 @@
 ---
 description: "The custom agent is used to explore the codebase"
-model: Claude Opus 4.5 (vercelAiGateway)
+model: Claude Opus 4.5 (vercel)
 tools:
   [
+    "execute/getTerminalOutput",
+    "execute/runInTerminal",
     "read",
     "search",
+    "web",
     "agent",
-    "exosuit.exosuit-context/status",
-    "exosuit.exosuit-context/plan",
-    "exosuit.exosuit-context/phase",
-    "exosuit.exosuit-context/steering",
     "exosuit.exosuit-context/context",
-    "exosuit.exosuit-context/list-tasks",
-    "exosuit.exosuit-context/rfc-create",
-    "exosuit.exosuit-context/rfc-promote",
-    "exosuit.exosuit-context/rfc-list",
-    "exosuit.exosuit-context/epoch-start",
     "exosuit.exosuit-context/epoch-finish",
     "exosuit.exosuit-context/epoch-list",
+    "exosuit.exosuit-context/epoch-start",
+    "exosuit.exosuit-context/list-tasks",
     "exosuit.exosuit-context/logs",
+    "exosuit.exosuit-context/phase",
+    "exosuit.exosuit-context/plan",
+    "exosuit.exosuit-context/rfc-create",
+    "exosuit.exosuit-context/rfc-list",
+    "exosuit.exosuit-context/rfc-promote",
+    "exosuit.exosuit-context/status",
+    "exosuit.exosuit-context/steering",
+    "todo",
   ]
 ---
 
