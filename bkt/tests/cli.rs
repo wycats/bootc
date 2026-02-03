@@ -717,17 +717,16 @@ fn drift_explain_succeeds() {
 }
 
 #[test]
-fn drift_check_outside_repo_fails() {
-    let temp = assert_fs::TempDir::new().unwrap();
-
+fn drift_check_shows_not_implemented() {
+    // drift check currently shows a stub message since the Rust implementation
+    // is not yet complete (see RFC 0007). It succeeds with a warning.
     bkt()
-        .current_dir(temp.path())
         .args(["drift", "check"])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("Not in a git repository"));
-
-    temp.close().unwrap();
+        .success()
+        .stdout(predicate::str::contains(
+            "Drift detection is not yet implemented",
+        ));
 }
 
 // ============================================================================
