@@ -609,25 +609,20 @@ pub fn get_installed_flatpaks() -> Vec<InstalledFlatpak> {
             let mut apps = Vec::new();
 
             for line in stdout.lines() {
-                let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() >= 2 {
-                    // At least installation and id
-                    apps.push(InstalledFlatpak {
-                        installation: parts.first().unwrap_or(&"system").to_string(),
-                        id: parts.get(1).unwrap_or(&"").to_string(),
-                        origin: parts
-                            .get(2)
-                            .map(|s| if s.is_empty() { "flathub" } else { s })
-                            .unwrap_or("flathub")
-                            .to_string(),
-                        branch: parts
-                            .get(3)
-                            .map(|s| if s.is_empty() { "stable" } else { s })
-                            .unwrap_or("stable")
-                            .to_string(),
-                        commit: parts.get(4).unwrap_or(&"").to_string(),
-                    });
+                let mut parts = line.split_whitespace();
+                let installation = parts.next().unwrap_or("system");
+                let id = parts.next().unwrap_or("");
+                if id.is_empty() {
+                    continue;
                 }
+
+                apps.push(InstalledFlatpak {
+                    installation: installation.to_string(),
+                    id: id.to_string(),
+                    origin: parts.next().unwrap_or("flathub").to_string(),
+                    branch: parts.next().unwrap_or("stable").to_string(),
+                    commit: parts.next().unwrap_or("").to_string(),
+                });
             }
 
             apps

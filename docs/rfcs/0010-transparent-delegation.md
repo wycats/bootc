@@ -1,29 +1,28 @@
 # RFC-0010: Transparent Command Delegation
 
-- **Status**: Superseded
-- **Superseded by**: RFC-0018 (Host-Only Shims)
+- **Status**: Accepted
 - **Created**: 2026-01-05
 - **Depends on**: RFC-0009 (Privileged Operations)
 
-> **⚠️ This RFC has been superseded.**
+> **✅ This RFC is being implemented.**
 >
-> The delegation system described here has been removed. With the adoption of
-> [RFC-0018: Host-Only Shims](0018-host-only-shims.md), `bkt` now runs directly
-> on the host via a host-only shim. This eliminates the need for:
+> The `bkt` binary is bind-mounted into distrobox containers via `~/.local/bin`.
+> When a host-only command (like `bkt status`) runs inside a container, it
+> automatically re-executes on the host via `distrobox-host-exec`.
 >
-> - The `CommandTarget` enum and delegation machinery
-> - `flatpak-spawn --host` delegation from containers
-> - The `BKT_DELEGATED` environment variable
+> This supersedes [RFC-0018: Host-Only Shims](0018-host-only-shims.md), which
+> proposed a different approach that was never implemented.
 >
-> Dev commands that need container execution now invoke `distrobox enter`
-> directly. See also [Host PATH Architecture](../VISION.md#host-path-architecture)
-> for the new PATH model.
+> **Implementation Notes (2026-02-03):**
+> - Use `distrobox-host-exec` (documented distrobox mechanism), not `flatpak-spawn --host`
+> - `Status`, `Doctor`, `Profile`, `Base` are **Host** (not Either) — they read system manifests
+> - `Dnf` command doesn't exist (superseded by RFC-0020 → `bkt dev` and `bkt system`)
 
 ## Summary
 
 Commands that must run on the host should work identically from both the host
 and the toolbox. When run from the toolbox, `bkt` automatically delegates to
-the host via `flatpak-spawn --host`.
+the host via `distrobox-host-exec`.
 
 This RFC defines a **CommandTarget** enum and early delegation mechanism that
 makes this transparent to both users and command implementations.
@@ -61,7 +60,7 @@ This friction violates the "it just works" philosophy.
 ```bash
 # In toolbox (works!):
 $ bkt flatpak add org.gnome.Boxes
-→ Delegating to host via flatpak-spawn...
+→ Delegating to host...
 ✓ Added org.gnome.Boxes to manifest
 ```
 
@@ -87,19 +86,35 @@ you clearly want Host context—you just happen to be _in_ a toolbox.
 
 Each command has a natural target:
 
-| Command           | Target     | Notes                              |
-| ----------------- | ---------- | ---------------------------------- |
-| `bkt flatpak *`   | **Host**   | Flatpaks are installed on host     |
-| `bkt extension *` | **Host**   | GNOME extensions are host-level    |
-| `bkt gsetting *`  | **Host**   | GSettings are host-level           |
-| `bkt shim *`      | **Host**   | Shims enable host→toolbox bridging |
-| `bkt capture`     | **Host**   | Reads host state                   |
-| `bkt apply`       | **Host**   | Applies to host                    |
-| `bkt dev dnf *`   | **Dev**    | DNF runs in toolbox                |
-| `bkt dnf *`       | **Either** | rpm-ostree on host, dnf in toolbox |
-| `bkt status`      | **Either** | Read-only, works anywhere          |
-| `bkt doctor`      | **Either** | Read-only, works anywhere          |
-| `bkt admin bootc` | **Host**   | Already delegates correctly        |
+| Command           | Target     | Notes                                    |
+| ----------------- | ---------- | ---------------------------------------- |
+| `bkt flatpak *`   | **Host**   | Flatpaks are installed on host           |
+| `bkt extension *` | **Host**   | GNOME extensions are host-level          |
+| `bkt gsetting *`  | **Host**   | GSettings are host-level                 |
+| `bkt shim *`      | **Host**   | Shims enable host→toolbox bridging       |
+| `bkt capture`     | **Host**   | Reads host state                         |
+| `bkt apply`       | **Host**   | Applies to host                          |
+| `bkt status`      | **Host**   | Reads system manifests in /usr/share     |
+| `bkt doctor`      | **Host**   | Validates host toolchains and paths      |
+| `bkt profile`     | **Host**   | Reads system manifests, calls rpm        |
+| `bkt base`        | **Host**   | Requires host rpm/rpm-ostree             |
+| `bkt system *`    | **Host**   | System/image-level operations            |
+| `bkt distrobox *` | **Host**   | Distrobox config is host-level           |
+| `bkt appimage *`  | **Host**   | AppImages are host-level (GearLever)     |
+| `bkt fetchbin *`  | **Host**   | Host binaries                            |
+| `bkt homebrew *`  | **Host**   | Linuxbrew is host-level                  |
+| `bkt dev *`       | **Dev**    | Toolbox operations                       |
+| `bkt admin bootc` | **Host**   | Already delegates correctly              |
+| `bkt drift`       | **Either** | Only reads local state file              |
+| `bkt schema`      | **Either** | Pure utility                             |
+| `bkt completions` | **Either** | Pure utility                             |
+| `bkt repo`        | **Either** | Works on repo files                      |
+| `bkt upstream`    | **Either** | Works on repo files                      |
+| `bkt changelog`   | **Either** | Works on repo files                      |
+| `bkt skel`        | **Either** | Works on user files                      |
+| `bkt buildinfo`   | **Either** | Read-only info                           |
+| `bkt containerfile` | **Either** | Ephemeral manifest                     |
+| `bkt local`       | **Either** | Manifest editing                         |
 
 ## Design
 
@@ -127,31 +142,38 @@ impl Commands {
     /// Get the natural target for this command.
     pub fn target(&self) -> CommandTarget {
         match self {
-            // Host-only commands
+            // Host-only commands (read system manifests or require host daemons)
             Commands::Flatpak(_) => CommandTarget::Host,
             Commands::Extension(_) => CommandTarget::Host,
             Commands::Gsetting(_) => CommandTarget::Host,
             Commands::Shim(_) => CommandTarget::Host,
             Commands::Capture(_) => CommandTarget::Host,
             Commands::Apply(_) => CommandTarget::Host,
-            Commands::Admin(_) => CommandTarget::Host, // Already handles delegation internally
+            Commands::Status(_) => CommandTarget::Host,    // Reads /usr/share/bootc-bootstrap/
+            Commands::Doctor(_) => CommandTarget::Host,    // Validates host toolchains
+            Commands::Profile(_) => CommandTarget::Host,   // Reads system manifests, calls rpm
+            Commands::Base(_) => CommandTarget::Host,      // Requires host rpm/rpm-ostree
+            Commands::System(_) => CommandTarget::Host,    // System/image operations
+            Commands::Distrobox(_) => CommandTarget::Host, // Distrobox config is host-level
+            Commands::AppImage(_) => CommandTarget::Host,  // AppImages are host-level
+            Commands::Fetchbin(_) => CommandTarget::Host,  // Host binaries
+            Commands::Homebrew(_) => CommandTarget::Host,  // Linuxbrew is host-level
+            Commands::Admin(_) => CommandTarget::Host,     // Already handles delegation internally
 
-            // Dev-only commands (bkt dev dnf, etc.)
+            // Dev-only commands (toolbox operations)
             Commands::Dev(_) => CommandTarget::Dev,
 
-            // Either: depends on explicit context or runtime
-            Commands::Dnf(_) => CommandTarget::Either,
-            Commands::Status(_) => CommandTarget::Either,
-            Commands::Doctor(_) => CommandTarget::Either,
-            Commands::Profile(_) => CommandTarget::Either,
+            // Either: pure utilities or work on repo/user files only
+            Commands::Drift(_) => CommandTarget::Either,   // Only reads local state file
             Commands::Repo(_) => CommandTarget::Either,
             Commands::Schema(_) => CommandTarget::Either,
             Commands::Completions(_) => CommandTarget::Either,
             Commands::Upstream(_) => CommandTarget::Either,
             Commands::Changelog(_) => CommandTarget::Either,
-            Commands::Drift(_) => CommandTarget::Either,
-            Commands::Base(_) => CommandTarget::Either,
             Commands::Skel(_) => CommandTarget::Either,
+            Commands::BuildInfo(_) => CommandTarget::Either,
+            Commands::Containerfile(_) => CommandTarget::Either,
+            Commands::Local(_) => CommandTarget::Either,
         }
     }
 }
@@ -204,10 +226,10 @@ fn maybe_delegate(cli: &Cli) -> Result<()> {
             bail!(
                 "Cannot run host commands from a generic container\n\n\
                  This command requires the host system, but you're in a container\n\
-                 without flatpak-spawn access (not a toolbox).\n\n\
+                 without distrobox-host-exec access.\n\n\
                  Options:\n  \
                  • Exit this container and run on the host\n  \
-                 • Use a toolbox instead: toolbox create && toolbox enter"
+                 • Use a distrobox instead: distrobox create && distrobox enter"
             );
         }
 
@@ -220,18 +242,21 @@ fn maybe_delegate(cli: &Cli) -> Result<()> {
 ### 4. Delegation Functions
 
 ```rust
-/// Delegate the current command to the host via flatpak-spawn.
+/// Delegate the current command to the host via distrobox-host-exec.
+///
+/// distrobox-host-exec is the documented mechanism for running host commands
+/// from within a distrobox container. It's more reliable than flatpak-spawn
+/// which may not be available in all container configurations.
 fn delegate_to_host() -> Result<()> {
-    Output::info("Delegating to host via flatpak-spawn...");
+    Output::info("Delegating to host...");
 
     let args: Vec<String> = std::env::args().collect();
-    let status = std::process::Command::new("flatpak-spawn")
-        .arg("--host")
+    let status = std::process::Command::new("distrobox-host-exec")
         .arg("bkt")
         .args(&args[1..])  // Skip argv[0] (the current binary path)
         .env("BKT_DELEGATED", "1")  // Prevent recursion
         .status()
-        .context("Failed to execute flatpak-spawn")?;
+        .context("Failed to execute distrobox-host-exec")?;
 
     // Exit with the same code as the delegated command
     std::process::exit(status.code().unwrap_or(1));
@@ -325,7 +350,7 @@ fn maybe_delegate(cli: &Cli) -> Result<()> {
     match (runtime, target) {
         (RuntimeEnvironment::Toolbox, CommandTarget::Host) => {
             if cli.dry_run {
-                Output::dry_run("Would delegate to host: flatpak-spawn --host bkt ...");
+                Output::dry_run("Would delegate to host: distrobox-host-exec bkt ...");
                 // Continue to show the rest of the dry-run output
                 return Ok(());
             }
