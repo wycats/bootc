@@ -1,9 +1,23 @@
 # RFC 0018: Host-Only Shims
 
+- **Status**: Not Started
 - Feature Name: `host_only_shims`
 - Start Date: 2026-01-22
 - RFC PR: (leave this empty until PR is opened)
 - Tracking Issue: (leave this empty)
+
+> **📋 Not Yet Implemented**
+>
+> This RFC proposes a `host_only` option for shims that would create direct
+> symlinks instead of distrobox-enter wrappers. This feature has not been
+> implemented.
+>
+> Current shim generation (see `bkt/src/commands/shim.rs`) uses `flatpak-spawn --host`
+> wrappers. The transition to distrobox-based shims described in
+> [RFC-0017](0017-distrobox-integration.md) is also incomplete.
+>
+> **Note:** RFC-0010 (Transparent Delegation) was superseded by this RFC,
+> but this RFC itself remains unimplemented.
 
 ## Summary
 

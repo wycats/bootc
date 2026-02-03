@@ -1,9 +1,23 @@
 # RFC 0002: Package Management (`bkt dnf`)
 
+- **Status**: Superseded
+- **Superseded by**: RFC-0020 (Dev and System Commands)
 - Feature Name: `bkt_dnf`
 - Start Date: 2025-12-31
 - RFC PR: (leave this empty until PR is opened)
 - Tracking Issue: (leave this empty)
+
+> **⚠️ This RFC has been superseded.**
+>
+> The `bkt dnf` command structure described here has been replaced by
+> [RFC-0020: Dev and System Commands](0020-dev-and-system-commands.md), which
+> separates package management into two distinct commands:
+>
+> - `bkt system add/remove` — For image packages (deferred, PR-based)
+> - `bkt dev install/remove` — For toolbox packages (immediate)
+>
+> This separation reflects the fundamentally different execution models:
+> system packages require image rebuilds, while dev packages are immediate.
 
 ## Summary
 
