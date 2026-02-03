@@ -540,7 +540,7 @@ fn dev_install_updates_toolbox_manifest() {
     bkt()
         .env("HOME", home)
         .env("PATH", new_path)
-        .args(["dev", "install", "--force", "gcc"])
+        .args(["--no-delegate", "dev", "install", "--force", "gcc"])
         .assert()
         .success();
 
@@ -569,7 +569,7 @@ fn dev_status_shows_empty_manifest() {
 
     bkt()
         .env("HOME", home)
-        .args(["dev", "status"])
+        .args(["--no-delegate", "dev", "status"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Development Toolbox Status"))
@@ -585,7 +585,7 @@ fn dev_diff_shows_empty_manifest() {
 
     bkt()
         .env("HOME", home)
-        .args(["dev", "diff"])
+        .args(["--no-delegate", "dev", "diff"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Toolbox manifest is empty"));
@@ -600,7 +600,7 @@ fn dev_sync_shows_empty_manifest() {
 
     bkt()
         .env("HOME", home)
-        .args(["dev", "sync"])
+        .args(["--no-delegate", "dev", "sync"])
         .assert()
         .success()
         .stdout(predicate::str::contains(

@@ -474,6 +474,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
     // pending_capture: items on system that aren't in manifest (untracked)
     let pending_sync = manifest_status.flatpaks.pending
         + manifest_status.extensions.to_enable
+        + manifest_status.extensions.to_disable
         + manifest_status.extensions.to_install_disabled
         + manifest_status.gsettings.drifted // drifted = needs sync, not capture
         + (manifest_status.shims.total - manifest_status.shims.synced)
@@ -997,15 +998,16 @@ mod tests {
             },
         };
 
-        // Pending sync = pending flatpaks + (extensions to enable) + (disabled extensions to install) + drifted gsettings + (shims not synced) + skel differs
+        // Pending sync = pending flatpaks + (extensions to enable) + (extensions to disable) + (disabled extensions to install) + drifted gsettings + (shims not synced) + skel differs
         let pending_sync = manifest.flatpaks.pending
             + manifest.extensions.to_enable
+            + manifest.extensions.to_disable
             + manifest.extensions.to_install_disabled
             + manifest.gsettings.drifted // drifted = needs sync, not capture
             + (manifest.shims.total - manifest.shims.synced)
             + manifest.skel.differs;
 
-        assert_eq!(pending_sync, 2 + 2 + 2 + 0 + 0); // 6
+        assert_eq!(pending_sync, 2 + 2 + 0 + 0 + 2 + 0 + 0); // 6 (to_disable is 0 in test data)
 
         // Pending capture = untracked flatpaks + untracked extensions (NOT drifted gsettings)
         let pending_capture = manifest.flatpaks.untracked + manifest.extensions.untracked;
