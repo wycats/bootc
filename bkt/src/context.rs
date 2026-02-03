@@ -437,6 +437,25 @@ pub enum CommandDomain {
     Completions,
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Command Target (RFC-0010)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Where a command naturally wants to execute.
+///
+/// This is distinct from `ExecutionContext` (user intent) and `RuntimeEnvironment`
+/// (where we're actually running). `CommandTarget` represents the command's
+/// intrinsic requirement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandTarget {
+    /// Must run on the host (flatpak, extension, gsetting, shim, capture, apply, etc.)
+    Host,
+    /// Must run in the dev toolbox (bkt dev commands)
+    Dev,
+    /// Can run either place, depends on context (schema, completions, repo, etc.)
+    Either,
+}
+
 impl CommandDomain {
     /// Check if this domain is valid for the given execution context.
     pub fn valid_for_context(&self, context: ExecutionContext) -> bool {

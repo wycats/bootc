@@ -10,7 +10,7 @@
 
 Implement passwordless privileged operations for `bkt` commands using polkit authorization, enabling seamless management of bootc images and systemd services from both host and toolbox contexts.
 
-> **Note**: This RFC assumes that `bkt admin` commands automatically delegate to the host via RFC-0010's transparent delegation infrastructure. The delegation layer handles toolbox→host routing; this RFC focuses on privilege elevation via polkit/pkexec.
+> **Note**: This RFC assumes that `bkt admin` commands automatically delegate to the host via RFC-0010's transparent delegation infrastructure (now being implemented). The delegation layer handles toolbox→host routing; this RFC focuses on privilege elevation via polkit/pkexec.
 
 ## Motivation
 

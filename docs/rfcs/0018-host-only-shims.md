@@ -1,23 +1,21 @@
 # RFC 0018: Host-Only Shims
 
-- **Status**: Not Started
+- **Status**: Superseded
+- **Superseded by**: [RFC-0010](0010-transparent-delegation.md) (Transparent Command Delegation)
 - Feature Name: `host_only_shims`
 - Start Date: 2026-01-22
 - RFC PR: (leave this empty until PR is opened)
 - Tracking Issue: (leave this empty)
 
-> **📋 Not Yet Implemented**
+> **⚠️ This RFC has been superseded.**
 >
-> This RFC proposes a `host_only` option for shims that would create direct
-> symlinks instead of distrobox-enter wrappers. This feature has not been
-> implemented.
+> This RFC proposed creating host-only shims as direct symlinks. Instead, we're
+> implementing [RFC-0010: Transparent Command Delegation](0010-transparent-delegation.md),
+> which handles the container→host boundary transparently within `bkt` itself
+> using `flatpak-spawn --host` re-execution.
 >
-> Current shim generation (see `bkt/src/commands/shim.rs`) uses `flatpak-spawn --host`
-> wrappers. The transition to distrobox-based shims described in
-> [RFC-0017](0017-distrobox-integration.md) is also incomplete.
->
-> **Note:** RFC-0010 (Transparent Delegation) was superseded by this RFC,
-> but this RFC itself remains unimplemented.
+> The RFC-0010 approach is simpler: the same `bkt` binary works in both contexts,
+> automatically delegating to the host when needed.
 
 ## Summary
 

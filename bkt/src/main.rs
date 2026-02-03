@@ -21,7 +21,7 @@
 //! - `--local`: Execute locally only, skip PR
 //! - `--pr-only`: Create PR only, skip local execution
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
@@ -75,6 +75,10 @@ pub struct Cli {
     /// Skip preflight checks for PR workflow
     #[arg(long, global = true)]
     pub skip_preflight: bool,
+
+    /// Don't auto-delegate to host/toolbox (for debugging)
+    #[arg(long, global = true, hide = true)]
+    pub no_delegate: bool,
 
     #[command(subcommand)]
     pub command: Commands,
@@ -183,6 +187,144 @@ pub enum Commands {
     Local(commands::local::LocalArgs),
 }
 
+impl Commands {
+    /// Get the natural target for this command.
+    ///
+    /// This determines where the command wants to run, independent of where
+    /// it's currently running. Used by `maybe_delegate()` to decide if we
+    /// need to re-exec on a different host/container.
+    pub fn target(&self) -> context::CommandTarget {
+        use context::CommandTarget;
+        match self {
+            // Host-only commands (read system manifests or require host daemons)
+            Commands::Flatpak(_) => CommandTarget::Host,
+            Commands::Extension(_) => CommandTarget::Host,
+            Commands::Gsetting(_) => CommandTarget::Host,
+            Commands::Shim(_) => CommandTarget::Host,
+            Commands::Capture(_) => CommandTarget::Host,
+            Commands::Apply(_) => CommandTarget::Host,
+            Commands::Status(_) => CommandTarget::Host, // Reads /usr/share/bootc-bootstrap/
+            Commands::Doctor(_) => CommandTarget::Host, // Validates host toolchains
+            Commands::Profile(_) => CommandTarget::Host, // Reads system manifests, calls rpm
+            Commands::Base(_) => CommandTarget::Host,   // Requires host rpm/rpm-ostree
+            Commands::System(_) => CommandTarget::Host, // System/image operations
+            Commands::Distrobox(_) => CommandTarget::Host, // Distrobox config is host-level
+            Commands::AppImage(_) => CommandTarget::Host, // AppImages are host-level
+            Commands::Fetchbin(_) => CommandTarget::Host, // Host binaries
+            Commands::Homebrew(_) => CommandTarget::Host, // Linuxbrew is host-level
+            Commands::Admin(_) => CommandTarget::Host,  // Already handles delegation internally
+
+            // Dev-only commands (toolbox operations)
+            Commands::Dev(_) => CommandTarget::Dev,
+
+            // Either: pure utilities or work on repo/user files only
+            Commands::Drift(_) => CommandTarget::Either,
+            Commands::Repo(_) => CommandTarget::Either,
+            Commands::Schema(_) => CommandTarget::Either,
+            Commands::Completions(_) => CommandTarget::Either,
+            Commands::Upstream(_) => CommandTarget::Either,
+            Commands::Changelog(_) => CommandTarget::Either,
+            Commands::Skel(_) => CommandTarget::Either,
+            Commands::BuildInfo(_) => CommandTarget::Either,
+            Commands::Containerfile(_) => CommandTarget::Either,
+            Commands::Local(_) => CommandTarget::Either,
+        }
+    }
+}
+
+/// Delegate to the appropriate context if needed.
+///
+/// This is called early in main(), after parsing but before command dispatch.
+/// If we're in the wrong environment for the command's target, we re-exec
+/// via distrobox-host-exec (toolbox→host) or distrobox enter (host→toolbox).
+fn maybe_delegate(cli: &Cli) -> Result<()> {
+    // Skip if explicitly disabled
+    if cli.no_delegate {
+        return Ok(());
+    }
+
+    // Skip if already delegated (prevent infinite recursion)
+    if std::env::var("BKT_DELEGATED").is_ok() {
+        return Ok(());
+    }
+
+    let runtime = context::detect_environment();
+    let target = cli.command.target();
+
+    match (runtime, target) {
+        // In toolbox, command wants host → delegate to host
+        (context::RuntimeEnvironment::Toolbox, context::CommandTarget::Host) => {
+            if cli.dry_run {
+                output::Output::dry_run("Would delegate to host: distrobox-host-exec bkt ...");
+                return Ok(());
+            }
+            delegate_to_host()?;
+        }
+
+        // On host, command wants dev → delegate to toolbox
+        (context::RuntimeEnvironment::Host, context::CommandTarget::Dev) => {
+            if cli.dry_run {
+                output::Output::dry_run(
+                    "Would delegate to toolbox: distrobox enter bootc-dev -- bkt ...",
+                );
+                return Ok(());
+            }
+            delegate_to_toolbox()?;
+        }
+
+        // Generic container, command wants host → error (no delegation path)
+        (context::RuntimeEnvironment::Container, context::CommandTarget::Host) => {
+            anyhow::bail!(
+                "Cannot run host commands from a generic container\n\n\
+                 This command requires the host system, but you're in a container\n\
+                 without distrobox-host-exec access.\n\n\
+                 Options:\n  \
+                 • Exit this container and run on the host\n  \
+                 • Use a distrobox instead: distrobox create && distrobox enter"
+            );
+        }
+
+        // All other cases: run locally
+        _ => {}
+    }
+
+    Ok(())
+}
+
+/// Delegate the current command to the host via distrobox-host-exec.
+fn delegate_to_host() -> Result<()> {
+    output::Output::info("Delegating to host...");
+
+    let args: Vec<String> = std::env::args().collect();
+    let status = std::process::Command::new("distrobox-host-exec")
+        .arg("bkt")
+        .args(&args[1..]) // Skip argv[0] (the current binary path)
+        .env("BKT_DELEGATED", "1") // Prevent recursion
+        .status()
+        .context("Failed to execute distrobox-host-exec")?;
+
+    // Exit with the same code as the delegated command
+    std::process::exit(status.code().unwrap_or(1));
+}
+
+/// Delegate the current command to the default toolbox.
+fn delegate_to_toolbox() -> Result<()> {
+    output::Output::info("Delegating to toolbox...");
+
+    let args: Vec<String> = std::env::args().collect();
+    let status = std::process::Command::new("distrobox")
+        .arg("enter")
+        .arg("bootc-dev")
+        .arg("--")
+        .arg("bkt")
+        .args(&args[1..])
+        .env("BKT_DELEGATED", "1")
+        .status()
+        .context("Failed to execute distrobox enter")?;
+
+    std::process::exit(status.code().unwrap_or(1));
+}
+
 fn main() -> Result<()> {
     // Initialize tracing with RUST_LOG env filter
     // e.g., RUST_LOG=bkt=debug
@@ -191,6 +333,9 @@ fn main() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
+
+    // Check if we need to delegate to a different context (RFC-0010)
+    maybe_delegate(&cli)?;
 
     // Create execution plan from global options
     let plan = pipeline::ExecutionPlan::from_cli(&cli);
