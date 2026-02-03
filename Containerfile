@@ -35,20 +35,7 @@ RUN set -eu; \
 # === END COPR_REPOS ===
 
 # === KERNEL_ARGUMENTS (managed by bkt) ===
-# Kernel arguments are managed via /usr/lib/bootc/kargs.d/*.toml
-# These are applied by bootc on upgrade and persist across reboots
-RUN mkdir -p /usr/lib/bootc/kargs.d && \
-    printf '%s\n' \
-        '# Memory management optimizations' \
-        '# zswap: compress swap pages in RAM before writing to disk' \
-        '# Reduces swap I/O and improves responsiveness under memory pressure' \
-        'kargs = [' \
-        '    "zswap.enabled=1",' \
-        '    "zswap.compressor=lz4",' \
-        '    "zswap.zpool=zsmalloc",' \
-        '    "zswap.max_pool_percent=25"' \
-        ']' \
-        > /usr/lib/bootc/kargs.d/10-zswap.toml
+# No kernel arguments configured
 # === END KERNEL_ARGUMENTS ===
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
