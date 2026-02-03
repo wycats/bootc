@@ -20,6 +20,7 @@ pub fn run(args: DoctorArgs) -> Result<()> {
 
     // Additional environment readiness checks (not specific to PR workflows).
     results.push(check_distrobox_shims_path());
+    results.push(check_distrobox_wrappers());
     results.push(check_devtools_resolve_to_distrobox("cargo"));
     results.push(check_devtools_resolve_to_distrobox("node"));
     results.push(check_devtools_resolve_to_distrobox("pnpm"));
@@ -220,4 +221,92 @@ fn check_devtools_resolve_to_distrobox(cmd: &str) -> crate::pr::PreflightResult 
         &format!("{} resolution", cmd),
         &format!("{} resolves to distrobox shim", cmd),
     )
+}
+
+/// Check that all files in ~/.local/bin/distrobox are valid wrapper scripts.
+fn check_distrobox_wrappers() -> crate::pr::PreflightResult {
+    let Some(home) = home_dir() else {
+        return fail(
+            "distrobox wrappers",
+            "Cannot determine $HOME",
+            "Ensure HOME is set",
+        );
+    };
+
+    let distrobox_dir = home.join(".local/bin/distrobox");
+    if !distrobox_dir.exists() {
+        return pass(
+            "distrobox wrappers",
+            "~/.local/bin/distrobox does not exist (ok if unused)",
+        );
+    }
+
+    let entries = match std::fs::read_dir(&distrobox_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            return fail(
+                "distrobox wrappers",
+                &format!("Cannot read ~/.local/bin/distrobox: {}", e),
+                "",
+            );
+        }
+    };
+
+    let mut non_wrappers: Vec<String> = Vec::new();
+    let mut unreadable: Vec<String> = Vec::new();
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                unreadable.push(format!("(entry error: {})", e));
+                continue;
+            }
+        };
+
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let file_name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.display().to_string());
+
+        // Read first 512 bytes to check for marker (avoids loading large binaries)
+        let check_result = std::fs::File::open(&path).and_then(|mut file| {
+            use std::io::Read;
+            let mut buffer = [0u8; 512];
+            let n = file.read(&mut buffer)?;
+            let content = String::from_utf8_lossy(&buffer[..n]);
+            Ok(content.contains("distrobox_binary"))
+        });
+
+        match check_result {
+            Ok(true) => {} // Valid wrapper
+            Ok(false) => non_wrappers.push(file_name),
+            Err(_) => unreadable.push(file_name),
+        }
+    }
+
+    if non_wrappers.is_empty() && unreadable.is_empty() {
+        pass(
+            "distrobox wrappers",
+            "All files in ~/.local/bin/distrobox are valid wrappers",
+        )
+    } else {
+        let mut problems = Vec::new();
+        if !non_wrappers.is_empty() {
+            problems.push(format!("non-wrapper files: {}", non_wrappers.join(", ")));
+        }
+        if !unreadable.is_empty() {
+            problems.push(format!("unreadable files: {}", unreadable.join(", ")));
+        }
+        fail(
+            "distrobox wrappers",
+            &problems.join("; "),
+            "Remove these files and re-export from distrobox:\n  rm ~/.local/bin/distrobox/<file>\n  bkt distrobox apply",
+        )
+    }
 }
