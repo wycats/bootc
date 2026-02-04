@@ -13,6 +13,7 @@ use crate::pipeline::ExecutionPlan;
 use crate::repo::find_repo_path;
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
+use owo_colors::OwoColorize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -98,34 +99,59 @@ fn list_skel_files(skel: &Path) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-/// Compare two files and show diff.
-fn diff_files(skel_file: &Path, home_file: &Path) -> Result<Option<String>> {
+/// Result of comparing two files
+enum DiffResult {
+    Identical,
+    Different(String),
+    MissingInHome,
+    MissingInSkel,
+}
+
+/// Compare two files and return diff result.
+fn diff_files(skel_file: &Path, home_file: &Path) -> Result<DiffResult> {
     if !home_file.exists() {
-        return Ok(Some(format!(
-            "File does not exist in $HOME: {}",
-            home_file.display()
-        )));
+        return Ok(DiffResult::MissingInHome);
     }
 
     if !skel_file.exists() {
-        return Ok(Some(format!(
-            "File does not exist in skel: {}",
-            skel_file.display()
-        )));
+        return Ok(DiffResult::MissingInSkel);
     }
 
     let output = Command::new("diff")
-        .args(["-u", "--color=auto", "--"])
+        .args(["-u", "--"])
         .arg(skel_file)
         .arg(home_file)
         .output()
         .context("Failed to run diff")?;
 
     if output.status.success() {
-        // Files are identical
-        Ok(None)
+        Ok(DiffResult::Identical)
     } else {
-        Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()))
+        Ok(DiffResult::Different(
+            String::from_utf8_lossy(&output.stdout).to_string(),
+        ))
+    }
+}
+
+/// Print a colored unified diff
+fn print_colored_diff(diff: &str) {
+    for line in diff.lines() {
+        if line.starts_with("+++") || line.starts_with("---") {
+            // File headers - bold
+            println!("{}", line.bold());
+        } else if line.starts_with("@@") {
+            // Hunk headers - cyan
+            println!("{}", line.cyan());
+        } else if line.starts_with('+') {
+            // Additions - green
+            println!("{}", line.green());
+        } else if line.starts_with('-') {
+            // Deletions - red
+            println!("{}", line.red());
+        } else {
+            // Context lines
+            println!("{}", line);
+        }
     }
 }
 
@@ -210,10 +236,17 @@ pub fn run(args: SkelArgs, plan: &ExecutionPlan) -> Result<()> {
                 let skel_file = skel.join(&file);
                 let home_file = home.join(&file);
 
-                Output::subheader(format!("=== {} ===", file));
+                println!("\n{}", format!("━━━ {} ━━━", file).bold());
                 match diff_files(&skel_file, &home_file)? {
-                    Some(diff) => println!("{}", diff),
-                    None => Output::success("Files are identical"),
+                    DiffResult::Identical => Output::success("Files are identical"),
+                    DiffResult::Different(diff) => print_colored_diff(&diff),
+                    DiffResult::MissingInHome => {
+                        println!("  {} File missing in $HOME", "⚠".yellow());
+                        println!("  Run {} to create it", "bkt skel sync".cyan());
+                    }
+                    DiffResult::MissingInSkel => {
+                        println!("  {} File missing in skel/", "⚠".yellow());
+                    }
                 }
             } else {
                 // Diff all skel files
@@ -224,38 +257,75 @@ pub fn run(args: SkelArgs, plan: &ExecutionPlan) -> Result<()> {
                     return Ok(());
                 }
 
-                let mut identical = 0;
-                let mut different = 0;
-                let mut missing = 0;
+                let mut identical_files = Vec::new();
+                let mut different_files = Vec::new();
+                let mut missing_files = Vec::new();
 
+                // First pass: categorize files
                 for file in &files {
                     let skel_file = skel.join(file);
                     let home_file = home.join(file);
 
                     match diff_files(&skel_file, &home_file)? {
-                        Some(diff) => {
-                            if home_file.exists() {
-                                Output::subheader(format!("=== {} ===", file.display()));
-                                println!("{}", diff);
-                                different += 1;
-                            } else {
-                                Output::subheader(format!("=== {} ===", file.display()));
-                                Output::warning("missing in $HOME");
-                                Output::blank();
-                                missing += 1;
-                            }
-                        }
-                        None => {
-                            identical += 1;
-                        }
+                        DiffResult::Identical => identical_files.push(file.clone()),
+                        DiffResult::Different(_) => different_files.push(file.clone()),
+                        DiffResult::MissingInHome => missing_files.push(file.clone()),
+                        DiffResult::MissingInSkel => {} // Shouldn't happen when iterating skel files
                     }
                 }
 
-                Output::blank();
-                Output::info(format!(
-                    "Summary: {} identical, {} different, {} missing in $HOME",
-                    identical, different, missing
-                ));
+                // Print header
+                println!("\n{}", "bkt skel diff".bold());
+                println!();
+
+                // Show summary first
+                println!(
+                    "  {} {} synced, {} {}, {} {}",
+                    "Summary:".dimmed(),
+                    identical_files.len().to_string().green(),
+                    different_files.len().to_string().yellow(),
+                    "differ".yellow(),
+                    missing_files.len().to_string().cyan(),
+                    "missing in $HOME".cyan()
+                );
+                println!();
+
+                // Show differing files with diffs
+                if !different_files.is_empty() {
+                    for file in &different_files {
+                        let skel_file = skel.join(file);
+                        let home_file = home.join(file);
+
+                        println!("{}", format!("━━━ {} ━━━", file.display()).bold().yellow());
+                        println!("  {} skel/{}", "←".red(), file.display());
+                        println!("  {} $HOME/{}", "→".green(), file.display());
+                        println!();
+
+                        if let DiffResult::Different(diff) = diff_files(&skel_file, &home_file)? {
+                            print_colored_diff(&diff);
+                        }
+                        println!();
+                    }
+                }
+
+                // Show missing files
+                if !missing_files.is_empty() {
+                    println!("{}", "━━━ Missing in $HOME ━━━".bold().cyan());
+                    for file in &missing_files {
+                        println!("  {} {}", "⚠".yellow(), file.display());
+                    }
+                    println!("\n  Run {} to create these files", "bkt skel sync".cyan());
+                    println!();
+                }
+
+                // Show identical files (collapsed)
+                if !identical_files.is_empty() {
+                    println!(
+                        "{} {} files are in sync",
+                        "✓".green(),
+                        identical_files.len()
+                    );
+                }
             }
         }
         SkelAction::List => {
