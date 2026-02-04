@@ -151,6 +151,9 @@ pub struct ShimStatus {
 pub struct SkelStatus {
     total: usize,
     differs: usize,
+    /// Names of files that differ from $HOME
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    differing_files: Vec<String>,
 }
 
 /// Aggregated drift status
@@ -447,16 +450,23 @@ pub fn run(args: StatusArgs) -> Result<()> {
             let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
             let files = list_skel_files(&skel);
             let total = files.len();
-            let differs = files
+            let differing_files: Vec<String> = files
                 .iter()
                 .filter(|f| skel_differs(&skel.join(f), &home.join(f)))
-                .count();
+                .cloned()
+                .collect();
+            let differs = differing_files.len();
 
-            SkelStatus { total, differs }
+            SkelStatus {
+                total,
+                differs,
+                differing_files,
+            }
         } else {
             SkelStatus {
                 total: 0,
                 differs: 0,
+                differing_files: Vec::new(),
             }
         }
     };
@@ -772,6 +782,18 @@ fn print_table_output(report: &StatusReport, verbose: bool) {
     };
     println!("    {:<12} {}", "Skel:".dimmed(), skel_info);
 
+    // Show differing skel files with hint
+    if !report.manifests.skel.differing_files.is_empty() {
+        for file in &report.manifests.skel.differing_files {
+            println!(
+                "      {} {} differs from $HOME",
+                "⚠".yellow(),
+                file.yellow()
+            );
+        }
+        println!("      Run {} to see changes", "bkt skel diff".cyan());
+    }
+
     // Drift Detection Section - show untracked items that need capture
     if report.drift.pending_capture > 0 {
         Output::blank();
@@ -995,6 +1017,7 @@ mod tests {
             skel: SkelStatus {
                 total: 2,
                 differs: 0,
+                differing_files: Vec::new(),
             },
         };
 
@@ -1047,6 +1070,7 @@ mod tests {
                 skel: SkelStatus {
                     total: 0,
                     differs: 0,
+                    differing_files: Vec::new(),
                 },
             },
             drift: DriftStatus {
@@ -1123,6 +1147,7 @@ mod tests {
                 skel: SkelStatus {
                     total: 0,
                     differs: 0,
+                    differing_files: Vec::new(),
                 },
             },
             drift: DriftStatus {
