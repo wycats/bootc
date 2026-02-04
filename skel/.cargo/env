@@ -1,5 +1,3 @@
 # This file is intentionally empty.
 # Toolchains are accessed via distrobox shims, not directly from the host.
 # See: ~/.local/bin/distrobox/cargo
-#
-# If rustup overwrites this file, run: bkt skel sync

@@ -22,23 +22,23 @@ unset rc
 # INTERACTIVE SHELL: Hand off to nushell if available
 # ==============================================================================
 
-if [[ $- == *i* ]] && [ -x "$(command -v nu)" ] && [ -z "$NU_VERSION" ] && [[ "$TERM_PROGRAM" != "vscode" ]]; then
-    # Starship Init
-    if command -v starship &> /dev/null; then
-        mkdir -p ~/.cache/starship
-        if [ ! -f ~/.cache/starship/init.nu ]; then
-            starship init nu > ~/.cache/starship/init.nu
-        fi
-    fi
+# if [[ $- == *i* ]] && [ -x "$(command -v nu)" ] && [ -z "$NU_VERSION" ] && [[ "$TERM_PROGRAM" != "vscode" ]]; then
+#     # Starship Init
+#     if command -v starship &> /dev/null; then
+#         mkdir -p ~/.cache/starship
+#         if [ ! -f ~/.cache/starship/init.nu ]; then
+#             starship init nu > ~/.cache/starship/init.nu
+#         fi
+#     fi
 
-    # MOTD
-    if [ -f /run/host/etc/motd ]; then
-        cat /run/host/etc/motd
-    fi
+#     # MOTD
+#     if [ -f /run/host/etc/motd ]; then
+#         cat /run/host/etc/motd
+#     fi
 
-    # Switch to nushell
-    exec nu
-fi
+#     # Switch to nushell
+#     exec nu
+# fi
 
 # Bazzite CLI bling
 test -f /usr/share/bazzite-cli/bling.sh && source /usr/share/bazzite-cli/bling.sh

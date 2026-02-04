@@ -1,19 +1,18 @@
-# Nushell environment for new users.
+# env.nu
 #
-# Prefer PATH management via systemd user environment.d (see
-# `skel/.config/environment.d/10-distrobox-exports.conf`).
+# Installed by:
+# version = "0.108.0"
 #
-# If you *do* want to manage PATH in shell init, keep host “control plane”
-# paths early, and avoid putting host toolchains (rustup/proto) ahead of
-# `~/.local/bin/distrobox`.
-
-# let extra_paths = [
-#   ($env.HOME | path join ".local" "bin")
-#   ($env.HOME | path join ".local" "bin" "distrobox")
-#   ($env.HOME | path join "bin")
-# ]
+# Previously, environment variables were typically configured in `env.nu`.
+# In general, most configuration can and should be performed in `config.nu`
+# or one of the autoload directories.
 #
-# let existing_extra = ($extra_paths | where {|p| ($p | path exists) })
+# This file is generated for backwards compatibility for now.
+# It is loaded before config.nu and login.nu
 #
-# $env.PATH = ($env.PATH | prepend $existing_extra)
-
+# See https://www.nushell.sh/book/configuration.html
+#
+# Also see `help config env` for more options.
+#
+# You can remove these comments if you want or leave
+# them for future reference.
