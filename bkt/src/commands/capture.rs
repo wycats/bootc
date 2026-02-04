@@ -72,7 +72,6 @@ pub struct CaptureCommand {
 }
 
 impl CaptureCommand {
-    /// Create from CLI args.
     pub fn from_args(args: &CaptureArgs) -> Self {
         Self {
             include: args.only.clone(),
@@ -80,7 +79,6 @@ impl CaptureCommand {
         }
     }
 
-    /// Check if a subsystem should be included.
     fn should_include(&self, subsystem: CaptureSubsystem) -> bool {
         // If exclude list contains it, skip
         if self.exclude.contains(&subsystem) {
