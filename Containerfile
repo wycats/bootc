@@ -301,13 +301,9 @@ RUN if [ "${ENABLE_LOGIND_LID_POLICY}" = "1" ]; then \
             install -Dpm0644 /usr/share/bootc-optional/systemd/logind.conf.d/10-lid-policy.conf /etc/systemd/logind.conf.d/10-lid-policy.conf; \
         fi
 
-# Nushell + toolbox-related defaults (profile addendum)
+# Nushell config
 COPY skel/.config/nushell/config.nu /etc/skel/.config/nushell/config.nu
 COPY skel/.config/nushell/env.nu /etc/skel/.config/nushell/env.nu
-COPY skel/.config/containers/toolbox.conf /etc/skel/.config/containers/toolbox.conf
-
-# Toolbox-specific scripts (not host shims, but scripts that run inside toolbox)
-COPY --chmod=0755 skel/.local/toolbox/bin/code /etc/skel/.local/toolbox/bin/code
 
 # === HOST_SHIMS (managed by bkt) ===
 RUN set -eu; \
@@ -315,9 +311,6 @@ RUN set -eu; \
     echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBib290YyAiJEAiCg==' | base64 -d > /usr/etc/skel/.local/toolbox/shims/bootc && \
     chmod 0755 /usr/etc/skel/.local/toolbox/shims/bootc && \
     ln -sf ../toolbox/shims/bootc /usr/etc/skel/.local/bin/bootc; \
-    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBwb2RtYW4gIiRAIgo=' | base64 -d > /usr/etc/skel/.local/toolbox/shims/docker && \
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/docker && \
-    ln -sf ../toolbox/shims/docker /usr/etc/skel/.local/bin/docker; \
     echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBmbGF0cGFrICIkQCIK' | base64 -d > /usr/etc/skel/.local/toolbox/shims/flatpak && \
     chmod 0755 /usr/etc/skel/.local/toolbox/shims/flatpak && \
     ln -sf ../toolbox/shims/flatpak /usr/etc/skel/.local/bin/flatpak; \
