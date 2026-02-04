@@ -63,7 +63,6 @@ pub enum FlatpakAction {
     },
 }
 
-/// Install a flatpak app using the flatpak CLI.
 fn install_flatpak(app: &FlatpakApp) -> Result<bool> {
     let scope_flag = match app.scope {
         FlatpakScope::System => "--system",
@@ -86,7 +85,6 @@ fn install_flatpak(app: &FlatpakApp) -> Result<bool> {
     Ok(status.success())
 }
 
-/// Uninstall a flatpak app.
 fn uninstall_flatpak(app_id: &str, scope: FlatpakScope) -> Result<bool> {
     let scope_flag = match scope {
         FlatpakScope::System => "--system",
@@ -101,7 +99,6 @@ fn uninstall_flatpak(app_id: &str, scope: FlatpakScope) -> Result<bool> {
     Ok(status.success())
 }
 
-/// Check if a flatpak is installed.
 fn is_installed(app_id: &str) -> bool {
     Command::new("flatpak")
         .args(["info", app_id])

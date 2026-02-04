@@ -78,7 +78,6 @@ pub struct ApplyCommand {
 }
 
 impl ApplyCommand {
-    /// Create from CLI args.
     pub fn from_args(args: &ApplyArgs) -> Self {
         Self {
             include: args.only.clone(),
@@ -87,7 +86,6 @@ impl ApplyCommand {
         }
     }
 
-    /// Check if a subsystem should be included.
     fn should_include(&self, subsystem: Subsystem) -> bool {
         // If exclude list contains it, skip
         if self.exclude.contains(&subsystem) {

@@ -249,12 +249,10 @@ fn get_enabled_extensions() -> Vec<String> {
     }
 }
 
-/// Get skel directory path.
 fn skel_dir() -> Option<PathBuf> {
     find_repo_path().ok().map(|p| p.join("skel"))
 }
 
-/// List files in skel directory.
 fn list_skel_files(skel: &PathBuf) -> Vec<String> {
     let mut files = Vec::new();
     if let Ok(entries) = fs::read_dir(skel) {
@@ -271,7 +269,6 @@ fn list_skel_files(skel: &PathBuf) -> Vec<String> {
     files
 }
 
-/// Check if a skel file differs from home.
 fn skel_differs(skel_path: &PathBuf, home_path: &PathBuf) -> bool {
     if !home_path.exists() {
         return true; // Missing in home = differs
@@ -282,14 +279,12 @@ fn skel_differs(skel_path: &PathBuf, home_path: &PathBuf) -> bool {
     skel_content != home_content
 }
 
-/// Check if a GNOME extension is installed.
 fn is_extension_installed(uuid: &str) -> bool {
     run_command("gnome-extensions", &["info", uuid])
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
 
-/// Get current value of a gsetting.
 fn get_gsetting(schema: &str, key: &str) -> Option<String> {
     run_command("gsettings", &["get", schema, key])
         .ok()

@@ -40,7 +40,7 @@ These are the primary domain for the capture-first workflow.
 
 > **The running system is the source of truth. Changes should take effect immediately wherever possible, then be captured into manifests so they persist across reboots and can be replayed on fresh systems.**
 
-This principle inverts the traditional "edit config, then apply" model:
+This principle means:
 
 1. **Make changes interactively** using familiar tools (GUI apps, CLI commands)
 2. **Changes take effect immediately** on the running system

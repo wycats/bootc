@@ -70,22 +70,19 @@ git push
 
 ### Add to Manifest → Apply to System
 
-The declarative flow: edit manifests first, then apply.
+The declarative flow: add to manifests, which installs immediately.
 
 ```bash
-# 1. Add to manifest with validation
+# 1. Add to manifest (installs immediately if not present)
 bkt flatpak add org.gnome.Boxes
-bkt extension add dash-to-dock@micxgx.gmail.com
 
-# 2. Apply all manifests to system
-bkt apply
-
-# 3. Commit and push
-git add -A && git commit -m "feat: add boxes and dash-to-dock"
+# 2. Commit and push
+git add -A && git commit -m "feat: add boxes"
 git push
 ```
 
-**Note:** All `bkt` commands work from both host and toolbox—delegation is automatic.
+**Note:** `bkt flatpak add` both updates the manifest AND installs the app.
+For extensions, `bkt extension add` adds to manifest and enables (if already installed).
 
 See [WORKFLOW.md](docs/WORKFLOW.md) for detailed patterns.
 
@@ -103,8 +100,8 @@ See [WORKFLOW.md](docs/WORKFLOW.md) for detailed patterns.
 # Update your OS
 sudo bootc upgrade && systemctl reboot
 
-# Check for drift from declared state
-check-drift
+# Preview what capture would sync (system → manifest)
+bkt capture --dry-run
 
 # Enter dev environment
 toolbox enter
@@ -120,12 +117,14 @@ bkt shim add nmcli
 ├── toolbox/Containerfile         # Dev environment definition
 ├── manifests/
 │   ├── flatpak-apps.json        # Apps to install at first login
+│   ├── flatpak-remotes.json     # Flatpak remote repositories
 │   ├── gnome-extensions.json    # Extensions to enable
+│   ├── gsettings.json           # GNOME settings to apply
 │   ├── host-shims.json          # Commands to delegate to host
-│   └── gsettings.json           # GNOME settings to apply
+│   └── ...                      # See manifests/README.md for full list
 ├── scripts/
 │   ├── bootc-bootstrap          # First-login automation
-│   └── check-drift              # Drift detection
+│   └── bootc-apply              # Apply manifests to system
 ├── bkt/                          # Unified manifest CLI (Rust)
 ├── system/                       # Configs baked into /etc
 ├── skel/                         # Default dotfiles for new users
@@ -145,11 +144,12 @@ This ensures your commits remain compliant with CI checks.
 
 ## Documentation
 
-| Doc                               | Purpose                      |
-| --------------------------------- | ---------------------------- |
-| [WORKFLOW.md](docs/WORKFLOW.md)   | Day-to-day usage patterns    |
-| [MIGRATION.md](docs/MIGRATION.md) | Switching from stock Bazzite |
-| [PLAN.md](docs/PLAN.md)           | Architecture decisions       |
+| Doc                                       | Purpose                      |
+| ----------------------------------------- | ---------------------------- |
+| [WORKFLOW.md](docs/WORKFLOW.md)           | Day-to-day usage patterns    |
+| [MIGRATION.md](docs/MIGRATION.md)         | Switching from stock Bazzite |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md)   | System design overview       |
+| [VISION.md](docs/VISION.md)               | Project philosophy           |
 
 ## Philosophy
 
