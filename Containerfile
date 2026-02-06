@@ -43,6 +43,7 @@ RUN dnf install -y \
     1password \
     1password-cli \
     code \
+    code-insiders \
     curl \
     fontconfig \
     gh \
