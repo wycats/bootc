@@ -295,8 +295,46 @@ fn run_with_progress(args: &UpgradeArgs, plan: &ExecutionPlan) -> Result<()> {
     drop(write_pipe); // Close write end in parent
 
     let reader = BufReader::new(read_pipe);
-    for line in reader.lines() {
-        let event: Event = serde_json::from_str(&line?)?;
+    let mut lines = reader.lines();
+
+    // Detection strategy: if the first event is missing or malformed, fall back.
+    let first_line = match lines.next() {
+        None => {
+            // Immediate EOF: no progress events; fall back to non-streaming output.
+            let _ = child.kill();
+            let _ = child.wait();
+            Output::warning("bootc did not emit progress events; falling back to non-streaming output");
+            return run_fallback(args, plan);
+        }
+        Some(res) => match res {
+            Ok(line) => line,
+            Err(_) => {
+                // I/O error on first read; treat as unsupported progress streaming.
+                let _ = child.kill();
+                let _ = child.wait();
+                Output::warning("Failed to read initial progress event; falling back to non-streaming output");
+                return run_fallback(args, plan);
+            }
+        },
+    };
+
+    let first_event: Event = match serde_json::from_str(&first_line) {
+        Ok(event) => event,
+        Err(_) => {
+            // Parse error on first event; fall back as described in the detection strategy.
+            let _ = child.kill();
+            let _ = child.wait();
+            Output::warning("Failed to parse initial progress event; falling back to non-streaming output");
+            return run_fallback(args, plan);
+        }
+    };
+
+    update_display(&first_event, &args);
+
+    // After a successful first event, treat subsequent errors as hard failures.
+    for line in lines {
+        let line = line?;
+        let event: Event = serde_json::from_str(&line)?;
         update_display(&event, &args);
     }
 
