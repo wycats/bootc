@@ -381,22 +381,64 @@ jobs:
             type=raw,value=latest
             type=sha
 
-      - name: Build and push
+      - name: Build image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Containerfile
-          # Push on any non-PR event; PRs just validate the build and warm the cache
-          push: ${{ github.event_name != 'pull_request_target' }}
+          push: false
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          # Registry cache - shared across all branches (unlike GHA cache)
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=max
+
+      - name: Extract RPM versions
+        id: rpm-versions
+        run: |
+          # Extract RPM versions from the built image
+          # Filter to only packages in system-packages.json
+          PACKAGES=$(jq -r '.packages[]' manifests/system-packages.json)
+          
+          # Get all versions from the image
+          docker run --rm ${{ steps.build.outputs.imageid }} cat /usr/share/bootc/rpm-versions.txt > /tmp/all-versions.txt
+          
+          # Filter to our packages and format as JSON object
+          VERSION_JSON="{"
+          FIRST=true
+          for pkg in $PACKAGES; do
+            version=$(grep "^${pkg}\t" /tmp/all-versions.txt | cut -f2 || echo "")
+            if [ -n "$version" ]; then
+              if [ "$FIRST" = true ]; then
+                FIRST=false
+              else
+                VERSION_JSON+=","
+              fi
+              VERSION_JSON+="\"${pkg}\":\"${version}\""
+            fi
+          done
+          VERSION_JSON+="}"
+          
+          echo "json=$VERSION_JSON" >> "$GITHUB_OUTPUT"
+          echo "Extracted RPM versions: $VERSION_JSON"
+
+      - name: Push image
+        if: github.event_name != 'pull_request_target'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: |
             ${{ steps.meta.outputs.labels }}
             org.wycats.bootc.base.image=${{ env.BASE_IMAGE }}
             org.wycats.bootc.base.digest=${{ needs.check-upstream.outputs.upstream_digest }}
             org.opencontainers.image.description=${{ steps.build-info.outputs.summary }}
-          # Registry cache - shared across all branches (unlike GHA cache)
+            org.wycats.bootc.rpm.versions=${{ steps.rpm-versions.outputs.json }}
+          # Use the already-built image from cache
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=max
 
   build-toolbox:
     runs-on: ubuntu-latest
