@@ -330,3 +330,9 @@ RUN set -eu; \
     chmod 0755 /usr/etc/skel/.local/toolbox/shims/ujust && \
     ln -sf ../toolbox/shims/ujust /usr/etc/skel/.local/bin/ujust
 # === END HOST_SHIMS ===
+
+# === RPM VERSION SNAPSHOT ===
+# Capture installed versions of system packages for OCI label embedding.
+# This file is read by the build workflow to create org.wycats.bootc.rpm.versions label.
+RUN rpm -qa --qf '%{NAME}\t%{EVR}\n' | sort > /usr/share/bootc/rpm-versions.txt
+# === END RPM VERSION SNAPSHOT ===
