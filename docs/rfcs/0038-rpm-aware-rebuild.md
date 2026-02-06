@@ -18,19 +18,22 @@ Add an RPM freshness check to the existing `check-upstream` job. During each hou
 
 All system packages defined in `manifests/system-packages.json` are checked. No separate "watched" list is needed — rebuilds are cheap (~15min of free CI time), and checking all packages ensures security updates are never missed.
 
-#### Version Tracking via OCI Labels
+#### Version Tracking via rpm-versions.txt
 
-During each build, embed the installed versions of system packages as an OCI label:
+During each build, the Containerfile generates a version snapshot:
 
+```dockerfile
+RUN rpm -qa --qf '%{NAME}\t%{EVR}\n' | sort > /usr/share/bootc/rpm-versions.txt
 ```
-org.wycats.bootc.rpm.versions=microsoft-edge-stable:144.0.3719.115,code:1.109.0,...
-```
 
-This extends the existing `org.wycats.bootc.base.digest` label pattern. The hourly check then:
+The hourly check then:
 
-1. Reads the label from the current published image (via `skopeo inspect`, already done)
-2. Queries the RPM repos for current versions of system packages
-3. Compares — if any package has a newer version available, triggers a rebuild
+1. Pulls the current published image
+2. Extracts `/usr/share/bootc/rpm-versions.txt` via `docker run`
+3. Queries the RPM repos for current versions of system packages
+4. Compares — if any package has a newer version available, triggers a rebuild
+
+Note: An OCI label approach was considered but rejected due to disk space constraints on GitHub runners — loading the full image to extract versions exceeds available space.
 
 #### Container-Based Repo Query
 
