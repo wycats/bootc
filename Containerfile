@@ -152,25 +152,16 @@ RUN set -eu; \
 
 # Fix emoji rendering in VS Code / Electron / Chromium apps
 #
-# Background: Chromium has issues with oversized CBDT bitmap tables in emoji fonts.
-# See: https://issues.chromium.org/issues/40815545
+# Background: Chromium's Skia renderer has issues with:
+# 1. COLRv1 vector emoji fonts (google-noto-emoji-fonts) - rendering failures
+# 2. Large CBDT bitmap fonts (Noto Color Emoji 10.6MB) - can cause issues
 #
-# The v2.051 NotoColorEmoji.ttf (10.6MB) added Unicode 17.0 with many multi-skin-tone
-# sequences, doubling the CBDT table size. Chromium fails to render these oversized fonts.
-# The v2.047 version (5MB) from October 2024 works correctly.
+# Solution: Use Twemoji (3.2MB CBDT bitmap font) from twitter-twemoji-fonts RPM.
+# Twemoji is smaller and more compatible with Chromium's renderer.
 #
-# We also remove the COLRv1 vector font packages from the base image, as those have
-# separate Skia renderer compatibility issues in Electron.
-#
-# Pin version is tracked in upstream/manifest.json for update management.
-RUN set -eu; \
-    dnf remove -y google-noto-emoji-fonts google-noto-color-emoji-fonts || true; \
-    commit="$(jq -r '.upstreams[] | select(.name == "noto-color-emoji") | .pinned.commit' /tmp/upstream-manifest.json)"; \
-    expected_sha="$(jq -r '.upstreams[] | select(.name == "noto-color-emoji") | .pinned.sha256' /tmp/upstream-manifest.json)"; \
-    mkdir -p /usr/share/fonts/noto-emoji; \
-    curl -fsSL "https://github.com/googlefonts/noto-emoji/raw/${commit}/fonts/NotoColorEmoji.ttf" \
-        -o /usr/share/fonts/noto-emoji/NotoColorEmoji.ttf; \
-    echo "${expected_sha}  /usr/share/fonts/noto-emoji/NotoColorEmoji.ttf" | sha256sum -c -; \
+# We remove the COLRv1 packages but keep Twemoji as the primary emoji font.
+# The fontconfig in 99-emoji-fix.conf sets Twemoji as the preferred emoji font.
+RUN dnf remove -y google-noto-emoji-fonts google-noto-color-emoji-fonts || true; \
     fc-cache -f
 
 COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
