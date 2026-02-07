@@ -162,7 +162,8 @@ RUN set -eu; \
 #
 # We remove the COLRv1 packages but keep Twemoji as the primary emoji font.
 # The fontconfig in 99-emoji-fix.conf sets Twemoji as the preferred emoji font.
-RUN dnf remove -y google-noto-emoji-fonts google-noto-color-emoji-fonts || true; \
+RUN set -eu; \
+    dnf remove -y google-noto-emoji-fonts google-noto-color-emoji-fonts || true; \
     fc-cache -f
 
 COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
