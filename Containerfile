@@ -57,6 +57,7 @@ RUN dnf install -y \
     papirus-icon-theme \
     rsms-inter-fonts \
     toolbox \
+    twitter-twemoji-fonts \
     unzip \
     virt-manager \
     xorg-x11-server-Xvfb \
@@ -239,10 +240,10 @@ COPY system/etc/topgrade.toml /etc/topgrade.toml
 # VM tuning for reduced degradation over time
 COPY system/etc/sysctl.d/99-bootc-vm-tuning.conf /etc/sysctl.d/99-bootc-vm-tuning.conf
 
-# Persist kernel arguments for zswap performance tuning
+# Persist kernel arguments for performance tuning (zswap, THP)
 RUN mkdir -p /usr/lib/bootc/kargs.d && \
-    echo "zswap.enabled=1 zswap.compressor=lz4 zswap.zpool=zsmalloc zswap.max_pool_percent=25" \
-    > /usr/lib/bootc/kargs.d/zswap.karg
+    echo "zswap.enabled=1 zswap.compressor=lz4 zswap.zpool=zsmalloc zswap.max_pool_percent=25 transparent_hugepage=madvise" \
+    > /usr/lib/bootc/kargs.d/tuning.karg
 
 # Optional: remote play / console mode (off by default; enabled via `ujust enable-remote-play`)
 RUN mkdir -p /usr/share/bootc-optional/remote-play/bin \
