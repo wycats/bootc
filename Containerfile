@@ -239,6 +239,11 @@ COPY system/etc/topgrade.toml /etc/topgrade.toml
 # VM tuning for reduced degradation over time
 COPY system/etc/sysctl.d/99-bootc-vm-tuning.conf /etc/sysctl.d/99-bootc-vm-tuning.conf
 
+# Persist kernel arguments for zswap performance tuning
+RUN mkdir -p /usr/lib/bootc/kargs.d && \
+    echo "zswap.enabled=1 zswap.compressor=lz4 zswap.zpool=zsmalloc zswap.max_pool_percent=25" \
+    > /usr/lib/bootc/kargs.d/zswap.karg
+
 # Optional: remote play / console mode (off by default; enabled via `ujust enable-remote-play`)
 RUN mkdir -p /usr/share/bootc-optional/remote-play/bin \
     /usr/share/bootc-optional/remote-play/systemd
