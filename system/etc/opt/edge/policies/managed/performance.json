@@ -1,0 +1,6 @@
+{
+  "RendererProcessLimit": 20,
+  "SleepingTabsEnabled": true,
+  "SleepingTabsTimeout": 5,
+  "MemorySaverModeEnabled": true
+}

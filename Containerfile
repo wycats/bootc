@@ -240,6 +240,10 @@ COPY system/etc/topgrade.toml /etc/topgrade.toml
 # VM tuning for reduced degradation over time
 COPY system/etc/sysctl.d/99-bootc-vm-tuning.conf /etc/sysctl.d/99-bootc-vm-tuning.conf
 
+# Managed Edge policies to limit process bloat
+RUN mkdir -p /etc/opt/edge/policies/managed
+COPY system/etc/opt/edge/policies/managed/performance.json /etc/opt/edge/policies/managed/performance.json
+
 # Persist kernel arguments for performance tuning (zswap, THP)
 RUN mkdir -p /usr/lib/bootc/kargs.d && \
     echo "zswap.enabled=1 zswap.compressor=lz4 zswap.zpool=zsmalloc zswap.max_pool_percent=25 transparent_hugepage=madvise" \
