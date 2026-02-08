@@ -56,8 +56,8 @@ RUN dnf install -y \
     microsoft-edge-stable \
     papirus-icon-theme \
     rsms-inter-fonts \
+    google-noto-color-emoji-fonts \
     toolbox \
-    twitter-twemoji-fonts \
     unzip \
     virt-manager \
     xorg-x11-server-Xvfb \
@@ -153,17 +153,12 @@ RUN set -eu; \
 
 # Fix emoji rendering in VS Code / Electron / Chromium apps
 #
-# Background: Chromium's Skia renderer has issues with:
-# 1. COLRv1 vector emoji fonts (google-noto-emoji-fonts) - rendering failures
-# 2. Large CBDT bitmap fonts (Noto Color Emoji 10.6MB) - can cause issues
-#
-# Solution: Use Twemoji (3.2MB CBDT bitmap font) from twitter-twemoji-fonts RPM.
-# Twemoji is smaller and more compatible with Chromium's renderer.
-#
-# We remove the COLRv1 packages but keep Twemoji as the primary emoji font.
-# The fontconfig in 99-emoji-fix.conf sets Twemoji as the preferred emoji font.
+# The Bazzite base image may ship a broken or missing NotoColorEmoji.ttf.
+# We ensure the stock Fedora google-noto-color-emoji-fonts package is installed
+# (added to SYSTEM_PACKAGES above) and remove the COLRv1 vector variant
+# (google-noto-emoji-fonts) which is incompatible with Chromium's Skia renderer.
 RUN set -eu; \
-    dnf remove -y google-noto-emoji-fonts google-noto-color-emoji-fonts || true; \
+    dnf remove -y google-noto-emoji-fonts || true; \
     fc-cache -f
 
 COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
