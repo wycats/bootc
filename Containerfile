@@ -47,7 +47,6 @@ RUN dnf install -y \
     curl \
     fontconfig \
     gh \
-    google-noto-color-emoji-fonts \
     google-noto-sans-batak-fonts \
     google-noto-sans-inscriptional-pahlavi-fonts \
     google-noto-sans-inscriptional-parthian-fonts \
@@ -158,12 +157,12 @@ RUN set -eu; \
 
 # Fix emoji rendering in VS Code / Electron / Chromium apps
 #
-# The Bazzite base image may ship a broken or missing NotoColorEmoji.ttf.
-# We ensure the stock Fedora google-noto-color-emoji-fonts package is installed
-# (added to SYSTEM_PACKAGES above) and remove the COLRv1 vector variant
-# (google-noto-emoji-fonts) which is incompatible with Chromium's Skia renderer.
+# Rationale: Fedora 43+ ships google-noto-color-emoji-fonts with the COLRv1
+# vector font (Noto-COLRv1.ttf), which is incompatible with Chromium's Skia
+# renderer. We remove ALL Noto emoji fonts and rely on Twemoji (CBDT bitmap)
+# which is included in the Bazzite base and works correctly.
 RUN set -eu; \
-    dnf remove -y google-noto-emoji-fonts || true; \
+    dnf remove -y google-noto-emoji-fonts google-noto-color-emoji-fonts || true; \
     fc-cache -f
 
 COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
