@@ -155,18 +155,6 @@ RUN set -eu; \
     rm -f /tmp/JetBrainsMono.zip; \
     fc-cache -f
 
-# Fix emoji rendering in VS Code / Electron / Chromium apps
-#
-# Rationale: Fedora 43+ ships google-noto-color-emoji-fonts with the COLRv1
-# vector font (Noto-COLRv1.ttf), which is incompatible with Chromium's Skia
-# renderer. We remove ALL Noto emoji fonts and rely on Twemoji (CBDT bitmap)
-# which is included in the Bazzite base and works correctly.
-RUN set -eu; \
-    dnf remove -y google-noto-emoji-fonts google-noto-color-emoji-fonts || true; \
-    fc-cache -f
-
-COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
-
 # Bibata cursor theme (pinned via upstream/manifest.json + verified by sha256)
 # Rationale: Not available in standard Fedora repos.
 RUN set -eu; \
