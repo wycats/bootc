@@ -47,6 +47,7 @@ RUN dnf install -y \
     curl \
     fontconfig \
     gh \
+    google-noto-color-emoji-fonts \
     google-noto-sans-batak-fonts \
     google-noto-sans-inscriptional-pahlavi-fonts \
     google-noto-sans-inscriptional-parthian-fonts \
@@ -56,7 +57,6 @@ RUN dnf install -y \
     microsoft-edge-stable \
     papirus-icon-theme \
     rsms-inter-fonts \
-    google-noto-color-emoji-fonts \
     toolbox \
     unzip \
     virt-manager \
@@ -86,6 +86,7 @@ RUN printf '%s\n' \
     >/usr/lib/tmpfiles.d/bootc-opt.conf
 
 # starship (pinned via upstream/manifest.json + verified by sha256)
+# Rationale: Not available in standard Fedora repos.
 COPY upstream/manifest.json /tmp/upstream-manifest.json
 RUN set -eu; \
     tag="$(jq -r '.upstreams[] | select(.name == "starship") | .pinned.version' /tmp/upstream-manifest.json)"; \
@@ -99,6 +100,7 @@ RUN set -eu; \
     rm -f /tmp/${asset} /tmp/${asset}.sha256
 
 # lazygit (pinned via upstream/manifest.json + verified by checksums.txt)
+# Rationale: Not available in standard Fedora repos.
 RUN set -eu; \
     tag="$(jq -r '.upstreams[] | select(.name == "lazygit") | .pinned.version' /tmp/upstream-manifest.json)"; \
     ver="${tag#v}"; \
@@ -111,6 +113,7 @@ RUN set -eu; \
     rm -f /tmp/${asset} /tmp/lazygit.checksums.txt
 
 # keyd (built from source at pinned tag from upstream/manifest.json)
+# Rationale: Not available in standard Fedora repos.
 # FORCE_SYSTEMD=1 is needed because /run/systemd/system doesn't exist in container builds
 RUN set -eu; \
     ref="$(jq -r '.upstreams[] | select(.name == "keyd") | .pinned.version' /tmp/upstream-manifest.json)"; \
@@ -123,6 +126,7 @@ RUN set -eu; \
     dnf clean all
 
 # getnf (pinned via upstream/manifest.json + verified by sha256)
+# Rationale: Not available in standard Fedora repos.
 RUN set -eu; \
     ref="$(jq -r '.upstreams[] | select(.name == "getnf") | .pinned.commit' /tmp/upstream-manifest.json)"; \
     expected_sha="$(jq -r '.upstreams[] | select(.name == "getnf") | .pinned.sha256' /tmp/upstream-manifest.json)"; \
@@ -144,6 +148,7 @@ RUN set -eu; \
     chmod 0755 /usr/bin/getnf
 
 # Fonts (system-wide): Inter (RPM) + JetBrainsMono Nerd Font (zip from nerd-fonts)
+# Rationale: Nerd Fonts patched versions are not available in standard Fedora repos.
 RUN set -eu; \
     mkdir -p /usr/share/fonts/nerd-fonts/JetBrainsMono; \
     curl -fsSL "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip" -o /tmp/JetBrainsMono.zip; \
@@ -164,6 +169,7 @@ RUN set -eu; \
 COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
 
 # Bibata cursor theme (pinned via upstream/manifest.json + verified by sha256)
+# Rationale: Not available in standard Fedora repos.
 RUN set -eu; \
     version="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .pinned.version' /tmp/upstream-manifest.json)"; \
     expected_sha="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .pinned.sha256' /tmp/upstream-manifest.json)"; \
@@ -175,6 +181,7 @@ RUN set -eu; \
     rm -f /tmp/${asset}
 
 # WhiteSur icon theme (pinned via upstream/manifest.json, installed system-wide)
+# Rationale: Not available in standard Fedora repos.
 # Note: Using commit SHA instead of tag for immutability. The install.sh script
 # is simple (copies files only, no network calls). Full tree verification is
 # deferred to a future upstream management system.

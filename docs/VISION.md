@@ -40,6 +40,12 @@ These are the primary domain for the capture-first workflow.
 
 > **The running system is the source of truth. Changes should take effect immediately wherever possible, then be captured into manifests so they persist across reboots and can be replayed on fresh systems.**
 
+## The Upstream Trust Axiom
+
+> **Prefer the distro's standard repositories. Only pin specific versions or use external sources when the package is missing, broken, or significantly outdated in the upstream distribution.**
+
+**Implication:** If a package exists in Fedora, use `dnf install`. Consuming the standard generic artifact is a feature, not a bug. If you must pin something (e.g. via `upstream/manifest.json` or a direct URL download), you **MUST** document exactly *why* the upstream package was insufficient.
+
 This principle means:
 
 1. **Make changes interactively** using familiar tools (GUI apps, CLI commands)
