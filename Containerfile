@@ -47,6 +47,7 @@ RUN dnf install -y \
     curl \
     fontconfig \
     gh \
+    google-noto-color-emoji-fonts \
     google-noto-sans-batak-fonts \
     google-noto-sans-inscriptional-pahlavi-fonts \
     google-noto-sans-inscriptional-parthian-fonts \
@@ -85,6 +86,7 @@ RUN printf '%s\n' \
     >/usr/lib/tmpfiles.d/bootc-opt.conf
 
 # starship (pinned via upstream/manifest.json + verified by sha256)
+# Rationale: Not available in standard Fedora repos.
 COPY upstream/manifest.json /tmp/upstream-manifest.json
 RUN set -eu; \
     tag="$(jq -r '.upstreams[] | select(.name == "starship") | .pinned.version' /tmp/upstream-manifest.json)"; \
@@ -98,6 +100,7 @@ RUN set -eu; \
     rm -f /tmp/${asset} /tmp/${asset}.sha256
 
 # lazygit (pinned via upstream/manifest.json + verified by checksums.txt)
+# Rationale: Not available in standard Fedora repos.
 RUN set -eu; \
     tag="$(jq -r '.upstreams[] | select(.name == "lazygit") | .pinned.version' /tmp/upstream-manifest.json)"; \
     ver="${tag#v}"; \
@@ -110,6 +113,7 @@ RUN set -eu; \
     rm -f /tmp/${asset} /tmp/lazygit.checksums.txt
 
 # keyd (built from source at pinned tag from upstream/manifest.json)
+# Rationale: Not available in standard Fedora repos.
 # FORCE_SYSTEMD=1 is needed because /run/systemd/system doesn't exist in container builds
 RUN set -eu; \
     ref="$(jq -r '.upstreams[] | select(.name == "keyd") | .pinned.version' /tmp/upstream-manifest.json)"; \
@@ -122,6 +126,7 @@ RUN set -eu; \
     dnf clean all
 
 # getnf (pinned via upstream/manifest.json + verified by sha256)
+# Rationale: Not available in standard Fedora repos.
 RUN set -eu; \
     ref="$(jq -r '.upstreams[] | select(.name == "getnf") | .pinned.commit' /tmp/upstream-manifest.json)"; \
     expected_sha="$(jq -r '.upstreams[] | select(.name == "getnf") | .pinned.sha256' /tmp/upstream-manifest.json)"; \
@@ -143,6 +148,7 @@ RUN set -eu; \
     chmod 0755 /usr/bin/getnf
 
 # Fonts (system-wide): Inter (RPM) + JetBrainsMono Nerd Font (zip from nerd-fonts)
+# Rationale: Nerd Fonts patched versions are not available in standard Fedora repos.
 RUN set -eu; \
     mkdir -p /usr/share/fonts/nerd-fonts/JetBrainsMono; \
     curl -fsSL "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip" -o /tmp/JetBrainsMono.zip; \
@@ -152,30 +158,18 @@ RUN set -eu; \
 
 # Fix emoji rendering in VS Code / Electron / Chromium apps
 #
-# Background: Chromium has issues with oversized CBDT bitmap tables in emoji fonts.
-# See: https://issues.chromium.org/issues/40815545
-#
-# The v2.051 NotoColorEmoji.ttf (10.6MB) added Unicode 17.0 with many multi-skin-tone
-# sequences, doubling the CBDT table size. Chromium fails to render these oversized fonts.
-# The v2.047 version (5MB) from October 2024 works correctly.
-#
-# We also remove the COLRv1 vector font packages from the base image, as those have
-# separate Skia renderer compatibility issues in Electron.
-#
-# Pin version is tracked in upstream/manifest.json for update management.
+# The Bazzite base image may ship a broken or missing NotoColorEmoji.ttf.
+# We ensure the stock Fedora google-noto-color-emoji-fonts package is installed
+# (added to SYSTEM_PACKAGES above) and remove the COLRv1 vector variant
+# (google-noto-emoji-fonts) which is incompatible with Chromium's Skia renderer.
 RUN set -eu; \
-    dnf remove -y google-noto-emoji-fonts google-noto-color-emoji-fonts || true; \
-    commit="$(jq -r '.upstreams[] | select(.name == "noto-color-emoji") | .pinned.commit' /tmp/upstream-manifest.json)"; \
-    expected_sha="$(jq -r '.upstreams[] | select(.name == "noto-color-emoji") | .pinned.sha256' /tmp/upstream-manifest.json)"; \
-    mkdir -p /usr/share/fonts/noto-emoji; \
-    curl -fsSL "https://github.com/googlefonts/noto-emoji/raw/${commit}/fonts/NotoColorEmoji.ttf" \
-        -o /usr/share/fonts/noto-emoji/NotoColorEmoji.ttf; \
-    echo "${expected_sha}  /usr/share/fonts/noto-emoji/NotoColorEmoji.ttf" | sha256sum -c -; \
+    dnf remove -y google-noto-emoji-fonts || true; \
     fc-cache -f
 
 COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
 
 # Bibata cursor theme (pinned via upstream/manifest.json + verified by sha256)
+# Rationale: Not available in standard Fedora repos.
 RUN set -eu; \
     version="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .pinned.version' /tmp/upstream-manifest.json)"; \
     expected_sha="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .pinned.sha256' /tmp/upstream-manifest.json)"; \
@@ -187,6 +181,7 @@ RUN set -eu; \
     rm -f /tmp/${asset}
 
 # WhiteSur icon theme (pinned via upstream/manifest.json, installed system-wide)
+# Rationale: Not available in standard Fedora repos.
 # Note: Using commit SHA instead of tag for immutability. The install.sh script
 # is simple (copies files only, no network calls). Full tree verification is
 # deferred to a future upstream management system.
@@ -247,6 +242,15 @@ COPY system/etc/topgrade.toml /etc/topgrade.toml
 
 # VM tuning for reduced degradation over time
 COPY system/etc/sysctl.d/99-bootc-vm-tuning.conf /etc/sysctl.d/99-bootc-vm-tuning.conf
+
+# Managed Edge policies to limit process bloat
+RUN mkdir -p /etc/opt/edge/policies/managed
+COPY system/etc/opt/edge/policies/managed/performance.json /etc/opt/edge/policies/managed/performance.json
+
+# Persist kernel arguments for performance tuning (zswap, THP)
+RUN mkdir -p /usr/lib/bootc/kargs.d && \
+    echo "zswap.enabled=1 zswap.compressor=lz4 zswap.zpool=zsmalloc zswap.max_pool_percent=25 transparent_hugepage=madvise" \
+    > /usr/lib/bootc/kargs.d/tuning.karg
 
 # Optional: remote play / console mode (off by default; enabled via `ujust enable-remote-play`)
 RUN mkdir -p /usr/share/bootc-optional/remote-play/bin \
