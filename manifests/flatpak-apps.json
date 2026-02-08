@@ -2,314 +2,583 @@
   "$schema": "https://wycats.github.io/bootc/flatpak-apps.schema.json",
   "apps": [
     {
+      "id": "app.drey.Warp",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "e4c13716dece"
+    },
+    {
       "id": "app.xemu.xemu",
       "remote": "flathub",
-      "scope": "user"
+      "scope": "user",
+      "branch": "stable",
+      "commit": "b918fa2fb49f",
+      "overrides": [
+        "--filesystem=/run/media/wycats/Games/Emulation/storage/xemu",
+        "--filesystem=host",
+        "--share=network"
+      ]
     },
     {
       "id": "be.alexandervanhee.gradia",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "6b7f1e833f5c"
     },
     {
       "id": "com.bambulab.BambuStudio",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "837b3d3f33cc"
     },
     {
       "id": "com.dec05eba.gpu_screen_recorder",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "bb1b7a12680c"
     },
     {
       "id": "com.discordapp.Discord",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "2a490c6ec711"
+    },
+    {
+      "id": "com.feaneron.Boatswain",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "4ab19440e8de"
     },
     {
       "id": "com.fightcade.Fightcade",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "782434c4b261"
     },
     {
       "id": "com.github.Matoking.protontricks",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "da08280b2556"
     },
     {
       "id": "com.github.tchx84.Flatseal",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "14ba14f23783"
     },
     {
       "id": "com.makemkv.MakeMKV",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "cbad7729c82d"
     },
     {
       "id": "com.mattjakeman.ExtensionManager",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "cc7f0c3f400a"
     },
     {
       "id": "com.obsproject.Studio",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "57c369da69c7"
     },
     {
       "id": "com.raggesilver.BlackBox",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "6b012ccf6df1"
     },
     {
       "id": "com.ranfdev.DistroShelf",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "f6beab528e5f"
     },
     {
       "id": "com.slack.Slack",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "eaf4cf66c21d"
     },
     {
       "id": "com.stremio.Stremio",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "355c42ab40cc"
     },
     {
       "id": "com.supermodel3.Supermodel",
       "remote": "flathub",
-      "scope": "user"
+      "scope": "user",
+      "branch": "stable",
+      "commit": "f79a9baa6d4b",
+      "overrides": [
+        "--filesystem=host",
+        "--share=network"
+      ]
     },
     {
       "id": "com.termius.Termius",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "9a8f9073e667"
+    },
+    {
+      "id": "com.usebottles.bottles",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "bfb08031e324"
     },
     {
       "id": "com.vysp3r.ProtonPlus",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "62a65257cb64"
+    },
+    {
+      "id": "com.warlordsoftwares.media-downloader",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "ca0c9ac64f7c"
+    },
+    {
+      "id": "com.warlordsoftwares.youtube-downloader-4ktube",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "9d75bd827ba3"
     },
     {
       "id": "com.yubico.yubioath",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "a0e152cf806c"
     },
     {
       "id": "dev.deedles.Trayscale",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "efd90dbc16a9"
     },
     {
       "id": "fr.handbrake.ghb",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "c7f6e0674644"
+    },
+    {
+      "id": "io.appflowy.AppFlowy",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "dfc4b009fbfa"
+    },
+    {
+      "id": "io.github.arunsivaramanneo.GPUViewer",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "522780978cb5"
     },
     {
       "id": "io.github.dvlv.boxbuddyrs",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "916c356217a3"
     },
     {
       "id": "io.github.erenseymen.android-tv-remote",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "46c14000c387"
+    },
+    {
+      "id": "io.github.fabrialberio.pinapp",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "2c623266b069"
     },
     {
       "id": "io.github.flattool.Warehouse",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "9091b88e97e9"
+    },
+    {
+      "id": "io.github.getnf.embellish",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "ed55d9791ff0"
+    },
+    {
+      "id": "io.github.nokse22.Exhibit",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "fb72fe9cf35e"
+    },
+    {
+      "id": "io.github.nozwock.Packet",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "b22452534668"
+    },
+    {
+      "id": "io.github.nuttyartist.notes",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "14978aa53de7"
     },
     {
       "id": "io.github.rfrench3.scopebuddy-gui",
       "remote": "flathub",
-      "scope": "user"
+      "scope": "user",
+      "branch": "stable",
+      "commit": "5b72198d2373"
     },
     {
       "id": "io.github.shiiion.primehack",
       "remote": "flathub",
-      "scope": "user"
+      "scope": "user",
+      "branch": "stable",
+      "commit": "5a83cc99942c",
+      "overrides": [
+        "--filesystem=host",
+        "--share=network"
+      ]
     },
     {
       "id": "io.github.tntwise.REAL-Video-Enhancer",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "85be65bb84af"
+    },
+    {
+      "id": "io.github.zaedus.spider",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "cf62729d6562"
+    },
+    {
+      "id": "io.gitlab.adhami3310.Footage",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "d76a2cb2cdb8"
     },
     {
       "id": "io.missioncenter.MissionCenter",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "e255c6b35baf"
     },
     {
       "id": "it.mijorus.gearlever",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "62d7631b559f"
     },
     {
       "id": "net.kuribo64.melonDS",
       "remote": "flathub",
-      "scope": "user"
+      "scope": "user",
+      "branch": "stable",
+      "commit": "9c8ac146f909",
+      "overrides": [
+        "--filesystem=host",
+        "--share=network"
+      ]
     },
     {
       "id": "net.meshlab.MeshLab",
       "remote": "flathub",
-      "scope": "system"
-    },
-    {
-      "id": "org.altlinux.Tuner",
-      "remote": "flathub",
-      "scope": "system"
-    },
-    {
-      "id": "org.blender.Blender",
-      "remote": "flathub",
-      "scope": "system"
-    },
-    {
-      "id": "org.deskflow.deskflow",
-      "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "62f3b7be60c5"
     },
     {
       "id": "org.DolphinEmu.dolphin-emu",
       "remote": "flathub",
-      "scope": "user"
+      "scope": "user",
+      "branch": "stable",
+      "commit": "4fa4752c9070",
+      "overrides": [
+        "--filesystem=host",
+        "--share=network"
+      ]
+    },
+    {
+      "id": "org.altlinux.Tuner",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "b24a9ec3b4bc"
+    },
+    {
+      "id": "org.blender.Blender",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "3c5af8eaf690"
+    },
+    {
+      "id": "org.deskflow.deskflow",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "504ce4fc98af"
     },
     {
       "id": "org.fedoraproject.MediaWriter",
       "remote": "flathub",
-      "scope": "system"
-    },
-    {
-      "id": "org.gnome.baobab",
-      "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "a29532e1e722"
     },
     {
       "id": "org.gnome.Boxes",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "b00f0bb9f4e3"
     },
     {
       "id": "org.gnome.Calculator",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "455b4d0a0812"
     },
     {
       "id": "org.gnome.Calendar",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "ec2410e42ce2"
     },
     {
       "id": "org.gnome.Characters",
       "remote": "flathub",
-      "scope": "system"
-    },
-    {
-      "id": "org.gnome.clocks",
-      "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "360c4c93189a"
     },
     {
       "id": "org.gnome.Contacts",
       "remote": "flathub",
-      "scope": "system"
-    },
-    {
-      "id": "org.gnome.font-viewer",
-      "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "d4978f60ed04"
     },
     {
       "id": "org.gnome.Logs",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "c9b4f8d34a10"
     },
     {
       "id": "org.gnome.Loupe",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "c79c9ff6228b"
     },
     {
       "id": "org.gnome.NautilusPreviewer",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "0ca4a8dd8130"
     },
     {
       "id": "org.gnome.Papers",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "26ca1de81b03"
     },
     {
       "id": "org.gnome.Snapshot",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "420912eb13b5"
     },
     {
       "id": "org.gnome.TextEditor",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "552327675fd5"
     },
     {
       "id": "org.gnome.Totem",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "954d2017982b"
     },
     {
       "id": "org.gnome.Weather",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "d1c72f3084d3"
+    },
+    {
+      "id": "org.gnome.baobab",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "03cc472319a1"
+    },
+    {
+      "id": "org.gnome.clocks",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "b1b359e52883"
+    },
+    {
+      "id": "org.gnome.font-viewer",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "73e8bde2fc2d"
     },
     {
       "id": "org.gustavoperedo.FontDownloader",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "979f4c591ae4"
     },
     {
       "id": "org.libretro.RetroArch",
       "remote": "flathub",
-      "scope": "user"
+      "scope": "user",
+      "branch": "stable",
+      "commit": "7963e1a28c31",
+      "overrides": [
+        "--filesystem=host",
+        "--share=network"
+      ]
     },
     {
       "id": "org.mozilla.firefox",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "8239f40cfccd"
     },
     {
       "id": "org.openscad.OpenSCAD",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "fff28a5853ee"
     },
     {
       "id": "org.ppsspp.PPSSPP",
       "remote": "flathub",
-      "scope": "user"
+      "scope": "user",
+      "branch": "stable",
+      "commit": "00d4ac93b511",
+      "overrides": [
+        "--filesystem=host",
+        "--share=network"
+      ]
+    },
+    {
+      "id": "org.remmina.Remmina",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "eb97994e18da"
     },
     {
       "id": "org.scummvm.ScummVM",
       "remote": "flathub",
-      "scope": "user"
+      "scope": "user",
+      "branch": "stable",
+      "commit": "e73d9c04e8a0",
+      "overrides": [
+        "--filesystem=host",
+        "--share=network"
+      ]
     },
     {
       "id": "org.telegram.desktop",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "8030dc7356db"
     },
     {
       "id": "org.videolan.VLC",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "28716aa650e7"
     },
     {
       "id": "org.virt_manager.virt-manager",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "63dd70819fa2"
     },
     {
       "id": "page.kramo.Cartridges",
       "remote": "flathub",
-      "scope": "system"
+      "scope": "system",
+      "branch": "stable",
+      "commit": "1cc4724a073f"
+    },
+    {
+      "id": "re.sonny.Tangram",
+      "remote": "flathub",
+      "scope": "system",
+      "branch": "stable",
+      "commit": "7dc32deb4cd1"
     }
   ]
 }
