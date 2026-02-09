@@ -9,6 +9,10 @@ When completing a task that involves modifying the OS image (e.g., merging a PR 
    - **Crucial**: Do NOT tell the user "it is safe to reboot" or "the changes are live" until you have successfully run this command.
 3. **Handover**: Once the upgrade is staged, inform the user that a reboot is required to apply the changes.
 
+**Every PR that touches the image requires ALL THREE steps.** If multiple PRs are merged in sequence, only the FINAL `sudo bootc upgrade` matters — but it MUST be run after the last build completes. Do not assume a previous `bootc upgrade` covers a later PR.
+
+**The word "reboot" must not appear in any message to the user unless `sudo bootc upgrade` has been run in the current session AND its output confirmed success (look for "Queued for next boot").**
+
 ## Tool Usage: ask_questions
 
 Use the `ask_questions` tool to stop and align with the user when:
