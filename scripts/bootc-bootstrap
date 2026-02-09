@@ -183,7 +183,35 @@ apply_host_shims() {
   fi
 }
 
+apply_distrobox() {
+  local ini="/etc/distrobox/distrobox.ini"
+  [[ -f "$ini" ]] || { log "No distrobox.ini found at ${ini}; skipping"; return 0; }
+  need_cmd distrobox || { log "distrobox not found; skipping distrobox setup"; return 1; }
+
+  # Parse container names from ini and check if they already exist
+  local needs_create=false
+  while IFS= read -r name; do
+    if ! podman container exists "$name" 2>/dev/null; then
+      log "Distrobox container '${name}' missing; will create"
+      needs_create=true
+    fi
+  done < <(grep -oP '^\[\K[^\]]+' "$ini")
+
+  if [[ "$needs_create" == "false" ]]; then
+    log "All distrobox containers already exist; skipping"
+    return 0
+  fi
+
+  log "Assembling distrobox containers from ${ini}"
+  distrobox assemble create --file "$ini" || return 1
+}
+
 apply_all() {
+  # Distrobox runs outside the hash gate: missing containers are a runtime
+  # issue (e.g. podman reset) not a manifest-change issue. The check is
+  # cheap (podman container exists) and the function is idempotent.
+  apply_distrobox || log "distrobox setup failed (non-fatal; will retry next login)"
+
   local hash
   hash="$(manifest_hash)"
 
