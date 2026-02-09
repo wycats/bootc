@@ -2,7 +2,7 @@
   "$schema": "../schemas/distrobox.schema.json",
   "containers": {
     "bootc-dev": {
-      "image": "bootc-toolbox:local",
+      "image": "ghcr.io/wycats/bootc-toolbox:latest",
       "packages": [
         "gcc",
         "libatomic"
@@ -23,7 +23,7 @@
         "rustup update stable",
         "proto install node"
       ],
-      "pull": false,
+      "pull": true,
       "init": false,
       "root": false,
       "path": [
