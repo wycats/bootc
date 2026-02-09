@@ -1,5 +1,25 @@
 # Copilot Instructions
 
+## Bootc Update Lifecycle
+
+When completing a task that involves modifying the OS image (e.g., merging a PR with `Containerfile` changes):
+
+1. **Verify Build**: Ensure the GitHub Action has successfully built and pushed the image (`gh run watch/list`).
+2. **Stage Update**: Run `sudo bootc upgrade` to fetch the new image.
+   - **Crucial**: Do NOT tell the user "it is safe to reboot" or "the changes are live" until you have successfully run this command.
+3. **Handover**: Once the upgrade is staged, inform the user that a reboot is required to apply the changes.
+
+## Tool Usage: ask_questions
+
+Use the `ask_questions` tool to stop and align with the user when:
+- **Ambiguity exists**: You are unsure of the user's specific intent or preference.
+- **High-Risk Actions**: Before performing destructive operations if not explicitly requested.
+- **Workflow Breaks**: When switching context significantly.
+
+**Do NOT use `ask_questions`**:
+- To ask for permission to proceed with a task you've already been assigned.
+- To confirm low-risk actions clearly implied by the user's request.
+
 ## Git Workflow
 
 When asked to commit and/or create a PR:

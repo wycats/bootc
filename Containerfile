@@ -45,6 +45,7 @@ RUN dnf install -y \
     code \
     code-insiders \
     curl \
+    distrobox \
     fontconfig \
     gh \
     google-noto-sans-batak-fonts \
@@ -223,6 +224,9 @@ RUN chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/bootc-repo
 # Custom ujust recipes (auto-imported as /usr/share/ublue-os/just/60-custom.just)
 RUN mkdir -p /usr/share/ublue-os/just
 COPY ujust/60-custom.just /usr/share/ublue-os/just/60-custom.just
+
+# Distrobox configuration (managed by bkt)
+COPY distrobox.ini /etc/distrobox/distrobox.ini
 
 # Integrated topgrade configuration
 COPY system/etc/topgrade.toml /etc/topgrade.toml

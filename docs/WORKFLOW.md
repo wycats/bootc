@@ -49,6 +49,28 @@ git add -A && git commit -m "feat: capture system changes"
 git push
 ```
 
+## The Development Loop (Making Changes)
+
+When you modify the system configuration (`Containerfile`, `manifests/`, `system/`):
+
+1.  **Commit & Push**: Push your changes to `main` (or merge a PR).
+    ```bash
+    git push origin main
+    ```
+2.  **Wait for Build**: The GitHub Action must complete building the new image.
+    ```bash
+    gh run watch
+    ```
+3.  **Fetch & Stage**: Pull the new image to the host.
+    ```bash
+    sudo bootc upgrade
+    ```
+4.  **Reboot**: Apply the staged image.
+    ```bash
+    systemctl reboot
+    ```
+
+
 ### What Gets Captured
 
 | Subsystem   | What's captured                                   |
