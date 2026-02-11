@@ -203,7 +203,7 @@ COPY system/keyd/default.conf /etc/keyd/default.conf
 RUN mkdir -p /usr/lib/systemd/system/multi-user.target.wants && \
     ln -sf ../keyd.service /usr/lib/systemd/system/multi-user.target.wants/keyd.service
 
-# Polkit rules for bkt admin (passwordless bootc/rpm-ostree for wheel group)
+# Polkit rules for bkt admin (passwordless bootc/rpm-ostree/flatpak for wheel group)
 COPY system/polkit-1/rules.d/50-bkt-admin.rules /etc/polkit-1/rules.d/50-bkt-admin.rules
 
 # First-login bootstrap (Flatpak + GNOME extensions + host shims)
