@@ -1,5 +1,23 @@
 # Vision: Capture-First Configuration Management
 
+## Why This Exists
+
+Traditional Linux desktops accumulate state over time — packages installed, configs tweaked, dependencies added — until no one can say exactly what's on the machine or reproduce it. Updates mutate the system in place, and when something breaks, you're debugging a unique snowflake.
+
+Atomic Linux fixed this for the OS base. Your rootfs is an immutable image built from a Containerfile. Updates swap entire images atomically — no partial upgrades, no broken intermediate states. If an update breaks something, you reboot into the previous deployment. The OS becomes reproducible, auditable, and recoverable.
+
+But it solved it by drawing a hard line at `/usr` — everything below that is managed, everything above it (your home directory, your Flatpaks, your GNOME extensions, your gsettings, your shell configuration) is _your problem_.
+
+That creates two gaps:
+
+**1. The user environment is not reproducible.** You can reproduce the OS from a Containerfile, but you can't reproduce _your desktop_. If you set up a new machine, you manually install your Flatpaks, re-enable your extensions, re-tweak your settings. There's no equivalent of the Containerfile for the user layer. This repo is that equivalent — manifests that describe the full user environment, with capture to keep them in sync with reality.
+
+**2. There's no lifecycle bridge between deployments and user state.** When the OS image changes, nobody tells the user session. Caches derived from system files go stale because there's no hook point between "image deployed" and "user logs in." The `bootc-bootstrap` service fills that gap — running deployment-gated cleanup and manifest-driven provisioning on every login.
+
+Atomic Linux's innovation was making the OS _declarative, reproducible, and recoverable_. This repo extends that principle upward into the user layer, where the dominant Linux desktop model is still "stateful and manual." NixOS does this too, but by requiring you to declare everything upfront — you can't just `flatpak install` something and try it. The capture-first approach preserves immediate feedback (change your system, see the result now) while still converging toward reproducibility (capture what you did, replay it later).
+
+**Atomic Linux stopped at the wrong layer.** It made `/usr` reproducible and left everything the user actually interacts with — apps, extensions, settings, themes, dev environments — as unmanaged mutable state. This project is the argument that the user layer deserves the same treatment the OS base got.
+
 ## The Core Loop
 
 `bkt` implements a **capture-first** workflow for managing a Linux workstation. The philosophy is:
@@ -44,7 +62,7 @@ These are the primary domain for the capture-first workflow.
 
 > **Prefer the distro's standard repositories. Only pin specific versions or use external sources when the package is missing, broken, or significantly outdated in the upstream distribution.**
 
-**Implication:** If a package exists in Fedora, use `dnf install`. Consuming the standard generic artifact is a feature, not a bug. If you must pin something (e.g. via `upstream/manifest.json` or a direct URL download), you **MUST** document exactly *why* the upstream package was insufficient.
+**Implication:** If a package exists in Fedora, use `dnf install`. Consuming the standard generic artifact is a feature, not a bug. If you must pin something (e.g. via `upstream/manifest.json` or a direct URL download), you **MUST** document exactly _why_ the upstream package was insufficient.
 
 This principle means:
 

@@ -7,22 +7,32 @@ This repository **is** your operating system. Not config management. Not dotfile
 
 You're not a user of Bazzite. You're the maintainer of a distribution that happens to be based on Bazzite.
 
+## Why This Exists
+
+Traditional Linux desktops accumulate state over time — packages installed, configs tweaked, dependencies added — until no one can say exactly what's on the machine or reproduce it. Updates mutate the system in place, and when something breaks, you're debugging a unique snowflake.
+
+Atomic Linux (bootc, ostree, Bazzite, Bluefin, etc.) fixed this for the OS base. Your rootfs is an immutable image built from a Containerfile. Updates swap entire images atomically — no partial upgrades, no broken intermediate states. If an update breaks something, you reboot into the previous deployment. The OS becomes reproducible, auditable, and recoverable.
+
+But atomic Linux drew the line at `/usr`. Everything above that — your Flatpaks, GNOME extensions, gsettings, dev environments, shell configuration — is unmanaged mutable state. You can reproduce your OS from a Containerfile, but you can't reproduce _your desktop_. Set up a new machine and you're manually reinstalling apps, re-enabling extensions, re-tweaking settings. And when the OS image updates, nobody tells the user session — caches derived from system files go stale, and there's no hook point between "image deployed" and "user logs in."
+
+This repo extends atomic Linux's principle — declarative, reproducible, recoverable — upward into the user layer. But unlike NixOS, it doesn't require you to declare everything upfront. You make changes live (install a Flatpak, tweak a setting), and the system captures what you did into manifests that can replay your environment on a fresh machine.
+
 ## The Core Loop
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         This Repository                             │
 │                                                                     │
-│  Containerfile           What packages, fonts, configs are baked   │
-│  manifests/*.json        What apps, extensions get bootstrapped    │
-│  toolbox/Containerfile   What your dev environment contains        │
+│  Containerfile           What packages, fonts, configs are baked    │
+│  manifests/*.json        What apps, extensions get bootstrapped     │
+│  toolbox/Containerfile   What your dev environment contains         │
 └─────────────────────────────────────────────────────────────────────┘
                                │
                                ▼  push (or merge PR)
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        GitHub Actions                               │
 │                                                                     │
-│  Builds your images, pushes to ghcr.io                             │
+│  Builds your images, pushes to ghcr.io                              │
 │  Triggers: your commits, upstream updates, nightly                  │
 └─────────────────────────────────────────────────────────────────────┘
                                │
@@ -30,8 +40,8 @@ You're not a user of Bazzite. You're the maintainer of a distribution that happe
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        Your Machines                                │
 │                                                                     │
-│  Pull updates automatically (uupd) or manually (bootc upgrade)     │
-│  Reboot to apply                                                   │
+│  Pull updates automatically (uupd) or manually (bootc upgrade)      │
+│  Reboot to apply                                                    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -144,12 +154,12 @@ This ensures your commits remain compliant with CI checks.
 
 ## Documentation
 
-| Doc                                       | Purpose                      |
-| ----------------------------------------- | ---------------------------- |
-| [WORKFLOW.md](docs/WORKFLOW.md)           | Day-to-day usage patterns    |
-| [MIGRATION.md](docs/MIGRATION.md)         | Switching from stock Bazzite |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md)   | System design overview       |
-| [VISION.md](docs/VISION.md)               | Project philosophy           |
+| Doc                                     | Purpose                      |
+| --------------------------------------- | ---------------------------- |
+| [WORKFLOW.md](docs/WORKFLOW.md)         | Day-to-day usage patterns    |
+| [MIGRATION.md](docs/MIGRATION.md)       | Switching from stock Bazzite |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design overview       |
+| [VISION.md](docs/VISION.md)             | Project philosophy           |
 
 ## Philosophy
 

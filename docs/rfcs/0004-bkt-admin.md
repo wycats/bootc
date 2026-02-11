@@ -1,4 +1,87 @@
-# RFC 0004: System Administration (`bkt admin`)
+# RFC 0004: bkt admin
+
+Privileged host operations and image-time system configuration.
+
+## Motivation
+
+Some actions require host privileges (bootc, systemd control), while other
+actions need to be recorded for image builds (kernel args and persistent
+systemd configuration). `bkt admin` provides a clear split between immediate
+host operations and manifest-backed image settings.
+
+## Design
+
+### Command Surface
+
+Host operations (immediate):
+
+- `bkt admin bootc status`
+- `bkt admin bootc upgrade --confirm|--yes`
+- `bkt admin bootc switch <image> --confirm|--yes`
+- `bkt admin bootc rollback --confirm|--yes`
+
+- `bkt admin systemctl status <unit>`
+- `bkt admin systemctl start|stop|restart <unit> --confirm`
+- `bkt admin systemctl enable|disable <unit> --confirm`
+- `bkt admin systemctl daemon-reload --confirm`
+
+Image-time configuration (manifest backed):
+
+- `bkt admin kargs append <arg...>`
+- `bkt admin kargs remove <arg...>`
+- `bkt admin kargs list`
+
+- `bkt admin systemd enable <unit...>`
+- `bkt admin systemd disable <unit...>`
+- `bkt admin systemd mask <unit...>`
+- `bkt admin systemd list`
+
+### Manifest Format
+
+Image-time settings are stored in `manifests/system-config.json`:
+
+```json
+{
+  "kargs": {
+    "append": ["quiet"],
+    "remove": ["rhgb"]
+  },
+  "systemd": {
+    "enable": ["docker.socket"],
+    "disable": ["cups.service"],
+    "mask": []
+  },
+  "udev": { "rules": [] },
+  "selinux": { "booleans": {} },
+  "firmware_notes": []
+}
+```
+
+### Behavior
+
+- `bootc` actions run via `pkexec bootc` and require explicit confirmation for
+  mutating operations. Read-only status is passwordless for wheel users.
+- `systemctl` actions use D-Bus (zbus) instead of shelling out to `systemctl`.
+  Mutating operations require confirmation and prompt in interactive sessions.
+- `kargs` and `systemd` mutate `manifests/system-config.json` only; they do not
+  apply changes to the running system.
+- Containerfile generation consumes `system-config.json` to emit:
+  - `rpm-ostree kargs` in the KERNEL_ARGUMENTS section.
+  - `systemctl enable/disable/mask` in the SYSTEMD_UNITS section.
+
+## Implementation Notes
+
+- Admin commands are designed to run on the host; when invoked from a toolbox,
+  D-Bus routing still reaches the host system.
+- Mutating operations require `--confirm` (or `--yes` for bootc) to prevent
+  accidental host changes.
+- `bkt admin systemd` and `bkt admin kargs` only write manifests today; they
+  do not create PRs or trigger builds.
+
+## Known Gaps
+
+- No `bkt admin` support for udev rules, SELinux policies, or firmware notes.
+- No tooling for adding custom systemd unit files to the manifest.# RFC 0004: System Administration (`bkt admin`)
 
 - **Status**: Partially Implemented
 - Feature Name: `bkt_admin`
@@ -8,15 +91,15 @@
 
 > **ℹ️ Implementation Status**
 >
-> | Feature | Status | Notes |
-> |---------|--------|-------|
-> | `bkt admin kargs` | ✅ Implemented | Manifest-only; see RFC-0036 for enhancement |
-> | `bkt admin systemd` | ✅ Implemented | Enable/disable/mask units |
-> | `bkt admin systemctl` | ✅ Implemented | Direct systemctl wrapper |
-> | `bkt admin bootc` | ✅ Implemented | bootc operations |
-> | udev rules | ❌ Not started | |
-> | SELinux policies | ❌ Not started | |
-> | Firmware settings | ❌ Not started | |
+> | Feature               | Status         | Notes                                       |
+> | --------------------- | -------------- | ------------------------------------------- |
+> | `bkt admin kargs`     | ✅ Implemented | Manifest-only; see RFC-0036 for enhancement |
+> | `bkt admin systemd`   | ✅ Implemented | Enable/disable/mask units                   |
+> | `bkt admin systemctl` | ✅ Implemented | Direct systemctl wrapper                    |
+> | `bkt admin bootc`     | ✅ Implemented | bootc operations                            |
+> | udev rules            | ❌ Not started |                                             |
+> | SELinux policies      | ❌ Not started |                                             |
+> | Firmware settings     | ❌ Not started |                                             |
 >
 > **Note:** The kernel arguments section describes `rpm-ostree kargs` approach.
 > [RFC-0036](0036-system-kargs.md) proposes enhancing `bkt admin kargs` to use
@@ -54,7 +137,7 @@ sudo rpm-ostree kargs --append=quiet
 # Kernel arguments
 bkt admin kargs append quiet splash
 
-# Systemd units  
+# Systemd units
 bkt admin systemd enable docker.socket
 
 # Both update the Containerfile and create a PR
@@ -186,10 +269,7 @@ These are stored in documentation, not applied automatically.
       "httpd_can_network_connect": true
     }
   },
-  "firmware_notes": [
-    "Secure Boot: Enabled",
-    "TPM: Enabled"
-  ]
+  "firmware_notes": ["Secure Boot: Enabled", "TPM: Enabled"]
 }
 ```
 
@@ -272,7 +352,7 @@ More powerful but overkill for personal distribution.
 
 ## Unresolved Questions
 
-*None currently - this RFC focuses on well-understood patterns.*
+_None currently - this RFC focuses on well-understood patterns._
 
 ## Future Possibilities
 

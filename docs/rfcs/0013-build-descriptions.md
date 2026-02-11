@@ -7,11 +7,11 @@
 
 ## Summary
 
-Automatically generate rich, detailed descriptions for each container image build that show exactly what changed compared to the previous build. These descriptions appear on GHCR package pages and can be aggregated into tagged release changelogs.
+Generate a `build-info.json` document that describes what changed between two commits, plus tooling to render it to Markdown and produce a short summary string for OCI labels. The current implementation focuses on diff generation and rendering; publishing to GHCR or release rollups is not implemented.
 
 ## Motivation
 
-When `topgrade` pulls the latest bootc image, there's currently no visibility into what changed. The GHCR package page shows a bare container with no context about its contents or differences from previous builds.
+When `topgrade` pulls the latest bootc image, there's currently no easy, structured way to see what changed. We need a consistent, machine-readable diff that can be rendered for humans and consumed in CI.
 
 ### The Problem
 
@@ -29,51 +29,45 @@ Every build should answer:
 - What system config changed? (keyd, systemd units, etc.)
 - Where did everything come from? (provenance and verification status)
 
-### Example: Current vs. Proposed
-
-**Current GHCR Description**: *(empty or minimal)*
-
-**Proposed GHCR Description**:
+### Example Output (Rendered)
 
 ```markdown
 ## Upstream Changes
 
 ### Base Image: bazzite-stable
+
 **Digest**: `sha256:abc123...` → `sha256:def456...`
 
-| Package | Previous | Current |
-|---------|----------|---------|
-| kernel | 6.12.4-200.fc41 | 6.12.5-201.fc41 |
-| mesa-vulkan-drivers | 24.2.3 | 24.2.4 |
+| Package             | Previous        | Current         |
+| ------------------- | --------------- | --------------- |
+| kernel              | 6.12.4-200.fc41 | 6.12.5-201.fc41 |
+| mesa-vulkan-drivers | 24.2.3          | 24.2.4          |
 
 ## Manifest Changes
 
 ### Flatpak Apps
-| Change | App | Details |
-|--------|-----|---------|
+
+| Change   | App                  | Details         |
+| -------- | -------------------- | --------------- |
 | ➕ Added | `com.spotify.Client` | Remote: flathub |
 
 ### GSettings
-| Schema | Key | Previous | Current |
-|--------|-----|----------|---------|
-| org.gnome.desktop.interface | color-scheme | 'default' | 'prefer-dark' |
 
-## System Config Changes
-| File | Change |
-|------|--------|
-| system/keyd/default.conf | Modified |
+| Schema                      | Key          | Previous  | Current       |
+| --------------------------- | ------------ | --------- | ------------- |
+| org.gnome.desktop.interface | color-scheme | 'default' | 'prefer-dark' |
 ```
 
 ## Guide-level Explanation
 
 ### Build Lifecycle
 
-Every push to `main` triggers a container build. Each build:
+Every push to `main` triggers a container build. Each build can:
 
-1. **Detects changes** from the previous build
-2. **Generates a description** in structured markdown
-3. **Attaches the description** to the container image
-4. **Updates the GHCR package page** via API or OCI annotation
+1. **Detect changes** from the previous commit
+2. **Generate build-info.json** via `bkt build-info generate`
+3. **Render Markdown** via `bkt build-info render`
+4. **Produce a short summary** via `bkt build-info summary` for OCI labels
 
 ### Change Categories
 
@@ -82,69 +76,80 @@ Every push to `main` triggers a container build. Each build:
 These are changes in external dependencies we consume but don't directly manage:
 
 **Base Image Changes**:
+
 - Digest change (always present when base image updates)
 - Package additions/removals/updates (via `rpm -qa` diff)
 - Kernel version changes
 
 **Pinned Tool Updates** (from `upstream/manifest.json`):
+
 - Version changes: `lazygit v0.56.0 → v0.57.0`
 - New pins added
 - Pins removed
 
 **Example output**:
+
 ```markdown
 ### Base Image: bazzite-stable
+
 **Digest**: `sha256:abc123...` → `sha256:def456...`
 
 #### Package Updates
-| Package | Previous | Current |
-|---------|----------|---------|
-| kernel | 6.12.4-200.fc41 | 6.12.5-201.fc41 |
-| mesa-vulkan-drivers | 24.2.3 | 24.2.4 |
+
+| Package             | Previous        | Current         |
+| ------------------- | --------------- | --------------- |
+| kernel              | 6.12.4-200.fc41 | 6.12.5-201.fc41 |
+| mesa-vulkan-drivers | 24.2.3          | 24.2.4          |
 
 #### Packages Added
+
 - `new-firmware-1.0.0`
 
 ### Upstream Tools
-| Tool | Previous | Current |
-|------|----------|---------|
-| lazygit | v0.56.0 | v0.57.0 |
-| starship | v1.23.0 | v1.24.1 |
+
+| Tool     | Previous | Current |
+| -------- | -------- | ------- |
+| lazygit  | v0.56.0  | v0.57.0 |
+| starship | v1.23.0  | v1.24.1 |
 ```
 
 #### 2. Manifest Changes (Explicitly Controlled)
 
 These are changes to our declarative manifests:
 
-| Manifest | Change Types |
-|----------|--------------|
-| `flatpak-apps.json` | Added, Removed, Remote Changed |
-| `flatpak-remotes.json` | Added, Removed, URL Changed |
-| `system-packages.json` | Added, Removed |
+| Manifest                | Change Types                                     |
+| ----------------------- | ------------------------------------------------ |
+| `flatpak-apps.json`     | Added, Removed, Remote Changed                   |
+| `flatpak-remotes.json`  | Added, Removed, URL Changed                      |
+| `system-packages.json`  | Added, Removed                                   |
 | `gnome-extensions.json` | Added, Removed, Version Pinned, Enabled/Disabled |
-| `gsettings.json` | Added, Removed, Value Changed |
-| `host-shims.json` | Added, Removed, Command Changed |
-| `appimage-apps.json` | Added, Removed |
-| `toolbox-packages.json` | Added, Removed |
+| `gsettings.json`        | Added, Removed, Value Changed                    |
+| `host-shims.json`       | Added, Removed, Command Changed                  |
+| `appimage-apps.json`    | Added, Removed                                   |
+| `toolbox-packages.json` | Added, Removed                                   |
 
 **Example output**:
+
 ```markdown
 ### Flatpak Apps
-| Change | App | Details |
-|--------|-----|---------|
-| ➕ Added | `com.spotify.Client` | Remote: flathub |
-| ➖ Removed | `org.example.OldApp` | |
-| 🔄 Remote Changed | `com.example.App` | fedora → flathub |
+
+| Change            | App                  | Details          |
+| ----------------- | -------------------- | ---------------- |
+| ➕ Added          | `com.spotify.Client` | Remote: flathub  |
+| ➖ Removed        | `org.example.OldApp` |                  |
+| 🔄 Remote Changed | `com.example.App`    | fedora → flathub |
 
 ### GNOME Extensions
-| Change | Extension | Details |
-|--------|-----------|---------|
-| ➕ Added | `blur-my-shell@aunetx` | |
-| 📌 Version Pinned | `dash-to-dock@micxgx` | → v97 |
+
+| Change            | Extension              | Details |
+| ----------------- | ---------------------- | ------- |
+| ➕ Added          | `blur-my-shell@aunetx` |         |
+| 📌 Version Pinned | `dash-to-dock@micxgx`  | → v97   |
 
 ### GSettings
-| Schema | Key | Previous | Current |
-|--------|-----|----------|---------|
+
+| Schema                      | Key          | Previous  | Current       |
+| --------------------------- | ------------ | --------- | ------------- |
 | org.gnome.desktop.interface | color-scheme | 'default' | 'prefer-dark' |
 ```
 
@@ -152,35 +157,38 @@ These are changes to our declarative manifests:
 
 Changes to tracked system configuration files, presented as **semantic diffs** rather than line-based diffs:
 
-| Directory | Contents | Diff Format |
-|-----------|----------|-------------|
-| `system/keyd/` | Key remapping | Binding table |
-| `system/fontconfig/` | Font configuration | Rule changes |
-| `systemd/` | User services, timers | Property table |
-| `skel/` | Skeleton files | File presence |
+| Directory            | Contents              | Diff Format    |
+| -------------------- | --------------------- | -------------- |
+| `system/keyd/`       | Key remapping         | Binding table  |
+| `system/fontconfig/` | Font configuration    | Rule changes   |
+| `systemd/`           | User services, timers | Property table |
+| `skel/`              | Skeleton files        | File presence  |
 
 **Example output** (keyd config):
+
 ```markdown
 ### system/keyd/default.conf
 
-| Binding | Previous | Current |
-|---------|----------|---------|
-| capslock | esc | overload(nav, esc) |
-| leftmeta | *(none)* | layer(meta_override) |
+| Binding  | Previous | Current              |
+| -------- | -------- | -------------------- |
+| capslock | esc      | overload(nav, esc)   |
+| leftmeta | _(none)_ | layer(meta_override) |
 ```
 
 **Example output** (systemd unit):
+
 ```markdown
 ### systemd/user/bootc-bootstrap.service (Added)
 
-| Property | Value |
-|----------|-------|
-| Type | oneshot |
+| Property  | Value                  |
+| --------- | ---------------------- |
+| Type      | oneshot                |
 | ExecStart | /usr/bin/bkt bootstrap |
-| After | default.target |
+| After     | default.target         |
 ```
 
 For files without semantic parsers, fall back to summary:
+
 ```markdown
 ### system/NetworkManager/conf.d/99-custom.conf (Modified)
 
@@ -194,51 +202,12 @@ Track where components come from and their verification status:
 ```markdown
 ## Provenance
 
-| Component | Source | Verification |
-|-----------|--------|--------------|
-| Base Image | ghcr.io/ublue-os/bazzite-stable | ✅ Sigstore |
-| Flatpak: flathub | https://flathub.org | ✅ GPG |
-| lazygit | github:jesseduffield/lazygit | ✅ SHA256 |
-| Extension: blur-my-shell | extensions.gnome.org | ⚠️ Unverified |
-```
-
-### Tagged Release Rollups
-
-Releases come in two forms:
-
-**Weekly calendar releases** (automatic):
-```markdown
-## Weekly Release v2026.W03
-
-**Period**: 2026-01-13 to 2026-01-19
-**Builds included**: 7
-**Previous release**: v2026.W02
-
-### Summary
-- 3 upstream base image updates
-- 5 flatpak changes (4 added, 1 removed)
-- 2 extension updates
-- 8 system config modifications
-
-### Full Changelog
-[Aggregated details from each build...]
-```
-
-**Named releases** (manual via `bkt release create`):
-```markdown
-## Release v2026.01.15-gaming-setup
-
-**Description**: Added gaming-focused apps and optimizations
-**Commits included**: 12 (abc123..def456)
-**Previous release**: v2026.W02
-
-### Highlights
-- Added Steam, Lutris, MangoHud
-- Configured gamemode integration
-- Updated kernel to 6.12.5 (better AMD support)
-
-### Full Changelog
-[Aggregated details...]
+| Component                | Source                          | Verification  |
+| ------------------------ | ------------------------------- | ------------- |
+| Base Image               | ghcr.io/ublue-os/bazzite-stable | ✅ Sigstore   |
+| Flatpak: flathub         | https://flathub.org             | ✅ GPG        |
+| lazygit                  | github:jesseduffield/lazygit    | ✅ SHA256     |
+| Extension: blur-my-shell | extensions.gnome.org            | ⚠️ Unverified |
 ```
 
 ## Reference-level Explanation
@@ -259,13 +228,11 @@ Releases come in two forms:
 │     └── Generate build-info.json                                │
 │                                                                 │
 │  3. Build container                                             │
-│     └── Embed build-info.json as OCI annotation or layer        │
+│     └── (Optional) embed summary as OCI annotation              │
 │                                                                 │
-│  4. Push to GHCR                                                │
-│                                                                 │
-│  5. Update package description                                  │
+│  4. Render outputs                                              │
 │     ├── Render build-info.json → Markdown                       │
-│     └── POST to GitHub Packages API                             │
+│     └── Generate summary string for OCI labels                  │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -351,13 +318,14 @@ bkt build-info generate --from abc123 --to def456
 # Render build info as markdown
 bkt build-info render build-info.json
 
-# Generate and upload to GHCR (CI use)
-bkt build-info publish --image ghcr.io/wycats/bootc:sha-abc123
+# Generate a short summary string (for OCI annotations)
+bkt build-info summary build-info.json
 ```
 
 ### Base Image Package Diffing
 
 **Challenge**: Getting the package list from the base image requires either:
+
 1. Running the image and executing `rpm -qa`
 2. Extracting the RPM database from image layers
 3. Caching package lists alongside digests
@@ -373,58 +341,6 @@ diff old-packages.txt new-packages.txt
 
 The package lists can be cached in a dedicated branch or artifact storage to avoid repeated container runs.
 
-### GHCR Package Description Update
-
-Due to the **512 character limit** on `org.opencontainers.image.description`, we use a two-tier approach:
-
-#### Tier 1: OCI Annotation (Summary)
-
-Embedded at build time, limited to 512 characters:
-
-```dockerfile
-LABEL org.opencontainers.image.description="⬆️ kernel 6.12.4→6.12.5, mesa 24.2.3→24.2.4 | ➕ Flatpak: Spotify | 🔧 keyd ⮕ https://github.com/wycats/bootc/releases/tag/sha-abc123"
-```
-
-Format: `[emoji] category: changes | ... ⮕ [link]`
-
-Emoji key:
-- ⬆️ Upstream updates
-- ➕ Added
-- ➖ Removed
-- 🔄 Changed
-- 🔧 Config
-
-#### Tier 2: Release Asset (Full Details)
-
-Uploaded alongside each build:
-
-```bash
-gh release create sha-abc123 \
-  build-info.md \
-  build-info.json \
-  --title "Build sha-abc123" \
-  --notes-file build-description.md
-```
-
-The release page shows the full markdown description with no size limits.
-
-### Rollup Aggregation
-
-For tagged releases, aggregate build-info from multiple commits:
-
-```bash
-# Create a release rollup
-bkt build-info rollup --from v2026.01.08 --to v2026.01.15
-
-# Output: aggregated changes, deduplicated, with counts
-```
-
-Aggregation rules:
-- **Additions**: List all added items
-- **Removals**: List all removed items
-- **Updates**: Show first→last version, skip intermediate
-- **Config changes**: Show final diff from start to end
-
 ## Design Decisions
 
 ### D1: Base Image Package List Acquisition
@@ -432,6 +348,7 @@ Aggregation rules:
 **Decision**: Cached runtime extraction with digest-keyed artifact caching.
 
 **Research findings**:
+
 - OCI annotations/SBOMs are not published by Bazzite/Universal Blue
 - Layer inspection still requires pulling most of the image
 - Registry APIs don't expose file contents
@@ -453,7 +370,7 @@ Aggregation rules:
   run: |
     podman run --rm "ghcr.io/ublue-os/bazzite@${{ steps.previous.outputs.digest }}" \
       rpm -qa --qf '%{NAME}\t%{EVR}\n' | sort > packages-${{ steps.previous.outputs.digest }}.txt
-    
+
 - name: Save to cache
   if: steps.restore.outputs.cache-hit != 'true'
   uses: actions/cache/save@v4
@@ -464,56 +381,20 @@ Aggregation rules:
 
 **Performance characteristics**:
 
-| Scenario | Time |
-|----------|------|
+| Scenario               | Time    |
+| ---------------------- | ------- |
 | Cold cache (first run) | 2-4 min |
-| Upstream changed | 1-2 min |
-| Hot cache (rebuild) | 1-2 sec |
+| Upstream changed       | 1-2 min |
+| Hot cache (rebuild)    | 1-2 sec |
 
 **Future possibility**: Propose to Universal Blue that they publish package manifests as SBOM attestations, enabling instant zero-pull queries.
-
-### D2: Description Size Limits
-
-**Decision**: Summary in OCI annotation + link to full release asset.
-
-**Research findings**:
-- `org.opencontainers.image.description` is **limited to 512 characters** (text-only)
-- This is a fundamental OCI/GHCR limit, not just a UI constraint
-- Collapsible sections (`<details>`) won't work in annotations
-
-**Implementation**:
-
-1. **OCI annotation** (512 char limit): One-line summary with link
-   ```
-   ⬆️ Base: kernel 6.12.4→6.12.5, mesa 24.2.3→24.2.4 | ➕ Flatpak: Spotify | 🔧 keyd config
-   Full changelog: https://github.com/wycats/bootc/releases/download/sha-abc123/build-info.md
-   ```
-
-2. **Release asset**: Full `build-info.md` with complete details
-   - Uploaded as release asset for each build
-   - JSON version (`build-info.json`) also available for tooling
-
-3. **GitHub Release body** (for tagged releases): Full markdown, no size limit
-
-### D3: Rollup Trigger Mechanism
-
-**Decision**: Weekly calendar-based + manual named releases.
-
-**Calendar releases** (automatic):
-- Run weekly (e.g., Sunday night)
-- Named by week: `v2026.W03` (ISO week number)
-- Aggregate all builds since last weekly release
-
-**Named releases** (manual):
-- Created via `bkt release create v2026.01.15-gaming-setup`
-- User provides name and optional description
-- Aggregates builds since last release (weekly or named)
 
 ### D4: Historical Package Data
 
 **Decision**: Backfill on demand.
 
 When comparing against a build without cached package data:
+
 1. Pull the old image by digest
 2. Extract package list
 3. Cache for future comparisons
@@ -524,6 +405,7 @@ When comparing against a build without cached package data:
 **Decision**: Direct sources only (for now).
 
 Track immediate sources and their verification status:
+
 - Base image → Sigstore signature status
 - Flatpak remotes → GPG verification
 - Upstream tools → SHA256 verification
@@ -537,101 +419,42 @@ Transitive dependencies are out of scope initially.
 Instead of showing unified diff output, extract and present meaningful changes:
 
 **For keyd config**:
+
 ```markdown
-| Binding | Previous | Current |
-|---------|----------|---------|
-| capslock | esc | overload(nav, esc) |
-| leftmeta | (none) | layer(meta_override) |
+| Binding  | Previous | Current              |
+| -------- | -------- | -------------------- |
+| capslock | esc      | overload(nav, esc)   |
+| leftmeta | (none)   | layer(meta_override) |
 ```
 
 **For systemd units**:
+
 ```markdown
-| Property | Previous | Current |
-|----------|----------|---------|
-| ExecStart | /usr/bin/foo | /usr/bin/bar |
-| After | network.target | network-online.target |
+| Property  | Previous       | Current               |
+| --------- | -------------- | --------------------- |
+| ExecStart | /usr/bin/foo   | /usr/bin/bar          |
+| After     | network.target | network-online.target |
 ```
 
 **For gsettings-style files**:
+
 ```markdown
-| Key | Previous | Current |
-|-----|----------|---------|
+| Key          | Previous  | Current       |
+| ------------ | --------- | ------------- |
 | color-scheme | 'default' | 'prefer-dark' |
 ```
 
 This requires format-specific parsers for each config type, but produces much more readable output than raw diffs.
 
+## Current Gaps
+
+- No GHCR publishing or release rollup commands are implemented.
+- `provenance` entries are defined in the schema but not generated yet.
+- Build-info rendering is local/CI-only; there is no hosted changelog endpoint.
+
 ## Open Questions
 
 (None - all questions resolved)
-
-## Future Possibilities
-
-### SBOM Integration
-
-Generate Software Bill of Materials (SBOM) for each build, linking to the build description:
-
-```bash
-bkt build-info sbom --format spdx
-```
-
-### Security Advisory Correlation
-
-Cross-reference package updates with CVE databases:
-
-```markdown
-### Security Updates
-| Package | CVE | Severity |
-|---------|-----|----------|
-| openssl | CVE-2026-1234 | High |
-```
-
-### Build Comparison UI
-
-Web interface to compare any two builds:
-
-```
-https://wycats.github.io/bootc/compare/sha-abc123...sha-def456
-```
-
-### Notification Integration
-
-Alert on significant changes:
-- Kernel updates
-- Security-relevant package updates
-- Breaking manifest changes
-
-## Implementation Plan
-
-### Phase 1: Manifest Diffing (Local)
-
-1. Add `bkt build-info generate` command
-2. Implement manifest diff logic for all manifest types
-3. Generate JSON build info for local testing
-
-### Phase 2: System Config Diffing
-
-1. Add file-based diff detection for `system/`, `systemd/`, `skel/`
-2. Generate unified diffs for changed files
-3. Integrate into build-info JSON
-
-### Phase 3: CI Integration
-
-1. Add build-info generation step to GitHub Actions
-2. Implement markdown rendering
-3. Update GHCR description via API
-
-### Phase 4: Base Image Diffing
-
-1. Implement package list extraction
-2. Add caching mechanism for package lists
-3. Integrate into build-info generation
-
-### Phase 5: Rollup Releases
-
-1. Implement aggregation logic
-2. Add `bkt release` commands
-3. Create tagged release workflow
 
 ## Implementation Notes
 
@@ -658,6 +481,7 @@ Format for overflow: `... and 5 more changes ⮕ [link]`
 ### Provenance Implementation
 
 Initial implementation marks all sources as verification status based on what we can detect:
+
 - Base image: Check for Sigstore signature
 - Flatpak remotes: Check for GPG keys in remote config
 - Upstream tools: Check SHA256 in `upstream/manifest.json`

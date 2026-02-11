@@ -1,5 +1,101 @@
 # RFC 0019: Cron-able Sync Command
 
+- Status: Draft
+- Feature Name: `sync_command`
+- Start Date: 2026-02-03
+- RFC PR: (leave this empty until PR is opened)
+- Tracking Issue: (leave this empty)
+
+## Summary
+
+Propose a unified `bkt sync` command that is safe to run on a cron schedule.
+This remains future work. Today, `bkt apply` and `bkt capture` are separate
+commands and there is no top-level `bkt sync`.
+
+## Current State
+
+- There is no `bkt sync` command that unifies apply and capture.
+- `bkt apply` exists and performs manifest -> system sync.
+- `bkt capture` exists and performs system -> manifest capture.
+- Several subsystem commands expose a `sync` subcommand, but there is no
+  single orchestration command that is safe for 60-second cron usage.
+
+## Motivation
+
+Users want a single command that makes their system match intent and can be
+run frequently without cost or risk. A cron-safe command must be idempotent,
+fast when no changes exist, and quiet when nothing changes.
+
+## Proposed Behavior (Future)
+
+### Basic Usage
+
+```bash
+bkt sync
+bkt sync --check
+bkt sync --force
+bkt sync --quiet
+```
+
+### Cron Setup
+
+```bash
+# User cron (runs every minute)
+* * * * * bkt sync --quiet
+```
+
+### What Sync Does
+
+`bkt sync` would bidirectionally synchronize tier-2 domains:
+
+| Domain     | Action                                |
+| ---------- | ------------------------------------- |
+| Flatpak    | Install/remove apps to match manifest |
+| Extensions | Enable/disable GNOME extensions       |
+| GSettings  | Apply settings values                 |
+| Shims      | Generate host shims for toolbox       |
+| Distrobox  | Export binaries, sync packages        |
+| AppImage   | Install via GearLever                 |
+| Homebrew   | Install/remove brew packages          |
+| Skel       | Sync dotfiles                         |
+
+Tier-1 changes (system packages) would remain image-bound and be reported as
+pending work rather than applied.
+
+### Terminology Changes (If Implemented)
+
+| Old                  | New                 | Rationale                          |
+| -------------------- | ------------------- | ---------------------------------- |
+| `bkt apply`          | `bkt sync`          | "Sync" implies ongoing convergence |
+| `bkt capture`        | `bkt save`          | Explicit capture-only (no apply)   |
+| `bkt <domain> apply` | `bkt <domain> sync` | Consistency                        |
+
+## Reference-level Explanation
+
+### Performance Architecture
+
+The proposed `bkt sync` needs cache-aware change detection to be fast in the
+no-op case. This RFC describes a multi-tier cache strategy that avoids full
+system scans on every run while remaining correct when manifests or system
+state change.
+
+## Drawbacks
+
+- Requires significant refactoring for cache-aware sync.
+- Renaming commands would be a migration for users and docs.
+
+## Rationale and Alternatives
+
+We considered a split `bkt check` + `bkt apply` model, but it doubles the work
+for the common case. A unified sync command remains the preferred direction,
+but it is not implemented today.
+
+## Unresolved Questions
+
+1. Should `bkt sync` be introduced alongside `bkt apply` or replace it?
+2. Which domains are required for the initial release?
+3. How should the cache be invalidated on external changes?# RFC 0019: Cron-able Sync Command
+
 - **Status**: Draft
 - Feature Name: `sync_command`
 - Start Date: 2026-02-03

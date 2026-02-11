@@ -206,11 +206,76 @@ apply_distrobox() {
   distrobox assemble create --file "$ini" || return 1
 }
 
+apply_composefs_font_workaround() {
+  # Chromium/Electron apps fail to render non-Latin glyphs (complex scripts,
+  # emoji) from composefs overlay fonts when fontconfig's user cache contains
+  # stale entries from a previous OS deployment or fontconfig version.
+  #
+  # Root cause: fontconfig caches font metadata (charset, OTL capabilities,
+  # named instances) in ~/.cache/fontconfig/. On image-based systems like
+  # bootc/ostree, OS upgrades replace the composefs root (new inodes, new font
+  # builds). Old cache files (especially cross-version formats like
+  # cache-reindex1-10 alongside cache-9/cache-11) are not invalidated by
+  # `fc-cache -f` and cause fontconfig to return stale metadata to Chromium.
+  # Latin glyphs render because they use basic cmap lookups; complex scripts
+  # fail because their OTL layout/capability data is stale.
+  #
+  # Fix: clear the entire fontconfig cache directory, then rebuild. This is
+  # gated on the ostree deployment checksum so it only runs once per upgrade.
+
+  # Skip if root is not a composefs overlay
+  local root_fstype
+  root_fstype="$(stat -f -c '%T' / 2>/dev/null || true)"
+  if [[ "$root_fstype" != "overlay" && "$root_fstype" != "overlayfs" ]]; then
+    return 0
+  fi
+
+  local marker_file="${state_dir}/fontcache-deployment"
+
+  # Use the ostree deployment checksum as the gate
+  local current_deployment=""
+  if need_cmd rpm-ostree && need_cmd jq; then
+    current_deployment="$(rpm-ostree status --json 2>/dev/null \
+      | jq -r '.deployments[0].checksum // empty' 2>/dev/null || true)"
+  fi
+
+  if [[ -n "$current_deployment" && -f "$marker_file" ]]; then
+    if [[ "$(cat "$marker_file" 2>/dev/null || true)" == "$current_deployment" ]]; then
+      log "Fontconfig cache valid for deployment ${current_deployment:0:12}..."
+      return 0
+    fi
+  fi
+
+  log "Clearing stale fontconfig cache (deployment changed)"
+  rm -rf "${HOME}/.cache/fontconfig"
+  mkdir -p "${HOME}/.cache/fontconfig"
+  fc-cache -f 2>/dev/null || true
+
+  # Remove legacy font mirror if present (no longer needed)
+  local legacy_mirror="${HOME}/.local/share/fonts/composefs-mirror"
+  if [[ -d "$legacy_mirror" ]]; then
+    log "Removing legacy font mirror ($(du -sh "$legacy_mirror" 2>/dev/null | cut -f1))"
+    rm -rf "$legacy_mirror"
+    fc-cache 2>/dev/null || true
+  fi
+
+  if [[ -n "$current_deployment" ]]; then
+    mkdir -p "${state_dir}"
+    printf "%s\n" "$current_deployment" > "$marker_file"
+  fi
+
+  log "Fontconfig cache rebuilt for current deployment"
+}
+
 apply_all() {
   # Distrobox runs outside the hash gate: missing containers are a runtime
   # issue (e.g. podman reset) not a manifest-change issue. The check is
   # cheap (podman container exists) and the function is idempotent.
   apply_distrobox || log "distrobox setup failed (non-fatal; will retry next login)"
+
+  # Fontconfig cache clear also runs outside the hash gate: it's keyed on
+  # the ostree deployment checksum, not the manifest hash.
+  apply_composefs_font_workaround || log "font workaround failed (non-fatal)"
 
   local hash
   hash="$(manifest_hash)"

@@ -1,4 +1,79 @@
-# RFC 0003: Developer Tools (`bkt dev`)
+# RFC 0003: bkt dev
+
+Toolbox package management for the development container, aligned with RFC 0020.
+
+## Motivation
+
+The development toolbox is mutable and personal, but it still needs to be reproducible.
+`bkt dev` provides a consistent way to install packages immediately in the toolbox
+and record them for future rebuilds. This RFC replaces the earlier vision of
+language toolchain managers and focuses on what exists today.
+
+This RFC is intentionally scoped to the implemented toolbox package workflow.
+RFC 0020 defines the dev/system command split; this RFC documents the dev side
+of that split.
+
+## Design
+
+### Command Surface
+
+- `bkt dev install <pkgs...>`: install packages now and record them.
+- `bkt dev remove <pkgs...>`: remove packages now and record the removal.
+- `bkt dev list [--format table|json]`: show manifest contents with install status.
+- `bkt dev sync`: install all manifest packages into the toolbox.
+- `bkt dev capture [--apply]`: capture user-installed packages into the manifest.
+- `bkt dev copr enable <repo> [--manifest-only]`: enable COPR and record it.
+- `bkt dev copr disable <repo> [--manifest-only]`: disable COPR and record it.
+- `bkt dev copr list`: list COPR entries in the manifest.
+- `bkt dev enter [--name bootc-dev]`: create (if needed) and enter the toolbox.
+- `bkt dev status`: show manifest status and missing packages.
+- `bkt dev diff`: show installed vs missing packages from the manifest.
+
+### Manifest Format
+
+The toolbox manifest is stored in the user config, not in the image:
+
+- `~/.config/bootc/toolbox-packages.json`
+
+Shape (same core fields as system packages):
+
+```json
+{
+  "packages": ["gcc", "ripgrep"],
+  "groups": ["@development-tools"],
+  "excluded": [],
+  "copr_repos": [
+    { "name": "atim/starship", "enabled": true, "gpg_check": true }
+  ]
+}
+```
+
+### Behavior
+
+- `install` and `remove` update the manifest and run `dnf` in the current
+  toolbox unless `--manifest-only` is provided.
+- `sync` plans installs for missing packages and executes a single `dnf install`.
+- `capture` uses `dnf repoquery --userinstalled` to find user-installed packages
+  and optionally writes them to the manifest with `--apply`.
+- `status` and `diff` use `rpm -q` to determine which manifest packages are
+  installed in the current toolbox.
+- `enter` uses `toolbox create` and `toolbox enter` with the default name
+  `bootc-dev` unless overridden.
+
+## Implementation Notes
+
+- Commands operate locally; `bkt dev` does not create PRs and does not touch
+  system manifests.
+- Package validation happens before install unless `--force` is used.
+- The toolbox manifest reuses `CoprRepo` from the system packages manifest and
+  persists only in user config.
+
+## Known Gaps
+
+- No language toolchain managers (rustup, npm, etc.).
+- No Containerfile generation for the toolbox.
+- No support for package groups or exclusions in the command surface yet
+  (they exist in the manifest but are not manipulated by `bkt dev`).# RFC 0003: Developer Tools (`bkt dev`)
 
 - **Status**: Partially Superseded
 - **Superseded by**: RFC-0020 (Dev and System Commands)
@@ -422,18 +497,19 @@ This ensures the manifest always reflects the **actual state** of the toolbox - 
 ### Flags for Controlling Behavior
 
 <<<<<<< HEAD
-| Flag        | Effect                                                                                               |
+| Flag | Effect |
 | ----------- | ---------------------------------------------------------------------------------------------------- |
-| `--local`   | Stage the change in ephemeral manifest without execution. Use `bkt local commit` to create PR later. |
-| `--no-pr`   | Skip PR creation (for `bkt dnf` commands that would normally create PRs).                            |
-| `--dry-run` | Show what would be executed and recorded, but do nothing.                                            |
+| `--local` | Stage the change in ephemeral manifest without execution. Use `bkt local commit` to create PR later. |
+| `--no-pr` | Skip PR creation (for `bkt dnf` commands that would normally create PRs). |
+| `--dry-run` | Show what would be executed and recorded, but do nothing. |
 =======
-| Flag              | Effect                                                                                                |
+| Flag | Effect |
 | ----------------- | ----------------------------------------------------------------------------------------------------- |
-| `--local`         | Stage the change in ephemeral manifest without execution. Use `bkt local commit` to create PR later. |
-| `--no-pr`         | Skip PR creation (for `bkt dnf` commands that would normally create PRs).                             |
-| `--dry-run`       | Show what would be executed and recorded, but do nothing.                                             |
->>>>>>> origin/main
+| `--local` | Stage the change in ephemeral manifest without execution. Use `bkt local commit` to create PR later. |
+| `--no-pr` | Skip PR creation (for `bkt dnf` commands that would normally create PRs). |
+| `--dry-run` | Show what would be executed and recorded, but do nothing. |
+
+> > > > > > > origin/main
 
 #### Staging Changes with `--local`
 
@@ -450,7 +526,7 @@ bkt dev dnf install gcc --local
 <<<<<<< HEAD
 # Stage a removal (doesn't uninstall yet)
 =======
-# Stage a removal (doesn't uninstall yet)  
+# Stage a removal (doesn't uninstall yet)
 >>>>>>> origin/main
 bkt dev dnf remove cmake --local
 
@@ -467,7 +543,9 @@ A `--manifest-only` flag would create ambiguity with drift detection. If manifes
 <<<<<<< HEAD
 
 =======
->>>>>>> origin/main
+
+> > > > > > > origin/main
+
 - User installed gcc outside bkt (drift to capture)?
 - User staged a removal (intent to remove)?
 

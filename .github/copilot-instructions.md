@@ -16,11 +16,13 @@ When completing a task that involves modifying the OS image (e.g., merging a PR 
 ## Tool Usage: ask_questions
 
 Use the `ask_questions` tool to stop and align with the user when:
+
 - **Ambiguity exists**: You are unsure of the user's specific intent or preference.
 - **High-Risk Actions**: Before performing destructive operations if not explicitly requested.
 - **Workflow Breaks**: When switching context significantly.
 
 **Do NOT use `ask_questions`**:
+
 - To ask for permission to proceed with a task you've already been assigned.
 - To confirm low-risk actions clearly implied by the user's request.
 

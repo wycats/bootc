@@ -131,10 +131,7 @@
       "scope": "user",
       "branch": "stable",
       "commit": "f79a9baa6d4b",
-      "overrides": [
-        "--filesystem=host",
-        "--share=network"
-      ]
+      "overrides": ["--filesystem=host", "--share=network"]
     },
     {
       "id": "com.termius.Termius",
@@ -275,10 +272,7 @@
       "scope": "user",
       "branch": "stable",
       "commit": "5a83cc99942c",
-      "overrides": [
-        "--filesystem=host",
-        "--share=network"
-      ]
+      "overrides": ["--filesystem=host", "--share=network"]
     },
     {
       "id": "io.github.tntwise.REAL-Video-Enhancer",
@@ -321,10 +315,7 @@
       "scope": "user",
       "branch": "stable",
       "commit": "9c8ac146f909",
-      "overrides": [
-        "--filesystem=host",
-        "--share=network"
-      ]
+      "overrides": ["--filesystem=host", "--share=network"]
     },
     {
       "id": "net.meshlab.MeshLab",
@@ -339,10 +330,7 @@
       "scope": "user",
       "branch": "stable",
       "commit": "4fa4752c9070",
-      "overrides": [
-        "--filesystem=host",
-        "--share=network"
-      ]
+      "overrides": ["--filesystem=host", "--share=network"]
     },
     {
       "id": "org.altlinux.Tuner",
@@ -497,10 +485,7 @@
       "scope": "user",
       "branch": "stable",
       "commit": "7963e1a28c31",
-      "overrides": [
-        "--filesystem=host",
-        "--share=network"
-      ]
+      "overrides": ["--filesystem=host", "--share=network"]
     },
     {
       "id": "org.mozilla.firefox",
@@ -522,10 +507,7 @@
       "scope": "user",
       "branch": "stable",
       "commit": "00d4ac93b511",
-      "overrides": [
-        "--filesystem=host",
-        "--share=network"
-      ]
+      "overrides": ["--filesystem=host", "--share=network"]
     },
     {
       "id": "org.remmina.Remmina",
@@ -540,10 +522,7 @@
       "scope": "user",
       "branch": "stable",
       "commit": "e73d9c04e8a0",
-      "overrides": [
-        "--filesystem=host",
-        "--share=network"
-      ]
+      "overrides": ["--filesystem=host", "--share=network"]
     },
     {
       "id": "org.telegram.desktop",

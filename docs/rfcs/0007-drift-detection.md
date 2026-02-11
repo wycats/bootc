@@ -1,5 +1,142 @@
 # RFC 0007: Configuration Drift Detection
 
+- Status: Draft
+- Feature Name: `drift_detection`
+- Start Date: 2025-12-31
+- RFC PR: (leave this empty until PR is opened)
+- Tracking Issue: (leave this empty)
+
+## Summary
+
+Provide first-class drift detection that compares manifest declarations with
+actual system state and reports differences in a single unified report.
+This RFC remains future work, but it should build on the comparison and
+diffing infrastructure that already exists in the codebase.
+
+## Current State
+
+Drift detection is partially built and visible in several places:
+
+- `bkt status` computes `pending_sync`, `pending_capture`, and `has_drift` as
+  aggregate drift signals across multiple subsystems.
+- `bkt profile diff` prints missing and extra items for flatpaks, extensions,
+  and gsettings.
+- `bkt drift` exists as a command surface but currently only explains the
+  concept and points users at `bkt capture --dry-run`.
+- `bkt/src/manifest/diff.rs` provides a `Diffable` trait plus collection diff
+  helpers used by manifest types.
+
+The gap is not raw comparison primitives. The gap is a unified drift report,
+consistent command surface, and coverage for all domains.
+
+## What Remains To Build
+
+### Unified Drift Report
+
+Create a single, structured report that composes drift across subsystems,
+with a summary and per-domain sections. The report should be produced by
+`bkt drift check` and should also power `bkt status` when available.
+
+### Command Surface
+
+Implement the real `bkt drift check` command with:
+
+- Per-domain filters (flatpak, extension, gsetting, shim, distrobox, appimage,
+  homebrew, system packages).
+- Human and JSON output.
+- Exit codes based on drift severity.
+- Optional persistence to `.local/state/bkt/last-drift-check.json` for
+  `bkt drift status`.
+
+### Domain Coverage Gaps
+
+Some domains already have comparison logic in other commands, but drift
+coverage is incomplete. The drift report should include at least:
+
+- Flatpaks and extensions (already comparable in `bkt profile diff`).
+- GSettings (diff against manifest values).
+- Shims (generated files vs manifest, including missing and extra).
+- Distrobox exports and packages.
+- AppImage and Homebrew manifests.
+- System packages and layered RPMs (as a distinct tier).
+
+### Ignore Rules
+
+Define ignore rules for drift reporting (a `.bktignore` file or manifest
+metadata), so known intentional differences can be suppressed.
+
+### Monitoring (Optional, Later)
+
+Add an optional periodic drift check with user-visible reporting. This is
+explicitly future work and not required for the initial command.
+
+## Guide-level Explanation (Proposed)
+
+### Checking For Drift
+
+```bash
+bkt drift check
+
+# Proposed output
+# Drift Report
+# Flatpaks:
+#   + org.gnome.Boxes (installed, not in manifest)
+#   - org.gnome.Calculator (in manifest, not installed)
+#
+# GSettings:
+#   ~ org.gnome.desktop.interface.gtk-theme
+#     manifest: Adwaita-dark
+#     current:  Colloid-Dark
+#
+# Shims:
+#   - cargo (expected shim missing)
+```
+
+### Domain Filters
+
+```bash
+bkt drift check flatpak
+bkt drift check gsettings
+```
+
+## Reference-level Explanation
+
+### Data Flow
+
+```
+Collect system state -> Diff vs manifest -> Compose report -> Output
+```
+
+### Diffing Strategy
+
+Use the existing `Diffable` trait and `diff_collections`/`diff_string_sets`
+helpers to compute added, removed, and changed items for each domain.
+Each subsystem should expose a small adapter that returns a `DiffResult` or a
+normalized domain report which the drift report aggregates.
+
+### Exit Codes (Proposed)
+
+| Code | Meaning                                   |
+| ---- | ----------------------------------------- |
+| 0    | No drift detected                         |
+| 1    | Drift detected in managed domains         |
+| 2    | Error collecting state or performing diff |
+
+## Drawbacks
+
+- Requires careful domain coverage to avoid false positives.
+- Some domains are expensive to query without caching.
+
+## Rationale and Alternatives
+
+This RFC consolidates existing comparison work into a single, discoverable
+drift report rather than leaving drift detection scattered across commands.
+
+## Unresolved Questions
+
+1. Should `bkt drift check` persist full reports or only a summary?
+2. What is the minimum set of domains for a useful first release?# RFC 0007: Configuration Drift Detection
+
 - **Status**: Deferred
 - Feature Name: `drift_detection`
 - Start Date: 2025-12-31

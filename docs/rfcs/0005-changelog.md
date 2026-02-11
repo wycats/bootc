@@ -1,4 +1,84 @@
-# RFC 0005: Changelog and Version Management
+# RFC 0005: Changelog
+
+Structured changelog entries with pending queues and release snapshots.
+
+## Motivation
+
+The distribution needs a lightweight, reviewable history of changes that is
+independent of PR parsing or CI. The current implementation focuses on local
+entry management and explicit releases.
+
+## Design
+
+### Command Surface
+
+- `bkt changelog show [version] [--all] [--count N]`
+- `bkt changelog pending`
+- `bkt changelog generate --type <type> --category <category> <message>`
+- `bkt changelog add --type <type> --category <category> <message> [--draft]`
+- `bkt changelog validate`
+- `bkt changelog list [--count N]`
+- `bkt changelog release [version] [--no-update]`
+- `bkt changelog clear --confirm`
+
+### Manifest Format
+
+Pending entries are stored as YAML in `.changelog/pending/` and released
+versions in `.changelog/versions/`.
+
+Entry shape:
+
+```yaml
+timestamp: 2026-02-10T12:34:56Z
+type: added
+category: flatpak
+message: "org.gnome.Calculator"
+command: "bkt flatpak add org.gnome.Calculator"
+pr: null
+draft: false
+```
+
+Version metadata shape:
+
+```yaml
+version: 2026.02.10.1
+date: 2026-02-10T12:40:00Z
+image_digest: null
+base_image: null
+changes:
+  - {
+      type: added,
+      category: flatpak,
+      message: "org.gnome.Calculator",
+      timestamp: ...,
+    }
+```
+
+`CHANGELOG.md` is updated by `bkt changelog release` and uses Keep a Changelog
+style grouping by change type.
+
+### Behavior
+
+- `generate` prints a YAML entry but does not write it.
+- `add` writes a YAML entry to `.changelog/pending/`.
+- `validate` fails if any pending entries are drafts or empty.
+- `release` creates a version file in `.changelog/versions/` and updates
+  `CHANGELOG.md` unless `--no-update` is set.
+- Version numbers default to `YYYY.MM.DD.N`, incremented per-day by scanning
+  `.changelog/versions/`.
+
+## Implementation Notes
+
+- Changelog entries are not created automatically by other `bkt` commands.
+- `bkt changelog release` is the only writer for `CHANGELOG.md` in code.
+- Version metadata supports optional `image_digest` and `base_image`, but these
+  are not populated by the current command surface.
+
+## Known Gaps
+
+- No PR parsing or CI-driven release creation.
+- No automatic capture of commands into changelog entries.
+- No population of image digest or base image in version metadata.# RFC 0005: Changelog and Version Management
 
 - Feature Name: `changelog`
 - Start Date: 2025-12-31
@@ -12,6 +92,7 @@ Establish a structured approach to tracking changes, versioning images, and main
 ## Motivation
 
 A personal distribution evolves over time. Without tracking:
+
 - It's unclear what changed between image builds
 - Rollback decisions lack context
 - The "why" behind changes is lost
@@ -46,20 +127,24 @@ All notable changes to this distribution are documented here.
 ## [2025.01.02.1] - 2025-01-02
 
 ### Added
+
 - Flatpak: org.gnome.Calculator
 - Package: htop, neovim
 - GNOME Extension: Blur my Shell
 
 ### Changed
+
 - Updated cursor theme to Bibata-Modern-Ice
 - Changed GTK theme to adw-gtk3-dark
 
 ### Removed
+
 - Package: nano (replaced by neovim)
 
 ## [2025.01.01.1] - 2025-01-01
 
 ### Added
+
 - Initial distribution based on Bazzite
 - Core Flatpak applications
 - Development toolbox configuration
@@ -73,6 +158,7 @@ Format: `YYYY.MM.DD.N`
 - `N`: Build number for that day (starting at 1)
 
 Examples:
+
 - `2025.01.02.1` - First build on January 2, 2025
 - `2025.01.02.2` - Second build on January 2, 2025
 
@@ -99,10 +185,12 @@ Multiple PRs merged before a build are grouped into a single version:
 ## [2025.01.02.1] - 2025-01-02
 
 ### Added
+
 - Flatpak: org.gnome.Calculator (PR #42)
 - Package: htop (PR #43)
 
 ### Changed
+
 - Cursor theme update (PR #44)
 ```
 
@@ -147,7 +235,7 @@ timestamp: 2025-01-02T10:30:00Z
 type: added
 category: flatpak
 message: "org.gnome.Calculator"
-pr: null  # Set when PR is created
+pr: null # Set when PR is created
 command: "bkt flatpak add org.gnome.Calculator"
 ```
 

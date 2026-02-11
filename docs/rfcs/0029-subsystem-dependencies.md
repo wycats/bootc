@@ -1,4 +1,49 @@
-````markdown
+# RFC 0029: Subsystem Dependencies
+
+Phase-based ordering for subsystem execution and planning.
+
+## Motivation
+
+Subsystems have implicit ordering requirements (for example, remotes before
+apps). A small, explicit phase model makes the order deterministic and easier
+to reason about, without introducing a full dependency graph.
+
+## Design
+
+### Command Surface
+
+This RFC introduces ordering semantics, not new CLI commands. The phase model
+is consumed by subsystem registries and planning code.
+
+### Manifest Format
+
+No new manifests are introduced. Phase selection is declared in Rust on each
+subsystem implementation via `Subsystem::phase()`.
+
+### Behavior
+
+Phases are defined as:
+
+- `Infrastructure`: remotes, registries, repositories.
+- `Packages`: installable units.
+- `Configuration`: settings and dependent configuration.
+
+The registry orders subsystems by phase. Within a phase, ordering is stable
+based on registration order. Capture ordering is the reverse of sync ordering
+(configuration to packages to infrastructure).
+
+## Implementation Notes
+
+- The phase model is implemented in `ExecutionPhase` and `Subsystem::phase()`.
+- `SubsystemRegistry::syncable()` returns subsystems ordered by phase.
+- `SubsystemRegistry::capturable()` returns subsystems in reverse phase order.
+
+## Known Gaps
+
+- `bkt apply` and `bkt capture` still use their own hard-coded subsystem lists
+  and do not yet consume the registry or phase ordering.
+- No explicit per-subsystem dependency edges or `after` hints.````markdown
+
 # RFC-0029: Subsystem Dependencies
 
 - **Status**: Implemented
@@ -165,4 +210,7 @@ The phase model does not introduce new execution capabilities; it only changes o
 - Should phase ordering be configurable for advanced users?
 - Do plugin subsystems need a way to declare their phase in `plugin.json`?
 - Should we allow explicit phase-level `after` constraints for built-in subsystems?
-````
+
+```
+
+```

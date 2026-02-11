@@ -147,6 +147,14 @@ RUN set -eu; \
     test "${ok}" = 1; \
     chmod 0755 /usr/bin/getnf
 
+# Emoji rendering fix for Electron/Chromium apps.
+# Noto Color Emoji (COLRv1) renders monochrome in Chromium's Skia renderer.
+# This config hides it via <rejectfont> and aliases Twemoji as the preferred
+# emoji font using weak bindings (won't hijack text fonts like Kannada/CJK).
+# Also cleans up any stale version from the ostree /etc overlay.
+RUN rm -f /etc/fonts/conf.d/99-emoji-fix.conf
+COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
+
 # Fonts (system-wide): Inter (RPM) + JetBrainsMono Nerd Font (zip from nerd-fonts)
 # Rationale: Nerd Fonts patched versions are not available in standard Fedora repos.
 RUN set -eu; \

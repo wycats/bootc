@@ -7,7 +7,7 @@
 
 ## Summary
 
-Integrate Distrobox as the primary developer container workflow, using `distrobox.ini` as the native target configuration and a new bkt manifest as the git-tracked source of truth. `bkt` will capture and apply Distrobox configuration, including exported binaries (shims), additional packages, and hooks, while letting Distrobox handle the actual container lifecycle via `distrobox assemble`. Binary locations are **declarative**: manifests list explicit paths, not runtime discovery.
+Integrate Distrobox as the developer container workflow using `manifests/distrobox.json` as the git-tracked source of truth and `distrobox.ini` (repo root) as the native target. `bkt distrobox apply` renders `distrobox.ini`, runs `distrobox assemble create`, and exports binaries defined in the manifest. `bkt distrobox capture` parses `distrobox.ini` back into the manifest. Binary locations are declarative: manifests list explicit paths, not runtime discovery.
 
 The goal is to shift the default workflow to **host-first** development (VS Code on host), with exported shims running inside the Distrobox container. This reduces the need for delegation logic and eliminates most "run inside the container" friction.
 
@@ -76,23 +76,17 @@ bkt treats `distrobox.ini` as the native state in the same way it treats gsettin
   "containers": {
     "bootc-dev": {
       "image": "ghcr.io/wycats/bootc-toolbox:latest",
-      "exported_bins": [
-        "~/.cargo/bin/cargo",
-        "~/.cargo/bin/rustc",
-        "~/.cargo/bin/cargo-clippy",
-        "~/.cargo/bin/cargo-fmt",
-        "~/.proto/shims/node",
-        "/usr/bin/npm",
-        "/usr/local/bin/nu"
-      ],
-      "exported_bins_path": "~/.local/bin",
-      "path": ["~/.local/bin", "~/.cargo/bin", "~/.proto/bin", "$PATH"],
-      "env": { "RUST_BACKTRACE": "1" },
-      "additional_flags": ["--userns=keep-id"],
-      "init_hooks": ["rustup default stable"],
+      "packages": ["gcc", "libatomic"],
+      "bins": {
+        "from": ["~/.cargo/bin", "~/.proto/shims"],
+        "also": ["/usr/local/bin/nu", "~/.proto/bin/proto"],
+        "to": "~/.local/bin/distrobox"
+      },
+      "init_hooks": ["rustup default stable", "rustup update stable"],
       "pull": true,
       "init": false,
-      "root": false
+      "root": false,
+      "path": ["~/.local/bin", "~/.local/bin/distrobox", "$PATH"]
     }
   }
 }
@@ -106,13 +100,14 @@ bkt treats `distrobox.ini` as the native state in the same way it treats gsettin
 
 [bootc-dev]
 image=ghcr.io/wycats/bootc-toolbox:latest
-exported_bins="~/.cargo/bin/cargo ~/.cargo/bin/rustc ~/.cargo/bin/cargo-clippy ~/.cargo/bin/cargo-fmt ~/.proto/shims/node /usr/bin/npm /usr/local/bin/nu"
-exported_bins_path="~/.local/bin"
-init_hooks="rustup default stable"
+additional_packages="gcc libatomic"
+exported_bins="/usr/local/bin/nu ~/.proto/bin/proto"
+exported_bins_path="~/.local/bin/distrobox"
+init_hooks="rustup default stable; rustup update stable"
 pull=true
 init=false
 root=false
-additional_flags="--env=PATH=~/.local/bin:~/.cargo/bin:~/.proto/bin:$PATH --env=RUST_BACKTRACE=1 --userns=keep-id"
+additional_flags="--env=PATH=~/.local/bin:~/.local/bin/distrobox:$PATH"
 ```
 
 ### Commands
@@ -121,12 +116,11 @@ additional_flags="--env=PATH=~/.local/bin:~/.cargo/bin:~/.proto/bin:$PATH --env=
 # Capture current distrobox.ini into manifest
 bkt distrobox capture
 
-# Apply manifest to regenerate distrobox.ini and run assemble
-bkt distrobox apply
+# Capture packages from a running container (optional)
+bkt distrobox capture --packages bootc-dev
 
-# Update manifest directly (optional convenience)
-bkt distrobox export add /usr/bin/cargo
-bkt distrobox package add git vim
+# Apply manifest to regenerate distrobox.ini, run assemble, and export bins
+bkt distrobox apply
 ```
 
 ## Reference-level Explanation
@@ -140,22 +134,23 @@ Add a new manifest file:
 
 ### Distrobox INI Mapping
 
-| Manifest Field       | Distrobox INI Key        | Notes                           |
-| -------------------- | ------------------------ | ------------------------------- |
-| `image`              | `image`                  | Required                        |
-| `packages`           | `additional_packages`    | Joined as space-separated list  |
-| `exported_bins`      | `exported_bins`          | Space-separated explicit paths  |
-| `exported_bins_path` | `exported_bins_path`     | Default `~/.local/bin`          |
-| `exported_apps`      | `exported_apps`          | Optional                        |
-| `init_hooks`         | `init_hooks`             | One per line or compound list   |
-| `pre_init_hooks`     | `pre_init_hooks`         | Optional                        |
-| `volume`             | `volume`                 | Optional                        |
-| `pull`               | `pull`                   | Boolean                         |
-| `init`               | `init`                   | Boolean                         |
-| `root`               | `root`                   | Boolean                         |
-| `path`               | (via `additional_flags`) | See PATH Configuration below    |
-| `env`                | (via `additional_flags`) | See Environment Variables below |
-| `additional_flags`   | `additional_flags`       | Pass-through; cannot set PATH   |
+| Manifest Field     | Distrobox INI Key        | Notes                                     |
+| ------------------ | ------------------------ | ----------------------------------------- |
+| `image`            | `image`                  | Required                                  |
+| `packages`         | `additional_packages`    | Joined as space-separated list            |
+| `bins.also`        | `exported_bins`          | Space-separated explicit paths            |
+| `bins.to`          | `exported_bins_path`     | Default `~/.local/bin` if set             |
+| `bins.from`        | (not in INI)             | Used by `bkt` to export all bins in a dir |
+| `exported_apps`    | `exported_apps`          | Optional                                  |
+| `init_hooks`       | `init_hooks`             | One per line or compound list             |
+| `pre_init_hooks`   | `pre_init_hooks`         | Optional                                  |
+| `volume`           | `volume`                 | Optional                                  |
+| `pull`             | `pull`                   | Boolean                                   |
+| `init`             | `init`                   | Boolean                                   |
+| `root`             | `root`                   | Boolean                                   |
+| `path`             | (via `additional_flags`) | See PATH Configuration below              |
+| `env`              | (via `additional_flags`) | See Environment Variables below           |
+| `additional_flags` | `additional_flags`       | Pass-through; cannot set PATH             |
 
 ### PATH Configuration
 
@@ -194,9 +189,9 @@ The `path` field provides shell-agnostic PATH configuration for the container en
 
 `bkt` does **not** infer binary locations (no `which`, no runtime discovery). Instead:
 
-- `exported_bins` contains explicit paths as policy.
-- `capture` parses `distrobox.ini` into the manifest.
-- `apply` generates `distrobox.ini` from the manifest and runs exports.
+- `bins.also` lists explicit paths to export.
+- `bins.from` lists directories; `bkt distrobox apply` exports each file it finds there.
+- `capture` parses `distrobox.ini` into the manifest (preserving `bins.from` from the existing manifest).
 
 This keeps the workflow deterministic and reviewable, even when binaries live in `$HOME` (e.g., `~/.cargo/bin`).
 
@@ -270,16 +265,16 @@ COPY system/environment.d/10-distrobox-exports.conf /etc/environment.d/
 ### Apply Implementation
 
 1. Load `manifests/distrobox.json`
-2. Generate `distrobox.ini` (in repo root or configured location)
-3. Run `distrobox assemble create --file distrobox.ini`
-4. Optionally run export verification (ensure shim paths exist)
+2. Generate `distrobox.ini` in the repo root
+3. Run `distrobox assemble create --replace --name <container> --file distrobox.ini`
+4. Export binaries from `bins.from` directories and `bins.also` entries via `distrobox-export`
 
 ### Capture Implementation
 
-1. Read `distrobox.ini`
+1. Read `distrobox.ini` from the repo root
 2. Parse entries into `manifests/distrobox.json`
-3. Normalize fields (packages list, exported bins paths)
-4. Store back into manifest in a stable order
+3. Preserve `bins.from` and `bins.to` from the existing manifest (INI does not encode them)
+4. Optionally capture packages from a running container with `bkt distrobox capture --packages <name>`
 
 ### Legacy Toolbox Compatibility
 
@@ -314,45 +309,8 @@ Generate a Containerfile and ignore `distrobox.ini`. Rejected because:
 - Ignores Distrobox-native workflow
 - Misses export integration
 
-## Unresolved Questions
+## Gaps
 
-1. **Where should `distrobox.ini` live?**
-   - Repo root vs `~/.config/distrobox/distrobox.ini`
-   - Should bkt manage one file or multiple?
-
-2. **Should bkt own Distrobox lifecycle?**
-   - Always call `distrobox assemble create`
-   - Or only generate the INI and let the user run assemble?
-
-3. **How should exports be surfaced in bkt?**
-   - Dedicated `bkt distrobox export add/remove` commands
-   - Or just edit manifest directly and reapply?
-
-4. **How do we handle multiple containers?**
-   - Single `bootc-dev` container only
-   - Or allow multiple entries in manifest?
-
-5. **Should we generate `toolbox/Containerfile` still?**
-   - Keep for image builds or drop in favor of Distrobox `additional_packages`?
-
-6. **How should we migrate existing toolbox manifests?**
-   - Auto-convert `toolbox-packages.json` → `distrobox.json`?
-   - Keep both for a transition period?
-
-## Future Possibilities
-
-- `bkt distrobox status` to compare manifest vs actual containers
-- Exported app management (`exported_apps`)
-- Multiple dev containers with named profiles
-- Integration with `bkt dev` toolchain tracking
-
-## Implementation Checklist
-
-- [ ] Define `distrobox.schema.json`
-- [ ] Add `manifests/distrobox.json`
-- [ ] Add `bkt distrobox` command group (capture/apply/status)
-- [ ] INI parser/serializer for `distrobox.ini`
-- [ ] Capture support from existing `distrobox.ini`
-- [ ] Apply support via `distrobox assemble create`
-- [ ] Migration helper from toolbox manifests
-- [ ] Documentation updates (RFC-0003, README)
+- No helper subcommands like `bkt distrobox export add/remove` or `bkt distrobox package add/remove`.
+- No `bkt distrobox status` comparison command.
+- `bkt dev` is still a separate workflow; it does not wrap `bkt distrobox`.
