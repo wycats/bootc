@@ -1,5 +1,100 @@
 # RFC 0034: Ephemeral System Modifications via usroverlay
 
+- Status: Draft
+- Feature Name: `usroverlay_integration`
+- Start Date: 2026-02-02
+- RFC PR: (leave this empty until PR is opened)
+- Tracking Issue: (leave this empty)
+
+## Summary
+
+Integrate `rpm-ostree usroverlay` into the bkt workflow to enable safe,
+idempotent, ephemeral modifications to `/usr` for development and hotfix
+scenarios, while preserving the manifest-first design.
+
+This remains future work. No bkt commands exist today for usroverlay.
+
+## Current State
+
+- No `bkt admin usroverlay` or `bkt dev install-local` commands exist.
+- The workflow does not currently manage usroverlay or track overlay changes.
+- Users must invoke `rpm-ostree usroverlay` manually if they choose to use it.
+
+## Goals
+
+- Provide explicit, auditable commands to enable and inspect usroverlay.
+- Keep ephemeral changes declarative and reproducible.
+- Make development and hotfix workflows possible without image rebuilds.
+
+## Non-Goals
+
+- Auto-enable usroverlay without user intent.
+- Make overlay changes persistent across system restarts.
+
+## Proposed Commands (Future)
+
+### `bkt admin usroverlay`
+
+```bash
+bkt admin usroverlay enable
+bkt admin usroverlay status
+bkt admin usroverlay apply-dev
+bkt admin usroverlay disable
+```
+
+### `bkt dev install-local`
+
+```bash
+bkt dev install-local
+bkt dev install-local --with-scripts
+```
+
+## Proposed Workflows
+
+### Development Workflow
+
+```bash
+# 1. Make changes to bkt source
+# 2. Build and test locally
+# 3. Install to /usr using usroverlay
+bkt dev install-local
+```
+
+### Hotfix Workflow
+
+```bash
+bkt admin usroverlay enable
+sudo cp scripts/bootc-apply /usr/bin/bootc-apply
+```
+
+## Implementation Sketch (Future)
+
+- Detect active usroverlay via `/proc/mounts`.
+- Apply files into `/usr` only when overlay is active.
+- Provide status output that lists modified files.
+- Keep actions idempotent by overwriting files with known content.
+
+## Drift Detection Integration (Future)
+
+Extend drift detection to report when usroverlay is active and which files are
+overlaid. This is a planned integration with RFC 0007.
+
+## Drawbacks
+
+- Another mechanism for users to understand.
+- Easy to forget ephemeral changes.
+- Requires privileged operations.
+
+## Rationale and Alternatives
+
+`rpm-ostree override replace` and package layering are persistent and require
+packaging. usroverlay is the only lightweight path for quick, ephemeral edits.
+
+## Unresolved Questions
+
+1. Should `bkt dev install-local` require explicit enable first?
+2. Should we support a "reset overlay" command within a session?# RFC 0034: Ephemeral System Modifications via usroverlay
+
 - Feature Name: `usroverlay_integration`
 - Start Date: 2026-02-02
 - RFC PR: (leave this empty until PR is opened)

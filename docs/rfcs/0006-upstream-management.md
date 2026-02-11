@@ -1,4 +1,95 @@
-# RFC 0006: Upstream Dependency Management
+# RFC 0006: Upstream Management
+
+Track pinned external resources with checksums and update workflows.
+
+## Motivation
+
+The distribution relies on external projects (themes, binaries, scripts) that
+need version pinning and checksum verification. The current implementation
+focuses on manifest-driven tracking and explicit verification steps.
+
+## Design
+
+### Command Surface
+
+- `bkt upstream list [--format table|json]`
+- `bkt upstream check [name] [--include-prereleases]`
+- `bkt upstream update <name> | --all`
+- `bkt upstream add github:owner/repo [--name name] [--asset pattern]`
+- `bkt upstream add url:https://... [--name name]`
+- `bkt upstream pin <name> <version>`
+- `bkt upstream remove <name>`
+- `bkt upstream verify`
+- `bkt upstream lock`
+- `bkt upstream generate`
+- `bkt upstream info <name>`
+
+### Manifest Format
+
+Upstreams are stored in `upstream/manifest.json` and verified by a hash in
+`upstream/manifest.verified`.
+
+```json
+{
+  "upstreams": [
+    {
+      "name": "bibata-cursor",
+      "source": {
+        "type": "github",
+        "repo": "ful1e5/Bibata_Cursor",
+        "asset_pattern": "Bibata-Modern-Classic.tar.xz"
+      },
+      "pinned": {
+        "version": "v2.0.7",
+        "sha256": "...",
+        "pinned_at": "2025-01-01T14:40:00Z",
+        "gpg_verified": false
+      },
+      "install": {
+        "type": "archive",
+        "extract_to": "/usr/share/icons",
+        "strip_components": 0
+      }
+    }
+  ]
+}
+```
+
+`bkt upstream generate` creates per-upstream files for Containerfile caching:
+
+```
+upstream/<name>/version
+upstream/<name>/sha256
+upstream/<name>/url
+upstream/<name>/commit
+```
+
+### Behavior
+
+- `add` creates an upstream entry with `version: latest` and a placeholder
+  checksum, then instructs the user to run `lock`.
+- `pin` and `update` change the pinned version and reset `sha256` to a
+  placeholder value until `lock` is run.
+- `lock` downloads the resource, computes the SHA256, writes `pinned.url`,
+  and updates `manifest.verified`.
+- `verify` downloads each resource and compares its checksum against the
+  manifest, writing `manifest.verified` only if all checks pass.
+- `check` and `update` use the GitHub CLI to query release/tag versions for
+  GitHub sources; URL sources are not auto-checked.
+
+## Implementation Notes
+
+- GitHub lookups and asset selection rely on the `gh` CLI.
+- Checksums are computed with `curl` and SHA256 hashing.
+- `upstream/bazzite-stable.digest` is tracked in the repo but is not managed
+  by `bkt upstream`; it is updated externally.
+
+## Known Gaps
+
+- No GPG signature verification (the field is present but unused).
+- No mirror or fallback URL support.
+- No automatic installation or Containerfile integration beyond file
+  generation.# RFC 0006: Upstream Dependency Management
 
 - Feature Name: `upstream_management`
 - Start Date: 2025-12-31
@@ -19,6 +110,7 @@ A personal distribution depends on many upstream projects:
 - **GNOME Extensions**: Blur my Shell, Dash to Dock
 
 These dependencies need:
+
 1. **Pinning**: Know exactly which version you have
 2. **Verification**: Ensure downloads aren't tampered with
 3. **Updates**: Easy path to newer versions
@@ -182,6 +274,7 @@ bkt upstream verify
 ```
 
 This ensures:
+
 - Checksums can't be modified without re-running verification
 - CI builds are reproducible
 - No need for CI to re-download everything just to verify

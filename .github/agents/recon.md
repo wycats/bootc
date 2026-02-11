@@ -1,14 +1,18 @@
 ---
 description: "The custom agent is used to explore the codebase"
-model: Claude Opus 4.5 (vercel)
+model: Claude Opus 4.6 (vercel)
 tools:
   [
+    "execute/testFailure",
     "execute/getTerminalOutput",
+    "execute/awaitTerminal",
+    "execute/killTerminal",
     "execute/runInTerminal",
+    "execute/runTests",
     "read",
+    "agent",
     "search",
     "web",
-    "agent",
     "exosuit.exosuit-context/context",
     "exosuit.exosuit-context/epoch-finish",
     "exosuit.exosuit-context/epoch-list",
