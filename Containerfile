@@ -1,6 +1,32 @@
-FROM ghcr.io/ublue-os/bazzite-gnome:stable
+# Multi-stage Containerfile with parallel downloads and binary fetches
+#
+# Architecture:
+#   base ──┬── dl-vscode ────────┐
+#          ├── dl-edge ──────────┤
+#          ├── dl-1password ─────┤  RPM downloads (parallel)
+#          ├── fetch-starship ───┤
+#          ├── fetch-lazygit ────┤
+#          ├── build-keyd ───────┤  Binary fetches (parallel)
+#          ├── fetch-getnf ──────┤
+#          ├── fetch-fonts ──────┤
+#          ├── fetch-bibata ─────┤
+#          ├── fetch-whitesur ───┤
+#          └── image ────────────┘  Final assembly (sequential)
+#
+# BuildKit runs independent FROM stages concurrently. The big external
+# RPM downloads (~400MB total) and binary fetches happen in parallel.
+# The final stage does a single sequential `dnf install` from local
+# RPMs — fast, because the network-heavy work is already done.
+#
+# RPM installs CANNOT be parallelized — the RPM database is a single
+# store, and COPY --from clobbers it. The download/install split is the
+# sweet spot: parallelize I/O, serialize the transaction. If 10-20s for
+# the transaction becomes a bottleneck, there are further opportunities
+# (rpm --nodb extract + rebuilddb) but that's not worth the complexity today.
 
-# Layered packages detected in system_profile.txt
+# ─── Stage: base ────────────────────────────────────────────────
+# Shared foundation: base image + external repo configuration
+FROM ghcr.io/ublue-os/bazzite-gnome:stable AS base
 RUN set -eu; \
     mkdir -p /var/opt /var/usrlocal/bin; \
     rpm --import https://packages.microsoft.com/keys/microsoft.asc; \
@@ -30,6 +56,151 @@ RUN set -eu; \
             'gpgkey=https://downloads.1password.com/linux/keys/1password.asc' \
             >/etc/yum.repos.d/1password.repo
 
+# ═══════════════════════════════════════════════════════════════
+# Parallel RPM download stages
+# Each external repo's packages are downloaded in a separate stage.
+# These run concurrently and produce /rpms/ directories that get
+# COPY'd into the final image for a single sequential dnf install.
+#
+# Per-repo ARGs allow independent cache busting once rpmcheck emits
+# per-repo hashes. Until then, CI passes DNF_CACHE_EPOCH to all.
+# ═══════════════════════════════════════════════════════════════
+
+# ─── Stage: dl-vscode ───────────────────────────────────────────
+FROM base AS dl-vscode
+ARG DNF_CACHE_EPOCH=0
+RUN echo "cache-epoch: ${DNF_CACHE_EPOCH}" > /dev/null && \
+    mkdir -p /rpms && \
+    dnf download --destdir=/rpms code code-insiders
+
+# ─── Stage: dl-edge ─────────────────────────────────────────────
+FROM base AS dl-edge
+ARG DNF_CACHE_EPOCH=0
+RUN echo "cache-epoch: ${DNF_CACHE_EPOCH}" > /dev/null && \
+    mkdir -p /rpms && \
+    dnf download --destdir=/rpms microsoft-edge-stable
+
+# ─── Stage: dl-1password ────────────────────────────────────────
+FROM base AS dl-1password
+ARG DNF_CACHE_EPOCH=0
+RUN echo "cache-epoch: ${DNF_CACHE_EPOCH}" > /dev/null && \
+    mkdir -p /rpms && \
+    dnf download --destdir=/rpms 1password 1password-cli
+
+# ═══════════════════════════════════════════════════════════════
+# Parallel binary fetch stages
+# BuildKit runs these concurrently — they don't depend on each other.
+# Each stage produces a minimal output (just the binary/files) that
+# gets COPY'd into the final image.
+# ═══════════════════════════════════════════════════════════════
+
+# ─── Stage: fetch-starship ──────────────────────────────────────
+FROM base AS fetch-starship
+COPY upstream/manifest.json /tmp/upstream-manifest.json
+RUN set -eu; \
+    tag="$(jq -r '.upstreams[] | select(.name == "starship") | .pinned.version' /tmp/upstream-manifest.json)"; \
+    asset="starship-x86_64-unknown-linux-gnu.tar.gz"; \
+    curl -fsSL "https://github.com/starship/starship/releases/download/${tag}/${asset}" -o /tmp/${asset}; \
+    curl -fsSL "https://github.com/starship/starship/releases/download/${tag}/${asset}.sha256" -o /tmp/${asset}.sha256; \
+    expected="$(cat /tmp/${asset}.sha256)"; \
+    echo "${expected}  /tmp/${asset}" | sha256sum -c -; \
+    tar -xzf /tmp/${asset} -C /usr/bin starship; \
+    chmod 0755 /usr/bin/starship
+
+# ─── Stage: fetch-lazygit ───────────────────────────────────────
+FROM base AS fetch-lazygit
+COPY upstream/manifest.json /tmp/upstream-manifest.json
+RUN set -eu; \
+    tag="$(jq -r '.upstreams[] | select(.name == "lazygit") | .pinned.version' /tmp/upstream-manifest.json)"; \
+    ver="${tag#v}"; \
+    asset="lazygit_${ver}_linux_x86_64.tar.gz"; \
+    curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/${tag}/${asset}" -o /tmp/${asset}; \
+    curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/${tag}/checksums.txt" -o /tmp/lazygit.checksums.txt; \
+    (cd /tmp && grep " ${asset}$" lazygit.checksums.txt | sha256sum -c -); \
+    tar -xzf /tmp/${asset} -C /usr/bin lazygit; \
+    chmod 0755 /usr/bin/lazygit
+
+# ─── Stage: build-keyd ──────────────────────────────────────────
+# keyd is the slowest stage (~30-60s): git clone + gcc build.
+# Running it in parallel with other fetches is the biggest win.
+FROM base AS build-keyd
+COPY upstream/manifest.json /tmp/upstream-manifest.json
+RUN set -eu; \
+    ref="$(jq -r '.upstreams[] | select(.name == "keyd") | .pinned.version' /tmp/upstream-manifest.json)"; \
+    dnf install -y git gcc make systemd-devel; \
+    git clone --depth 1 --branch "${ref}" https://github.com/rvaiya/keyd.git /tmp/keyd; \
+    make -C /tmp/keyd; \
+    make -C /tmp/keyd PREFIX=/usr FORCE_SYSTEMD=1 install; \
+    # The Makefile only installs keyd.service if /run/systemd/system exists,
+    # which it doesn't in a container. Install it manually.
+    mkdir -p /usr/lib/systemd/system; \
+    install -Dm644 /tmp/keyd/keyd.service /usr/lib/systemd/system/keyd.service; \
+    rm -rf /tmp/keyd; \
+    dnf remove -y git gcc make systemd-devel || true; \
+    dnf clean all
+
+# ─── Stage: fetch-getnf ────────────────────────────────────────
+FROM base AS fetch-getnf
+COPY upstream/manifest.json /tmp/upstream-manifest.json
+RUN set -eu; \
+    ref="$(jq -r '.upstreams[] | select(.name == "getnf") | .pinned.commit' /tmp/upstream-manifest.json)"; \
+    expected_sha="$(jq -r '.upstreams[] | select(.name == "getnf") | .pinned.sha256' /tmp/upstream-manifest.json)"; \
+    ok=0; \
+    for attempt in 1 2 3; do \
+        curl -fsSL \
+            --retry 5 \
+            --retry-delay 2 \
+            "https://raw.githubusercontent.com/getnf/getnf/${ref}/getnf" \
+            -o /usr/bin/getnf; \
+        if echo "${expected_sha}  /usr/bin/getnf" | sha256sum -c -; then \
+            ok=1; \
+            break; \
+        fi; \
+        echo "getnf checksum mismatch; retrying (${attempt}/3)" >&2; \
+        sleep $((attempt * 2)); \
+    done; \
+    test "${ok}" = 1; \
+    chmod 0755 /usr/bin/getnf
+
+# ─── Stage: fetch-fonts ────────────────────────────────────────
+FROM base AS fetch-fonts
+RUN set -eu; \
+    mkdir -p /usr/share/fonts/nerd-fonts/JetBrainsMono; \
+    curl -fsSL "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip" -o /tmp/JetBrainsMono.zip; \
+    unzip -o /tmp/JetBrainsMono.zip -d /usr/share/fonts/nerd-fonts/JetBrainsMono; \
+    rm -f /tmp/JetBrainsMono.zip
+
+# ─── Stage: fetch-bibata ───────────────────────────────────────
+FROM base AS fetch-bibata
+COPY upstream/manifest.json /tmp/upstream-manifest.json
+RUN set -eu; \
+    version="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .pinned.version' /tmp/upstream-manifest.json)"; \
+    expected_sha="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .pinned.sha256' /tmp/upstream-manifest.json)"; \
+    asset="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .source.asset_pattern' /tmp/upstream-manifest.json)"; \
+    curl -fsSL "https://github.com/ful1e5/Bibata_Cursor/releases/download/${version}/${asset}" -o /tmp/${asset}; \
+    echo "${expected_sha}  /tmp/${asset}" | sha256sum -c -; \
+    mkdir -p /usr/share/icons; \
+    tar -xJf /tmp/${asset} -C /usr/share/icons
+
+# ─── Stage: fetch-whitesur ─────────────────────────────────────
+FROM base AS fetch-whitesur
+COPY upstream/manifest.json /tmp/upstream-manifest.json
+RUN set -eu; \
+    ref="$(jq -r '.upstreams[] | select(.name == "whitesur-icons") | .pinned.commit' /tmp/upstream-manifest.json)"; \
+    dnf install -y git; \
+    git clone --filter=blob:none https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/whitesur-icons; \
+    cd /tmp/whitesur-icons && git checkout "${ref}" && ./install.sh -d /usr/share/icons; \
+    rm -rf /tmp/whitesur-icons; \
+    dnf remove -y git || true; \
+    dnf clean all
+
+
+# ═══════════════════════════════════════════════════════════════
+# Final image assembly
+# ═══════════════════════════════════════════════════════════════
+
+FROM base AS image
+
 # === COPR_REPOS (managed by bkt) ===
 # No COPR repositories configured
 # === END COPR_REPOS ===
@@ -38,16 +209,19 @@ RUN set -eu; \
 # No kernel arguments configured
 # === END KERNEL_ARGUMENTS ===
 
+# ─── Install RPMs ──────────────────────────────────────────────
+# Copy pre-downloaded external repo RPMs (fetched in parallel above)
+COPY --from=dl-vscode /rpms/ /tmp/rpms/
+COPY --from=dl-edge /rpms/ /tmp/rpms/
+COPY --from=dl-1password /rpms/ /tmp/rpms/
+
 # === SYSTEM_PACKAGES (managed by bkt) ===
-# DNF_CACHE_EPOCH: when this value changes, BuildKit invalidates the dnf install
-# layer, forcing a fresh package resolution. The CI workflow sets this to a hash
-# of available RPM versions when it detects updates.
+# Install external packages from local RPMs + Fedora packages from repos.
+# DNF resolves dependencies for both in a single transaction.
 ARG DNF_CACHE_EPOCH=0
-RUN echo "dnf-cache-epoch: ${DNF_CACHE_EPOCH}" > /dev/null && dnf install -y \
-    1password \
-    1password-cli \
-    code \
-    code-insiders \
+RUN echo "cache-epoch: ${DNF_CACHE_EPOCH}" > /dev/null && \
+    dnf install -y \
+    /tmp/rpms/*.rpm \
     curl \
     distrobox \
     fontconfig \
@@ -58,14 +232,13 @@ RUN echo "dnf-cache-epoch: ${DNF_CACHE_EPOCH}" > /dev/null && dnf install -y \
     google-noto-sans-meroitic-fonts \
     google-noto-sans-mongolian-fonts \
     jq \
-    microsoft-edge-stable \
     papirus-icon-theme \
     rsms-inter-fonts \
     toolbox \
     unzip \
     virt-manager \
     xorg-x11-server-Xvfb \
-    && dnf clean all
+    && rm -rf /tmp/rpms && dnf clean all
 # === END SYSTEM_PACKAGES ===
 
 # === SYSTEMD_UNITS (managed by bkt) ===
@@ -89,117 +262,36 @@ RUN printf '%s\n' \
     'L+ /var/opt/microsoft - - - - /usr/lib/opt/microsoft' \
     >/usr/lib/tmpfiles.d/bootc-opt.conf
 
-# starship (pinned via upstream/manifest.json + verified by sha256)
-# Rationale: Not available in standard Fedora repos.
-COPY upstream/manifest.json /tmp/upstream-manifest.json
-RUN set -eu; \
-    tag="$(jq -r '.upstreams[] | select(.name == "starship") | .pinned.version' /tmp/upstream-manifest.json)"; \
-    asset="starship-x86_64-unknown-linux-gnu.tar.gz"; \
-    curl -fsSL "https://github.com/starship/starship/releases/download/${tag}/${asset}" -o /tmp/${asset}; \
-    curl -fsSL "https://github.com/starship/starship/releases/download/${tag}/${asset}.sha256" -o /tmp/${asset}.sha256; \
-    expected="$(cat /tmp/${asset}.sha256)"; \
-    echo "${expected}  /tmp/${asset}" | sha256sum -c -; \
-    tar -xzf /tmp/${asset} -C /usr/bin starship; \
-    chmod 0755 /usr/bin/starship; \
-    rm -f /tmp/${asset} /tmp/${asset}.sha256
+# ─── Merge parallel stages ─────────────────────────────────────
+# Binary fetches: copy only the output files, not the whole filesystem.
+# This preserves the RPM database from the main image.
+COPY --from=fetch-starship /usr/bin/starship /usr/bin/starship
+COPY --from=fetch-lazygit /usr/bin/lazygit /usr/bin/lazygit
+COPY --from=fetch-getnf /usr/bin/getnf /usr/bin/getnf
 
-# lazygit (pinned via upstream/manifest.json + verified by checksums.txt)
-# Rationale: Not available in standard Fedora repos.
-RUN set -eu; \
-    tag="$(jq -r '.upstreams[] | select(.name == "lazygit") | .pinned.version' /tmp/upstream-manifest.json)"; \
-    ver="${tag#v}"; \
-    asset="lazygit_${ver}_linux_x86_64.tar.gz"; \
-    curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/${tag}/${asset}" -o /tmp/${asset}; \
-    curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/${tag}/checksums.txt" -o /tmp/lazygit.checksums.txt; \
-    (cd /tmp && grep " ${asset}$" lazygit.checksums.txt | sha256sum -c -); \
-    tar -xzf /tmp/${asset} -C /usr/bin lazygit; \
-    chmod 0755 /usr/bin/lazygit; \
-    rm -f /tmp/${asset} /tmp/lazygit.checksums.txt
+# keyd: binary + systemd unit + config directory
+COPY --from=build-keyd /usr/bin/keyd /usr/bin/keyd
+COPY --from=build-keyd /usr/bin/keyd-application-mapper /usr/bin/keyd-application-mapper
+COPY --from=build-keyd /usr/lib/systemd/system/keyd.service /usr/lib/systemd/system/keyd.service
+COPY --from=build-keyd /usr/share/keyd/ /usr/share/keyd/
+COPY --from=build-keyd /usr/share/man/man1/keyd.1.gz /usr/share/man/man1/keyd.1.gz
+COPY --from=build-keyd /usr/share/man/man1/keyd-application-mapper.1.gz /usr/share/man/man1/keyd-application-mapper.1.gz
+COPY --from=build-keyd /usr/share/doc/keyd/ /usr/share/doc/keyd/
 
-# keyd (built from source at pinned tag from upstream/manifest.json)
-# Rationale: Not available in standard Fedora repos.
-# FORCE_SYSTEMD=1 is needed because /run/systemd/system doesn't exist in container builds
-RUN set -eu; \
-    ref="$(jq -r '.upstreams[] | select(.name == "keyd") | .pinned.version' /tmp/upstream-manifest.json)"; \
-    dnf install -y git gcc make systemd-devel; \
-    git clone --depth 1 --branch "${ref}" https://github.com/rvaiya/keyd.git /tmp/keyd; \
-    make -C /tmp/keyd; \
-    make -C /tmp/keyd PREFIX=/usr FORCE_SYSTEMD=1 install; \
-    rm -rf /tmp/keyd; \
-    dnf remove -y git gcc make systemd-devel || true; \
-    dnf clean all
+# Fonts, cursors, icons: copy whole directories
+COPY --from=fetch-fonts /usr/share/fonts/nerd-fonts/ /usr/share/fonts/nerd-fonts/
+COPY --from=fetch-bibata /usr/share/icons/ /usr/share/icons/
+COPY --from=fetch-whitesur /usr/share/icons/ /usr/share/icons/
 
-# getnf (pinned via upstream/manifest.json + verified by sha256)
-# Rationale: Not available in standard Fedora repos.
-RUN set -eu; \
-    ref="$(jq -r '.upstreams[] | select(.name == "getnf") | .pinned.commit' /tmp/upstream-manifest.json)"; \
-    expected_sha="$(jq -r '.upstreams[] | select(.name == "getnf") | .pinned.sha256' /tmp/upstream-manifest.json)"; \
-    ok=0; \
-    for attempt in 1 2 3; do \
-        curl -fsSL \
-            --retry 5 \
-            --retry-delay 2 \
-            "https://raw.githubusercontent.com/getnf/getnf/${ref}/getnf" \
-            -o /usr/bin/getnf; \
-        if echo "${expected_sha}  /usr/bin/getnf" | sha256sum -c -; then \
-            ok=1; \
-            break; \
-        fi; \
-        echo "getnf checksum mismatch; retrying (${attempt}/3)" >&2; \
-        sleep $((attempt * 2)); \
-    done; \
-    test "${ok}" = 1; \
-    chmod 0755 /usr/bin/getnf
-
-# Emoji rendering fix for Electron/Chromium apps.
-# Noto Color Emoji (COLRv1) renders monochrome in Chromium's Skia renderer.
-# This config hides it via <rejectfont> and aliases Twemoji as the preferred
-# emoji font using weak bindings (won't hijack text fonts like Kannada/CJK).
-# Also cleans up any stale version from the ostree /etc overlay.
+# Emoji rendering fix for Electron/Chromium apps
 RUN rm -f /etc/fonts/conf.d/99-emoji-fix.conf
 COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
 
-# Fonts (system-wide): Inter (RPM) + JetBrainsMono Nerd Font (zip from nerd-fonts)
-# Rationale: Nerd Fonts patched versions are not available in standard Fedora repos.
-RUN set -eu; \
-    mkdir -p /usr/share/fonts/nerd-fonts/JetBrainsMono; \
-    curl -fsSL "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip" -o /tmp/JetBrainsMono.zip; \
-    unzip -o /tmp/JetBrainsMono.zip -d /usr/share/fonts/nerd-fonts/JetBrainsMono; \
-    rm -f /tmp/JetBrainsMono.zip; \
-    fc-cache -f
+# Rebuild font cache now that all fonts + config are in place
+RUN fc-cache -f
 
-# Bibata cursor theme (pinned via upstream/manifest.json + verified by sha256)
-# Rationale: Not available in standard Fedora repos.
-RUN set -eu; \
-    version="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .pinned.version' /tmp/upstream-manifest.json)"; \
-    expected_sha="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .pinned.sha256' /tmp/upstream-manifest.json)"; \
-    asset="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .source.asset_pattern' /tmp/upstream-manifest.json)"; \
-    curl -fsSL "https://github.com/ful1e5/Bibata_Cursor/releases/download/${version}/${asset}" -o /tmp/${asset}; \
-    echo "${expected_sha}  /tmp/${asset}" | sha256sum -c -; \
-    mkdir -p /usr/share/icons; \
-    tar -xJf /tmp/${asset} -C /usr/share/icons; \
-    rm -f /tmp/${asset}
-
-# WhiteSur icon theme (pinned via upstream/manifest.json, installed system-wide)
-# Rationale: Not available in standard Fedora repos.
-# Note: Using commit SHA instead of tag for immutability. The install.sh script
-# is simple (copies files only, no network calls). Full tree verification is
-# deferred to a future upstream management system.
-RUN set -eu; \
-    ref="$(jq -r '.upstreams[] | select(.name == "whitesur-icons") | .pinned.commit' /tmp/upstream-manifest.json)"; \
-    dnf install -y git; \
-    git clone --filter=blob:none https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/whitesur-icons; \
-    cd /tmp/whitesur-icons && git checkout "${ref}" && ./install.sh -d /usr/share/icons; \
-    rm -rf /tmp/whitesur-icons; \
-    dnf remove -y git || true; \
-    dnf clean all
-
-# Clean up upstream manifest (no longer needed after this point)
-RUN rm -f /tmp/upstream-manifest.json
-
-# Host-level config extracted from wycats/asahi-env (now sourced here)
+# ─── System configuration ──────────────────────────────────────
 COPY system/keyd/default.conf /etc/keyd/default.conf
-# Enable keyd service (create symlink manually since systemctl doesn't work in containers)
 RUN mkdir -p /usr/lib/systemd/system/multi-user.target.wants && \
     ln -sf ../keyd.service /usr/lib/systemd/system/multi-user.target.wants/keyd.service
 
@@ -213,7 +305,6 @@ COPY manifests/flatpak-apps.json /usr/share/bootc-bootstrap/flatpak-apps.json
 COPY manifests/gnome-extensions.json /usr/share/bootc-bootstrap/gnome-extensions.json
 COPY manifests/gsettings.json /usr/share/bootc-bootstrap/gsettings.json
 COPY manifests/host-shims.json /usr/share/bootc-bootstrap/host-shims.json
-# Repository identity (for bkt --pr workflow)
 COPY repo.json /usr/share/bootc/repo.json
 COPY scripts/bootc-bootstrap /usr/bin/bootc-bootstrap
 COPY scripts/bootc-apply /usr/bin/bootc-apply
@@ -233,7 +324,7 @@ RUN chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/bootc-repo
     mkdir -p /usr/lib/systemd/system/multi-user.target.wants && \
     ln -sf ../bootc-apply.service /usr/lib/systemd/system/multi-user.target.wants/bootc-apply.service
 
-# Custom ujust recipes (auto-imported as /usr/share/ublue-os/just/60-custom.just)
+# Custom ujust recipes
 RUN mkdir -p /usr/share/ublue-os/just
 COPY ujust/60-custom.just /usr/share/ublue-os/just/60-custom.just
 
@@ -255,14 +346,13 @@ RUN mkdir -p /usr/lib/bootc/kargs.d && \
     echo "zswap.enabled=1 zswap.compressor=lz4 zswap.zpool=zsmalloc zswap.max_pool_percent=25 transparent_hugepage=madvise" \
     > /usr/lib/bootc/kargs.d/tuning.karg
 
-# Optional: remote play / console mode (off by default; enabled via `ujust enable-remote-play`)
+# Optional: remote play / console mode (off by default)
 RUN mkdir -p /usr/share/bootc-optional/remote-play/bin \
     /usr/share/bootc-optional/remote-play/systemd
 COPY system/remote-play/bootc-remote-play-tty2 /usr/share/bootc-optional/remote-play/bin/bootc-remote-play-tty2
 COPY system/remote-play/bootc-remote-play-tty2@.service /usr/share/bootc-optional/remote-play/systemd/bootc-remote-play-tty2@.service
 
 # Optional host tweaks (off by default)
-# NetworkManager: disable Wi-Fi power save (wifi.powersave=2)
 ARG ENABLE_NM_DISABLE_WIFI_POWERSAVE=0
 RUN mkdir -p /usr/share/bootc-optional/NetworkManager/conf.d
 COPY system/NetworkManager/conf.d/default-wifi-powersave-on.conf /usr/share/bootc-optional/NetworkManager/conf.d/default-wifi-powersave-on.conf
@@ -270,7 +360,6 @@ RUN if [ "${ENABLE_NM_DISABLE_WIFI_POWERSAVE}" = "1" ]; then \
             install -Dpm0644 /usr/share/bootc-optional/NetworkManager/conf.d/default-wifi-powersave-on.conf /etc/NetworkManager/conf.d/default-wifi-powersave-on.conf; \
         fi
 
-# NetworkManager: use iwd backend (wifi.backend=iwd) (Asahi-focused; off by default)
 ARG ENABLE_NM_IWD_BACKEND=0
 COPY system/NetworkManager/conf.d/wifi_backend.conf /usr/share/bootc-optional/NetworkManager/conf.d/wifi_backend.conf
 RUN if [ "${ENABLE_NM_IWD_BACKEND}" = "1" ]; then \
@@ -278,7 +367,6 @@ RUN if [ "${ENABLE_NM_IWD_BACKEND}" = "1" ]; then \
         fi
 
 # Asahi-only artifacts (off by default)
-# NOTE: titdb.service.template contains a placeholder input device path; enable only after customizing it.
 ARG ENABLE_ASAHI_TITDB=0
 COPY system/asahi/titdb.service.template /usr/share/bootc-optional/asahi/titdb.service
 RUN if [ "${ENABLE_ASAHI_TITDB}" = "1" ]; then \
@@ -293,7 +381,6 @@ RUN if [ "${ENABLE_ASAHI_BRCMFMAC}" = "1" ]; then \
             install -Dpm0644 /usr/share/bootc-optional/modprobe.d/brcmfmac.conf /etc/modprobe.d/brcmfmac.conf; \
         fi
 
-# systemd: journald log cap (off by default)
 ARG ENABLE_JOURNALD_LOG_CAP=0
 RUN mkdir -p /usr/share/bootc-optional/systemd/journald.conf.d
 COPY system/systemd/journald.conf.d/10-journal-cap.conf /usr/share/bootc-optional/systemd/journald.conf.d/10-journal-cap.conf
@@ -301,7 +388,6 @@ RUN if [ "${ENABLE_JOURNALD_LOG_CAP}" = "1" ]; then \
             install -Dpm0644 /usr/share/bootc-optional/systemd/journald.conf.d/10-journal-cap.conf /etc/systemd/journald.conf.d/10-journal-cap.conf; \
         fi
 
-# systemd: logind lid policy (off by default)
 ARG ENABLE_LOGIND_LID_POLICY=0
 RUN mkdir -p /usr/share/bootc-optional/systemd/logind.conf.d
 COPY system/systemd/logind.conf.d/10-lid-policy.conf /usr/share/bootc-optional/systemd/logind.conf.d/10-lid-policy.conf

@@ -446,6 +446,7 @@ jobs:
         with:
           context: .
           file: Containerfile
+          target: image
           # Push on any non-PR event; PRs just validate the build and warm the cache
           push: ${{ github.event_name != 'pull_request_target' }}
           tags: ${{ steps.meta.outputs.tags }}
