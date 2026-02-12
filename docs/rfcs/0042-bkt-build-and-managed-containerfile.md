@@ -23,8 +23,8 @@ The multi-stage Containerfile (RFC 0041) works, but it has two problems:
 There is also a latent bug: the SYSTEM_PACKAGES section lists external
 packages by name (`1password`, `code`, `microsoft-edge-stable`), so
 `dnf install` re-downloads them from repos. The pre-downloaded RPMs
-in `/tmp/rpms/` from the dl-* stages sit unused. The install line
-should be `dnf install -y /tmp/rpms/*.rpm curl distrobox ...` — local
+in `/tmp/rpms/` from the dl-_ stages sit unused. The install line
+should be `dnf install -y /tmp/rpms/_.rpm curl distrobox ...` — local
 files for external packages, repo resolution for Fedora packages only.
 
 These problems have complementary solutions that reinforce each other.
@@ -73,11 +73,11 @@ RUN bkt-build fetch starship
 
 #### Commands
 
-| Command | What it does | Replaces |
-|---------|-------------|----------|
-| `bkt-build fetch <name>` | Download, verify, and install an upstream entry | fetch-starship, fetch-lazygit, fetch-getnf, fetch-bibata, fetch-fonts |
-| `bkt-build setup-repos` | Import GPG keys and write `.repo` files from external-repos.json | 30-line `printf` block in base stage |
-| `bkt-build download-rpms <repo>` | `dnf download` packages for a named external repo | dl-vscode, dl-edge, dl-1password stage bodies |
+| Command                          | What it does                                                     | Replaces                                                              |
+| -------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `bkt-build fetch <name>`         | Download, verify, and install an upstream entry                  | fetch-starship, fetch-lazygit, fetch-getnf, fetch-bibata, fetch-fonts |
+| `bkt-build setup-repos`          | Import GPG keys and write `.repo` files from external-repos.json | 30-line `printf` block in base stage                                  |
+| `bkt-build download-rpms <repo>` | `dnf download` packages for a named external repo                | dl-vscode, dl-edge, dl-1password stage bodies                         |
 
 #### How `bkt-build fetch` Works
 
@@ -86,13 +86,13 @@ RUN bkt-build fetch starship
 3. Based on `source.type` and `install.type`, dispatch to the right
    fetch/verify/install strategy:
 
-| source.type | install.type | Strategy |
-|------------|-------------|----------|
-| `github` + `asset_pattern` | `binary` | Download release asset → sha256 verify → chmod to `install_path` |
-| `github` + `asset_pattern` | `archive` | Download release asset → sha256 verify → extract to `extract_to` |
-| `github` + `release_type: release` | (none/script) | Download raw file by commit → sha256 verify → chmod |
-| `github` + `release_type: tag` | `script` | Git clone at tag → run install script (see bespoke stages below) |
-| `url` | `binary`/`archive` | Direct URL download → sha256 verify → install |
+| source.type                        | install.type       | Strategy                                                         |
+| ---------------------------------- | ------------------ | ---------------------------------------------------------------- |
+| `github` + `asset_pattern`         | `binary`           | Download release asset → sha256 verify → chmod to `install_path` |
+| `github` + `asset_pattern`         | `archive`          | Download release asset → sha256 verify → extract to `extract_to` |
+| `github` + `release_type: release` | (none/script)      | Download raw file by commit → sha256 verify → chmod              |
+| `github` + `release_type: tag`     | `script`           | Git clone at tag → run install script (see bespoke stages below) |
+| `url`                              | `binary`/`archive` | Direct URL download → sha256 verify → install                    |
 
 #### How `bkt-build setup-repos` Works
 
@@ -130,6 +130,7 @@ depend on `bkt-common` as a path dependency. The shared crate uses
 avoid OpenSSL complications with musl static linking.
 
 `bkt-common` provides:
+
 - HTTP download (`ureq` + rustls)
 - SHA256 verification (`sha2`)
 - Archive extraction: tar.gz (`flate2` + `tar`), tar.xz (`lzma-rs` +
@@ -149,8 +150,8 @@ generate the **entire** Containerfile, not just the marker sections.
 
 Produces a complete Containerfile from manifests:
 
-- `manifests/external-repos.json` → base stage repos + dl-* stages + COPY --from lines
-- `upstream/manifest.json` → fetch-*/build-* stages + COPY --from lines
+- `manifests/external-repos.json` → base stage repos + dl-\* stages + COPY --from lines
+- `upstream/manifest.json` → fetch-_/build-_ stages + COPY --from lines
 - `manifests/system-packages.json` → SYSTEM_PACKAGES install section
 - `manifests/host-shims.json` → HOST_SHIMS section
 - System config manifests → KERNEL_ARGUMENTS, SYSTEMD_UNITS, COPR_REPOS sections
@@ -226,6 +227,7 @@ same paths the final image uses.
 ##### Generation Order
 
 The generator emits stages in order:
+
 1. `base` stage (repos from external-repos.json)
 2. `tools` stage (bkt-build binary)
 3. `dl-*` stages (from external-repos.json)
@@ -330,6 +332,7 @@ RUN rpm -qa --qf '%{NAME}\t%{EVR}\n' | sort > /usr/share/bootc/rpm-versions.txt
 ### `external-repos.json` (enrichment)
 
 Currently (on rpmcheck branch):
+
 ```json
 {
   "repos": [
@@ -343,6 +346,7 @@ Currently (on rpmcheck branch):
 ```
 
 Needs GPG key info for `bkt-build setup-repos`:
+
 ```json
 {
   "repos": [
@@ -361,14 +365,14 @@ Needs GPG key info for `bkt-build setup-repos`:
 
 Several entries need changes:
 
-| Entry | Current | Needed |
-|-------|---------|--------|
-| starship | `install_path: /usr/local/bin/starship` | Fix to `/usr/bin/starship` (matches actual Containerfile) |
-| lazygit | `install_path: /usr/local/bin/lazygit` | Fix to `/usr/bin/lazygit` (matches actual Containerfile) |
-| getnf | no `install` block | Add `{ "type": "binary", "install_path": "/usr/bin/getnf" }` |
-| keyd | no `install` block | Add `{ "type": "script", "outputs": [...] }` — build recipe in fragment |
-| whitesur-icons | `install.type: archive` | Change to `{ "type": "script", "outputs": [...] }` — vendor install script in fragment |
-| JetBrains Mono Nerd Font | **no entry** | Add full entry with pinned version + sha256 (see below) |
+| Entry                    | Current                                 | Needed                                                                                 |
+| ------------------------ | --------------------------------------- | -------------------------------------------------------------------------------------- |
+| starship                 | `install_path: /usr/local/bin/starship` | Fix to `/usr/bin/starship` (matches actual Containerfile)                              |
+| lazygit                  | `install_path: /usr/local/bin/lazygit`  | Fix to `/usr/bin/lazygit` (matches actual Containerfile)                               |
+| getnf                    | no `install` block                      | Add `{ "type": "binary", "install_path": "/usr/bin/getnf" }`                           |
+| keyd                     | no `install` block                      | Add `{ "type": "script", "outputs": [...] }` — build recipe in fragment                |
+| whitesur-icons           | `install.type: archive`                 | Change to `{ "type": "script", "outputs": [...] }` — vendor install script in fragment |
+| JetBrains Mono Nerd Font | **no entry**                            | Add full entry with pinned version + sha256 (see below)                                |
 
 #### JetBrains Mono Nerd Font
 
@@ -417,11 +421,13 @@ The manifest still owns the version pins for `bkt upstream` commands.
 
 Today all packages are in one list. With the download/install split,
 we need to distinguish:
+
 - **External repo packages** — already enumerated in `external-repos.json`
   as `packages` per repo
 - **Fedora repo packages** — everything else in `system-packages.json`
 
 The SYSTEM_PACKAGES section generator should:
+
 1. Read both manifests
 2. Emit `dnf install -y /tmp/rpms/*.rpm` (for COPY'd external RPMs) +
    the Fedora packages
@@ -536,7 +542,7 @@ vs. committed file. CI enforces no divergence.
 ### PER H: Per-Repo Cache Busting
 
 Generator emits per-repo ARGs (`VSCODE_CACHE_EPOCH`, etc.). CI uses
-rpmcheck for per-repo hashes and passes them as build-args. Each dl-*
+rpmcheck for per-repo hashes and passes them as build-args. Each dl-\*
 stage busts independently.
 
 - **Difficulty**: Moderate
@@ -544,7 +550,7 @@ stage busts independently.
 - **Codebase touches**: `bkt/src/containerfile.rs`,
   `.github/workflows/build.yml`
 - **Verification**: Changing one repo's version only invalidates that
-  repo's dl-* stage
+  repo's dl-\* stage
 
 ### Dependency Graph
 

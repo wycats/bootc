@@ -1,18 +1,20 @@
 #[path = "github/api.rs"]
 mod api;
-#[path = "github/archive.rs"]
-mod archive;
 #[path = "github/checksum.rs"]
 pub(crate) mod checksum;
 
+use bkt_common::archive::{
+    detect_archive_type, extract_tar_gz_binary, extract_zip_binary, set_executable, write_raw,
+    ArchiveType,
+};
+use bkt_common::checksum::sha256_hex;
 use crate::error::FetchError;
 use crate::manifest::{InstalledBinary, SourceSpec};
 use crate::platform::Platform;
 use crate::runtime::RuntimePool;
 use crate::source::{BinarySource, FetchedBinary, PackageSpec, ResolvedVersion, SourceConfig};
 use api::{Asset, Release};
-use archive::{detect_archive_type, extract_tar_gz, extract_zip, write_raw, ArchiveType};
-use checksum::{find_checksum_asset, parse_checksum_file, sha256_hex};
+use checksum::{find_checksum_asset, parse_checksum_file};
 use glob::Pattern;
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
@@ -274,8 +276,11 @@ impl BinarySource for GithubSource {
             .unwrap_or_else(|| repo_name(repo).to_string());
 
         let binary_path = match detect_archive_type(&asset.name) {
-            ArchiveType::TarGz => extract_tar_gz(&asset_bytes, target_dir, &binary_name)?,
-            ArchiveType::Zip => extract_zip(&asset_bytes, target_dir, &binary_name)?,
+            ArchiveType::TarGz => extract_tar_gz_binary(&asset_bytes, target_dir, &binary_name)?,
+            ArchiveType::TarXz => {
+                return Err(FetchError::UnsupportedArchive(asset.name.clone()));
+            }
+            ArchiveType::Zip => extract_zip_binary(&asset_bytes, target_dir, &binary_name)?,
             ArchiveType::Raw => write_raw(&asset_bytes, target_dir, &binary_name)?,
         };
 
@@ -363,16 +368,4 @@ fn is_unsupported_archive(name: &str) -> bool {
         || lower.ends_with(".gz")
         || lower.ends_with(".bz2")
         || lower.ends_with(".xz")
-}
-
-fn set_executable(path: &Path) -> Result<(), FetchError> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(path)?.permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(path, perms)?;
-    }
-
-    Ok(())
 }

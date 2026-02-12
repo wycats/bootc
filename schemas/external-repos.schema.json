@@ -5,10 +5,7 @@
   "type": "object",
   "properties": {
     "$schema": {
-      "type": [
-        "string",
-        "null"
-      ]
+      "type": ["string", "null"]
     },
     "repos": {
       "description": "List of external RPM repositories",
@@ -18,9 +15,7 @@
       }
     }
   },
-  "required": [
-    "repos"
-  ],
+  "required": ["repos"],
   "$defs": {
     "ExternalRepo": {
       "description": "An external RPM repository entry.",
@@ -52,13 +47,7 @@
           "minItems": 1
         }
       },
-      "required": [
-        "name",
-        "display_name",
-        "baseurl",
-        "gpg_key",
-        "packages"
-      ]
+      "required": ["name", "display_name", "baseurl", "gpg_key", "packages"]
     }
   }
 }

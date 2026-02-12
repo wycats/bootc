@@ -307,6 +307,7 @@ dependencies = [
  "assert_cmd",
  "assert_fs",
  "base64",
+ "bkt-common",
  "chrono",
  "clap",
  "clap_complete",
@@ -333,6 +334,22 @@ dependencies = [
  "urlencoding",
  "whoami",
  "zbus",
+]
+
+[[package]]
+name = "bkt-common"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "flate2",
+ "lzma-rs",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "thiserror 1.0.69",
+ "zip",
 ]
 
 [[package]]
@@ -600,6 +617,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "crc"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5eb8a2a1cd12ab0d987a5d5e825195d372001a4094a0376319d5a0ad71c1ba0d"
+dependencies = [
+ "crc-catalog",
+]
+
+[[package]]
+name = "crc-catalog"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19d374276b40fb8bbdee95aef7c7fa6b5316ec764510eb64b8dd0e2ed0d7e7f5"
+
+[[package]]
 name = "crc32fast"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -824,6 +856,7 @@ name = "fetchbin"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bkt-common",
  "clap",
  "dirs",
  "flate2",
@@ -1510,6 +1543,16 @@ name = "log"
 version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
+
+[[package]]
+name = "lzma-rs"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "297e814c836ae64db86b36cf2a557ba54368d03f6afcd7d947c266692f71115e"
+dependencies = [
+ "byteorder",
+ "crc",
+]
 
 [[package]]
 name = "matchers"
