@@ -39,11 +39,7 @@ RUN set -eu; \
 # === END KERNEL_ARGUMENTS ===
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
-# DNF_CACHE_EPOCH: when this value changes, BuildKit invalidates the dnf install
-# layer, forcing a fresh package resolution. The CI workflow sets this to a hash
-# of available RPM versions when it detects updates.
-ARG DNF_CACHE_EPOCH=0
-RUN echo "dnf-cache-epoch: ${DNF_CACHE_EPOCH}" > /dev/null && dnf install -y \
+RUN dnf install -y \
     1password \
     1password-cli \
     code \
