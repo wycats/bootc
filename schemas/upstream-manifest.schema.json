@@ -74,6 +74,13 @@
               "description": "Script command to run",
               "type": "string"
             },
+            "outputs": {
+              "description": "List of output file/directory paths produced by this build stage. Used by the Containerfile generator to emit COPY --from lines.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "type": {
               "type": "string",
               "const": "script"
