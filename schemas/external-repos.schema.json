@@ -1,53 +1,54 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ExternalReposManifest",
-  "description": "External RPM repositories with GPG keys and package lists.",
   "type": "object",
   "properties": {
     "$schema": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "repos": {
-      "description": "List of external RPM repositories",
       "type": "array",
       "items": {
         "$ref": "#/$defs/ExternalRepo"
       }
     }
   },
-  "required": ["repos"],
+  "required": [
+    "repos"
+  ],
   "$defs": {
     "ExternalRepo": {
-      "description": "An external RPM repository entry.",
       "type": "object",
       "properties": {
-        "name": {
-          "description": "Repository ID (matches the .repo file section header, e.g. 'code')",
+        "baseurl": {
           "type": "string"
         },
         "display_name": {
-          "description": "Human-readable repository name (the 'name=' value in the .repo file)",
-          "type": "string"
-        },
-        "baseurl": {
-          "description": "Repository base URL. May contain $basearch for architecture substitution.",
           "type": "string"
         },
         "gpg_key": {
-          "description": "URL of the GPG key used to sign packages",
-          "type": "string",
-          "format": "uri"
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
         },
         "packages": {
-          "description": "Package names to install from this repository",
           "type": "array",
           "items": {
             "type": "string"
-          },
-          "minItems": 1
+          }
         }
       },
-      "required": ["name", "display_name", "baseurl", "gpg_key", "packages"]
+      "required": [
+        "name",
+        "display_name",
+        "baseurl",
+        "gpg_key",
+        "packages"
+      ]
     }
   }
 }

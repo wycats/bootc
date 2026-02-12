@@ -1,9 +1,10 @@
 //! Schema generation command implementation.
 
 use crate::manifest::{
-    BaseImageAssumptions, ChangelogEntry, DistroboxManifest, FlatpakApp, FlatpakAppsManifest,
-    FlatpakRemote, FlatpakRemotesManifest, GSetting, GSettingsManifest, GnomeExtensionsManifest,
-    HomebrewManifest, HostBinariesManifest, Shim, ShimsManifest, UpstreamManifest, VersionMetadata,
+    BaseImageAssumptions, ChangelogEntry, DistroboxManifest, ExternalReposManifest, FlatpakApp,
+    FlatpakAppsManifest, FlatpakRemote, FlatpakRemotesManifest, GSetting, GSettingsManifest,
+    GnomeExtensionsManifest, HomebrewManifest, HostBinariesManifest, Shim, ShimsManifest,
+    UpstreamManifest, VersionMetadata,
 };
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
@@ -88,6 +89,11 @@ const SCHEMAS: &[SchemaInfo] = &[
         description: "The distrobox.json manifest",
     },
     SchemaInfo {
+        name: "ExternalReposManifest",
+        filename: "external-repos.schema.json",
+        description: "The external-repos.json manifest (external RPM repos)",
+    },
+    SchemaInfo {
         name: "UpstreamManifest",
         filename: "upstream-manifest.schema.json",
         description: "The upstream/manifest.json manifest for tracking upstream dependencies",
@@ -161,6 +167,10 @@ fn generate_all_schemas() -> Vec<(&'static str, String)> {
         (
             "distrobox.schema.json",
             serde_json::to_string_pretty(&schema_for!(DistroboxManifest)).unwrap(),
+        ),
+        (
+            "external-repos.schema.json",
+            serde_json::to_string_pretty(&schema_for!(ExternalReposManifest)).unwrap(),
         ),
         (
             "upstream-manifest.schema.json",
