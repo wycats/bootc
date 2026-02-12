@@ -11,6 +11,7 @@
       },
       "pinned": {
         "version": "v2.0.7",
+        "url": "https://github.com/ful1e5/Bibata_Cursor/releases/download/v2.0.7/Bibata-Modern-Classic.tar.xz",
         "sha256": "7d3495864e5bbef02f5e77de760b2905903b63c71495a78ef6306d19a3b556d8",
         "pinned_at": "2025-01-01T14:40:00Z"
       },
@@ -31,8 +32,13 @@
       "pinned": {
         "version": "v0.3.0",
         "commit": "d58e0e7748783eb84dda959e1fd81bdee6481543",
+        "url": "https://raw.githubusercontent.com/getnf/getnf/d58e0e7748783eb84dda959e1fd81bdee6481543/getnf",
         "sha256": "bc803a391056688dbba7ddfffca6b99fcd6a91848eabf3453be28f41f929b9ad",
         "pinned_at": "2024-12-29T14:08:00Z"
+      },
+      "install": {
+        "type": "binary",
+        "install_path": "/usr/bin/getnf"
       }
     },
     {
@@ -47,6 +53,19 @@
         "version": "v2.6.0",
         "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
         "pinned_at": "2024-12-28T15:17:00Z"
+      },
+      "install": {
+        "type": "script",
+        "command": "make && make PREFIX=/usr FORCE_SYSTEMD=1 install",
+        "outputs": [
+          "/usr/bin/keyd",
+          "/usr/bin/keyd-application-mapper",
+          "/usr/lib/systemd/system/keyd.service",
+          "/usr/share/keyd/",
+          "/usr/share/man/man1/keyd.1.gz",
+          "/usr/share/man/man1/keyd-application-mapper.1.gz",
+          "/usr/share/doc/keyd/"
+        ]
       }
     },
     {
@@ -59,12 +78,13 @@
       },
       "pinned": {
         "version": "v0.57.0",
+        "url": "https://github.com/jesseduffield/lazygit/releases/download/v0.57.0/lazygit_0.57.0_Linux_x86_64.tar.gz",
         "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
         "pinned_at": "2024-12-28T15:17:00Z"
       },
       "install": {
         "type": "binary",
-        "install_path": "/usr/local/bin/lazygit"
+        "install_path": "/usr/bin/lazygit"
       }
     },
     {
@@ -77,12 +97,13 @@
       },
       "pinned": {
         "version": "v1.24.1",
+        "url": "https://github.com/starship/starship/releases/download/v1.24.1/starship-x86_64-unknown-linux-gnu.tar.gz",
         "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
         "pinned_at": "2024-12-28T15:17:00Z"
       },
       "install": {
         "type": "binary",
-        "install_path": "/usr/local/bin/starship"
+        "install_path": "/usr/bin/starship"
       }
     },
     {
@@ -100,8 +121,28 @@
         "pinned_at": "2025-01-01T14:40:00Z"
       },
       "install": {
+        "type": "script",
+        "command": "./install.sh -d /usr/share/icons",
+        "outputs": ["/usr/share/icons/"]
+      }
+    },
+    {
+      "name": "jetbrains-mono-nerd-font",
+      "description": "JetBrains Mono patched with Nerd Fonts glyphs",
+      "source": {
+        "type": "github",
+        "repo": "ryanoasis/nerd-fonts",
+        "asset_pattern": "JetBrainsMono.zip"
+      },
+      "pinned": {
+        "version": "v3.4.0",
+        "url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/JetBrainsMono.zip",
+        "sha256": "76f05ff3ace48a464a6ca57977998784ff7bdbb65a6d915d7e401cd3927c493c",
+        "pinned_at": "2026-02-11T00:00:00Z"
+      },
+      "install": {
         "type": "archive",
-        "extract_to": "/usr/share/icons",
+        "extract_to": "/usr/share/fonts/nerd-fonts/JetBrainsMono",
         "strip_components": 0
       }
     }

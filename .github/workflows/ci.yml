@@ -80,6 +80,7 @@ jobs:
           declare -A SCHEMA_MAP=(
             ["manifests/flatpak-apps.json"]="schemas/flatpak-apps.schema.json"
             ["manifests/flatpak-remotes.json"]="schemas/flatpak-remotes.schema.json"
+            ["manifests/external-repos.json"]="schemas/external-repos.schema.json"
             ["manifests/gnome-extensions.json"]="schemas/gnome-extensions.schema.json"
             ["manifests/gsettings.json"]="schemas/gsettings.schema.json"
             ["manifests/host-shims.json"]="schemas/host-shims.schema.json"

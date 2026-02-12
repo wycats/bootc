@@ -4,7 +4,8 @@
 //! pinning and cryptographic verification.
 
 use crate::manifest::{
-    InstallConfig, PinnedVersion, ReleaseType, Upstream, UpstreamManifest, UpstreamSource,
+    InstallConfig, ManifestRepo, PinnedVersion, ReleaseType, Upstream, UpstreamManifest,
+    UpstreamSource,
 };
 use crate::output::Output;
 use anyhow::{Context, Result, bail};
@@ -766,7 +767,7 @@ fn handle_info(name: &str) -> Result<()> {
                 println!("  {} binary", "Type:".dimmed());
                 println!("  {} {}", "Install Path:".dimmed(), install_path);
             }
-            InstallConfig::Script { command } => {
+            InstallConfig::Script { command, .. } => {
                 println!("  {} script", "Type:".dimmed());
                 println!("  {} {}", "Command:".dimmed(), command);
             }

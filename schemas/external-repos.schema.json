@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExternalReposManifest",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "repos": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ExternalRepo"
+      }
+    }
+  },
+  "required": [
+    "repos"
+  ],
+  "$defs": {
+    "ExternalRepo": {
+      "type": "object",
+      "properties": {
+        "baseurl": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "gpg_key": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "packages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "display_name",
+        "baseurl",
+        "gpg_key",
+        "packages"
+      ]
+    }
+  }
+}

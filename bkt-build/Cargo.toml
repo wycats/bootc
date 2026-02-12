@@ -1,0 +1,13 @@
+[package]
+name = "bkt-build"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "bkt-build"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+bkt-common = { path = "../bkt-common", features = ["http"] }
+clap = { version = "4", features = ["derive"] }

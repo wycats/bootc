@@ -1,5 +1,22 @@
 use thiserror::Error;
 
+impl From<bkt_common::error::CommonError> for FetchError {
+    fn from(error: bkt_common::error::CommonError) -> Self {
+        match error {
+            bkt_common::error::CommonError::Io(err) => FetchError::Io(err),
+            bkt_common::error::CommonError::Archive(message) => FetchError::Parse(message),
+            bkt_common::error::CommonError::ChecksumMismatch { expected, actual } => {
+                FetchError::Parse(format!(
+                    "checksum mismatch: expected {expected}, got {actual}"
+                ))
+            }
+            bkt_common::error::CommonError::Http(message)
+            | bkt_common::error::CommonError::Manifest(message) => FetchError::Parse(message),
+            bkt_common::error::CommonError::Json(err) => FetchError::Parse(err.to_string()),
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum FetchError {
     #[error("network error: {0}")]

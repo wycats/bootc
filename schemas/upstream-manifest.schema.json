@@ -74,6 +74,15 @@
               "description": "Script command to run",
               "type": "string"
             },
+            "outputs": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
             "type": {
               "type": "string",
               "const": "script"

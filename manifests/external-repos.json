@@ -1,0 +1,26 @@
+{
+  "$schema": "../schemas/external-repos.schema.json",
+  "repos": [
+    {
+      "name": "code",
+      "display_name": "Visual Studio Code",
+      "baseurl": "https://packages.microsoft.com/yumrepos/vscode",
+      "gpg_key": "https://packages.microsoft.com/keys/microsoft.asc",
+      "packages": ["code", "code-insiders"]
+    },
+    {
+      "name": "microsoft-edge",
+      "display_name": "microsoft-edge",
+      "baseurl": "https://packages.microsoft.com/yumrepos/edge",
+      "gpg_key": "https://packages.microsoft.com/keys/microsoft.asc",
+      "packages": ["microsoft-edge-stable"]
+    },
+    {
+      "name": "1password",
+      "display_name": "1Password Stable Channel",
+      "baseurl": "https://downloads.1password.com/linux/rpm/stable/$basearch",
+      "gpg_key": "https://downloads.1password.com/linux/keys/1password.asc",
+      "packages": ["1password", "1password-cli"]
+    }
+  ]
+}
