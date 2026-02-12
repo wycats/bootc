@@ -146,7 +146,6 @@ pub struct ExternalReposManifest {
     #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,
 
-    #[serde(default)]
     pub repos: Vec<ExternalRepo>,
 }
 
@@ -207,9 +206,6 @@ impl UpstreamManifest {
 impl ExternalReposManifest {
     /// Load a manifest from a specific path.
     pub fn load_from(path: &Path) -> Result<Self, CommonError> {
-        if !path.exists() {
-            return Ok(Self::default());
-        }
         let content = fs::read_to_string(path)?;
         let manifest: Self = serde_json::from_str(&content)?;
         Ok(manifest)

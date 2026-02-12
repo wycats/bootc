@@ -8,15 +8,20 @@ pub fn setup_repos(manifest_path: &Path) -> Result<()> {
         .context("failed to load external repos manifest")?;
 
     if manifest.repos.is_empty() {
-        bail!(
-            "no external repos found in manifest {}",
+        eprintln!(
+            "No external repos configured in {}; skipping repo setup",
             manifest_path.display()
         );
+        return Ok(());
     }
 
     std::fs::create_dir_all("/etc/yum.repos.d").context("failed to create /etc/yum.repos.d")?;
 
     for repo in &manifest.repos {
+        validate_repo_line_value("display_name", &repo.display_name)?;
+        validate_repo_line_value("baseurl", &repo.baseurl)?;
+        validate_repo_line_value("gpg_key", &repo.gpg_key)?;
+
         run_command(
             "rpm",
             vec!["--import".to_string(), repo.gpg_key.clone()],
@@ -51,6 +56,10 @@ pub fn download_rpms(repo_name: &str, manifest_path: &Path) -> Result<()> {
         bail!("repo '{}' has no packages configured", repo_name);
     }
 
+    for package in &repo.packages {
+        validate_package_name(package)?;
+    }
+
     std::fs::create_dir_all("/rpms").context("failed to create /rpms")?;
 
     let mut args = vec![
@@ -59,6 +68,7 @@ pub fn download_rpms(repo_name: &str, manifest_path: &Path) -> Result<()> {
         "/rpms".to_string(),
         "--disablerepo=*".to_string(),
         format!("--enablerepo={}", repo.name),
+        "--".to_string(),
     ];
     args.extend(repo.packages.iter().cloned());
 
@@ -72,20 +82,61 @@ pub fn download_rpms(repo_name: &str, manifest_path: &Path) -> Result<()> {
 }
 
 fn run_command(program: &str, args: Vec<String>, error_context: &str) -> Result<()> {
-    let status = Command::new(program)
+    let output = Command::new(program)
         .args(args.iter().map(String::as_str))
-        .status()
+        .output()
         .with_context(|| format!("{}: could not execute {}", error_context, program))?;
 
+    let status = output.status;
+
     if !status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
         bail!(
-            "{}: {} exited with status {}",
+            "{}: {} exited with status {}.\nstdout:\n{}\nstderr:\n{}",
             error_context,
             program,
-            status
+            status,
+            stdout,
+            stderr
         );
     }
 
+    Ok(())
+}
+
+fn validate_repo_line_value(field: &str, value: &str) -> Result<()> {
+    if value.contains('\n') || value.contains('\r') {
+        bail!("invalid {}: newline characters are not allowed", field);
+    }
+    if value.trim() != value {
+        bail!(
+            "invalid {}: leading/trailing whitespace is not allowed",
+            field
+        );
+    }
+    if value.is_empty() {
+        bail!("invalid {}: value must not be empty", field);
+    }
+    Ok(())
+}
+
+fn validate_package_name(package: &str) -> Result<()> {
+    if package.is_empty() {
+        bail!("invalid package name: value must not be empty");
+    }
+    if package.trim() != package {
+        bail!(
+            "invalid package name '{}': leading/trailing whitespace is not allowed",
+            package
+        );
+    }
+    if package.starts_with('-') {
+        bail!(
+            "invalid package name '{}': option-like values are not allowed",
+            package
+        );
+    }
     Ok(())
 }
 
