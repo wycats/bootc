@@ -1,15 +1,11 @@
 use crate::error::RuntimeError;
 use crate::platform::{Arch, Os, Platform};
 use crate::source::github::checksum::sha256_hex;
-use flate2::read::GzDecoder;
-use reqwest::blocking::Client;
 use semver::VersionReq;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
-use std::io::Cursor;
 use std::path::{Path, PathBuf};
-use tar::Archive;
 
 #[derive(Debug, Clone)]
 pub struct NodeRuntime {
@@ -47,18 +43,9 @@ struct RawNodeVersionInfo {
 }
 
 impl NodeVersionIndex {
-    pub fn fetch(client: &Client) -> Result<Self, RuntimeError> {
-        let response = client
-            .get("https://nodejs.org/dist/index.json")
-            .send()
-            .map_err(|err| RuntimeError::VersionIndexFetch(err.to_string()))?
-            .error_for_status()
+    pub fn fetch() -> Result<Self, RuntimeError> {
+        let content = bkt_common::http::download_text("https://nodejs.org/dist/index.json")
             .map_err(|err| RuntimeError::VersionIndexFetch(err.to_string()))?;
-
-        let content = response
-            .text()
-            .map_err(|err| RuntimeError::VersionIndexFetch(err.to_string()))?;
-
         Self::parse_json(&content)
     }
 
@@ -112,7 +99,6 @@ impl NodeVersionIndex {
 }
 
 pub fn download_node(
-    client: &Client,
     version: &str,
     dest: &Path,
     platform: &Platform,
@@ -122,19 +108,7 @@ pub fn download_node(
     let archive_url = format!("{base_url}/{filename}");
     let shasum_url = format!("{base_url}/SHASUMS256.txt");
 
-    let shasum_content = client
-        .get(shasum_url)
-        .send()
-        .map_err(|err| RuntimeError::NodeDownloadFailed {
-            version: version.to_string(),
-            details: err.to_string(),
-        })?
-        .error_for_status()
-        .map_err(|err| RuntimeError::NodeDownloadFailed {
-            version: version.to_string(),
-            details: err.to_string(),
-        })?
-        .text()
+    let shasum_content = bkt_common::http::download_text(&shasum_url)
         .map_err(|err| RuntimeError::NodeDownloadFailed {
             version: version.to_string(),
             details: err.to_string(),
@@ -145,24 +119,11 @@ pub fn download_node(
         .get(&filename)
         .ok_or_else(|| RuntimeError::ShasumParse(format!("missing checksum for {filename}")))?;
 
-    let archive_bytes = client
-        .get(archive_url)
-        .send()
+    let archive_bytes = bkt_common::http::download(&archive_url)
         .map_err(|err| RuntimeError::NodeDownloadFailed {
             version: version.to_string(),
             details: err.to_string(),
-        })?
-        .error_for_status()
-        .map_err(|err| RuntimeError::NodeDownloadFailed {
-            version: version.to_string(),
-            details: err.to_string(),
-        })?
-        .bytes()
-        .map_err(|err| RuntimeError::NodeDownloadFailed {
-            version: version.to_string(),
-            details: err.to_string(),
-        })?
-        .to_vec();
+        })?;
 
     let actual = sha256_hex(&archive_bytes);
     if actual != expected.to_lowercase() {
@@ -178,15 +139,12 @@ pub fn download_node(
     }
     fs::create_dir_all(dest)?;
 
-    let cursor = Cursor::new(archive_bytes);
-    let decoder = GzDecoder::new(cursor);
-    let mut archive = Archive::new(decoder);
-    archive
-        .unpack(dest)
-        .map_err(|err| RuntimeError::NodeDownloadFailed {
+    bkt_common::archive::extract_tar_gz(&archive_bytes, dest, 0).map_err(|err| {
+        RuntimeError::NodeDownloadFailed {
             version: version.to_string(),
             details: err.to_string(),
-        })?;
+        }
+    })?;
 
     resolve_node_runtime(version, dest).ok_or_else(|| RuntimeError::NodeDownloadFailed {
         version: version.to_string(),

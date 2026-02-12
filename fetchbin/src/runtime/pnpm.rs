@@ -1,8 +1,6 @@
 use crate::error::RuntimeError;
 use crate::platform::{Arch, Os, Platform};
 use crate::source::github::checksum::{parse_checksum_file, sha256_hex};
-use reqwest::blocking::Client;
-use reqwest::header::USER_AGENT;
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,50 +16,32 @@ struct PnpmRelease {
     tag_name: String,
 }
 
-pub fn fetch_latest_pnpm_version(client: &Client) -> Result<String, RuntimeError> {
-    fetch_latest_pnpm_version_with_base(client, "https://api.github.com")
+pub fn fetch_latest_pnpm_version() -> Result<String, RuntimeError> {
+    fetch_latest_pnpm_version_with_base("https://api.github.com")
 }
 
-fn fetch_latest_pnpm_version_with_base(
-    client: &Client,
-    base_url: &str,
-) -> Result<String, RuntimeError> {
+fn fetch_latest_pnpm_version_with_base(base_url: &str) -> Result<String, RuntimeError> {
     let url = format!("{base_url}/repos/pnpm/pnpm/releases/latest");
-    let response = client
-        .get(url)
-        .header(USER_AGENT, "fetchbin")
-        .send()
-        .map_err(|err| RuntimeError::PnpmDownloadFailed {
+    let headers = [("User-Agent", "fetchbin")];
+    let release: PnpmRelease = bkt_common::http::download_json(&url, &headers).map_err(|err| {
+        RuntimeError::PnpmDownloadFailed {
             version: "latest".to_string(),
             details: err.to_string(),
-        })?
-        .error_for_status()
-        .map_err(|err| RuntimeError::PnpmDownloadFailed {
-            version: "latest".to_string(),
-            details: err.to_string(),
-        })?;
-
-    let release = response
-        .json::<PnpmRelease>()
-        .map_err(|err| RuntimeError::PnpmDownloadFailed {
-            version: "latest".to_string(),
-            details: err.to_string(),
-        })?;
+        }
+    })?;
 
     Ok(release.tag_name.trim_start_matches('v').to_string())
 }
 
 pub fn download_pnpm(
-    client: &Client,
     version: &str,
     dest: &Path,
     platform: &Platform,
 ) -> Result<PnpmRuntime, RuntimeError> {
-    download_pnpm_with_base(client, version, dest, platform, "https://github.com")
+    download_pnpm_with_base(version, dest, platform, "https://github.com")
 }
 
 fn download_pnpm_with_base(
-    client: &Client,
     version: &str,
     dest: &Path,
     platform: &Platform,
@@ -72,45 +52,20 @@ fn download_pnpm_with_base(
     let tag = format!("v{normalized}");
     let url = format!("{base_url}/pnpm/pnpm/releases/download/{tag}/{asset}");
 
-    let bytes = client
-        .get(url)
-        .send()
-        .map_err(|err| RuntimeError::PnpmDownloadFailed {
+    let bytes = bkt_common::http::download(&url).map_err(|err| {
+        RuntimeError::PnpmDownloadFailed {
             version: normalized.to_string(),
             details: err.to_string(),
-        })?
-        .error_for_status()
-        .map_err(|err| RuntimeError::PnpmDownloadFailed {
-            version: normalized.to_string(),
-            details: err.to_string(),
-        })?
-        .bytes()
-        .map_err(|err| RuntimeError::PnpmDownloadFailed {
-            version: normalized.to_string(),
-            details: err.to_string(),
-        })?
-        .to_vec();
+        }
+    })?;
 
     let checksum_url = format!("{base_url}/pnpm/pnpm/releases/download/{tag}/{asset}.sha256");
-    let checksum_bytes = client
-        .get(checksum_url)
-        .send()
-        .map_err(|err| RuntimeError::PnpmDownloadFailed {
+    let checksum_bytes = bkt_common::http::download(&checksum_url).map_err(|err| {
+        RuntimeError::PnpmDownloadFailed {
             version: normalized.to_string(),
             details: err.to_string(),
-        })?
-        .error_for_status()
-        .map_err(|err| RuntimeError::PnpmDownloadFailed {
-            version: normalized.to_string(),
-            details: err.to_string(),
-        })?
-        .bytes()
-        .map_err(|err| RuntimeError::PnpmDownloadFailed {
-            version: normalized.to_string(),
-            details: err.to_string(),
-        })?
-        .to_vec();
-
+        }
+    })?;
     let checksum_text = String::from_utf8_lossy(&checksum_bytes);
     verify_pnpm_checksum(asset, &checksum_text, &bytes)?;
 
@@ -262,14 +217,11 @@ mod tests {
         let mut server = Server::new();
         let mock = server
             .mock("GET", "/repos/pnpm/pnpm/releases/latest")
-            .match_header("user-agent", "fetchbin")
             .with_status(200)
             .with_body(r#"{"tag_name":"v9.1.0"}"#)
             .create();
 
-        let client = Client::new();
-        let version =
-            fetch_latest_pnpm_version_with_base(&client, &server.url()).expect("version");
+        let version = fetch_latest_pnpm_version_with_base(&server.url()).expect("version");
 
         mock.assert();
         assert_eq!(version, "9.1.0");

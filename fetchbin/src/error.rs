@@ -10,9 +10,32 @@ impl From<bkt_common::error::CommonError> for FetchError {
                     "checksum mismatch: expected {expected}, got {actual}"
                 ))
             }
-            bkt_common::error::CommonError::Http(message)
-            | bkt_common::error::CommonError::Manifest(message) => FetchError::Parse(message),
+            bkt_common::error::CommonError::Http(message) => FetchError::Network(message),
+            bkt_common::error::CommonError::Manifest(message) => FetchError::Parse(message),
             bkt_common::error::CommonError::Json(err) => FetchError::Parse(err.to_string()),
+        }
+    }
+}
+
+impl From<bkt_common::error::CommonError> for RuntimeError {
+    fn from(error: bkt_common::error::CommonError) -> Self {
+        match error {
+            bkt_common::error::CommonError::Http(message) => {
+                RuntimeError::BinstallDownloadFailed(message)
+            }
+            bkt_common::error::CommonError::Io(err) => RuntimeError::Io(err),
+            bkt_common::error::CommonError::Archive(message) => {
+                RuntimeError::BinstallDownloadFailed(message)
+            }
+            bkt_common::error::CommonError::ChecksumMismatch { expected, actual } => {
+                RuntimeError::ChecksumMismatch {
+                    filename: "unknown".to_string(),
+                    expected,
+                    actual,
+                }
+            }
+            bkt_common::error::CommonError::Manifest(message) => RuntimeError::Config(message),
+            bkt_common::error::CommonError::Json(err) => RuntimeError::Config(err.to_string()),
         }
     }
 }

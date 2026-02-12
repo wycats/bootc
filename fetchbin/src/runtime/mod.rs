@@ -6,16 +6,11 @@ use crate::runtime::pnpm::{
     download_pnpm, fetch_latest_pnpm_version, resolve_pnpm_runtime, PnpmRuntime,
 };
 use crate::source::github::checksum::{parse_checksum_file, sha256_hex};
-use flate2::read::GzDecoder;
-use reqwest::blocking::Client;
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
 use semver::VersionReq;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
-use std::io::Cursor;
 use std::path::{Path, PathBuf};
-use tar::Archive;
 
 pub mod node;
 pub mod pnpm;
@@ -61,8 +56,7 @@ impl RuntimePool {
             return Ok(runtime);
         }
 
-        let client = Client::new();
-        let index = NodeVersionIndex::fetch(&client)?;
+        let index = NodeVersionIndex::fetch()?;
         let version_info = if requirement.eq_ignore_ascii_case("lts") {
             index.current_lts()
         } else {
@@ -72,7 +66,7 @@ impl RuntimePool {
 
         let version = version_info.version.clone();
         let dest = self.data_dir.join("toolchains").join("node").join(&version);
-        let runtime = download_node(&client, &version, &dest, &Platform::current())?;
+        let runtime = download_node(&version, &dest, &Platform::current())?;
 
         if !self.manifest.node.installed.contains(&version) {
             self.manifest.node.installed.push(version.clone());
@@ -91,8 +85,7 @@ impl RuntimePool {
         let version = match self.manifest.pnpm.version.clone() {
             Some(version) => version,
             None => {
-                let client = Client::new();
-                let version = fetch_latest_pnpm_version(&client)?;
+                let version = fetch_latest_pnpm_version()?;
                 self.manifest.pnpm.version = Some(version.clone());
                 version
             }
@@ -103,13 +96,12 @@ impl RuntimePool {
             return Ok(runtime);
         }
 
-        let client = Client::new();
         let dest = self
             .data_dir
             .join("toolchains")
             .join("pnpm")
             .join(&normalized);
-        let runtime = download_pnpm(&client, &normalized, &dest, &Platform::current())?;
+        let runtime = download_pnpm(&normalized, &dest, &Platform::current())?;
 
         self.manifest.pnpm.version = Some(normalized);
 
@@ -120,20 +112,15 @@ impl RuntimePool {
         let platform = Platform::current();
         let asset_name = binstall_asset_name(&platform)?;
 
-        let mut headers = HeaderMap::new();
-        headers.insert(USER_AGENT, HeaderValue::from_static("fetchbin"));
-        if let Ok(token) = std::env::var("GITHUB_TOKEN") {
-            if let Ok(value) = HeaderValue::from_str(&format!("token {token}")) {
-                headers.insert(AUTHORIZATION, value);
-            }
+        let mut headers: Vec<(&str, &str)> = vec![("User-Agent", "fetchbin")];
+        let token = std::env::var("GITHUB_TOKEN").ok();
+        let auth_value;
+        if let Some(ref t) = token {
+            auth_value = format!("token {t}");
+            headers.push(("Authorization", &auth_value));
         }
 
-        let client = Client::builder()
-            .default_headers(headers)
-            .build()
-            .unwrap_or_else(|_| Client::new());
-
-        let release = fetch_binstall_release(&client)?;
+        let release = fetch_binstall_release(&headers)?;
         let version = release.tag_name.trim_start_matches('v').to_string();
         let dest = self
             .data_dir
@@ -151,30 +138,22 @@ impl RuntimePool {
             .find(|asset| asset.name == asset_name)
             .ok_or_else(|| RuntimeError::BinstallAssetNotFound(asset_name.to_string()))?;
 
-        let bytes = client
-            .get(&asset.browser_download_url)
-            .send()
-            .map_err(|err| RuntimeError::BinstallDownloadFailed(err.to_string()))?
-            .error_for_status()
-            .map_err(|err| RuntimeError::BinstallDownloadFailed(err.to_string()))?
-            .bytes()
-            .map_err(|err| RuntimeError::BinstallDownloadFailed(err.to_string()))?
-            .to_vec();
+        let bytes = bkt_common::http::download_with_headers(
+            &asset.browser_download_url,
+            &headers,
+        )
+        .map_err(|err| RuntimeError::BinstallDownloadFailed(err.to_string()))?;
 
         let checksum_asset = release
             .assets
             .iter()
             .find(|asset| asset.name == "checksums.txt")
             .ok_or_else(|| RuntimeError::BinstallAssetNotFound("checksums.txt".to_string()))?;
-        let checksum_bytes = client
-            .get(&checksum_asset.browser_download_url)
-            .send()
-            .map_err(|err| RuntimeError::BinstallDownloadFailed(err.to_string()))?
-            .error_for_status()
-            .map_err(|err| RuntimeError::BinstallDownloadFailed(err.to_string()))?
-            .bytes()
-            .map_err(|err| RuntimeError::BinstallDownloadFailed(err.to_string()))?
-            .to_vec();
+        let checksum_bytes = bkt_common::http::download_with_headers(
+            &checksum_asset.browser_download_url,
+            &headers,
+        )
+        .map_err(|err| RuntimeError::BinstallDownloadFailed(err.to_string()))?;
         let checksum_text = String::from_utf8_lossy(&checksum_bytes);
         verify_binstall_checksum(&checksum_text, &asset.name, &bytes)?;
 
@@ -183,18 +162,18 @@ impl RuntimePool {
         }
         fs::create_dir_all(&dest)?;
 
-        extract_tgz(&bytes, &dest)?;
+        bkt_common::archive::extract_tar_gz(&bytes, &dest, 0)
+            .map_err(|err| RuntimeError::BinstallDownloadFailed(err.to_string()))?;
 
         let binstall_path =
             resolve_binstall_binary(&dest).ok_or(RuntimeError::BinstallBinaryNotFound)?;
-        set_executable(&binstall_path)?;
+        bkt_common::archive::set_executable(&binstall_path)?;
 
         Ok(binstall_path)
     }
 
     pub fn update(&mut self) -> Result<RuntimeUpdateReport, RuntimeError> {
-        let client = Client::new();
-        let index = NodeVersionIndex::fetch(&client)?;
+        let index = NodeVersionIndex::fetch()?;
         let mut report = RuntimeUpdateReport::default();
 
         if let Some(lts) = index.current_lts() {
@@ -202,7 +181,7 @@ impl RuntimePool {
             let already_installed = self.manifest.node.installed.contains(&version);
             if !already_installed {
                 let dest = self.data_dir.join("toolchains").join("node").join(&version);
-                download_node(&client, &version, &dest, &Platform::current())?;
+                download_node(&version, &dest, &Platform::current())?;
                 self.manifest.node.installed.push(version.clone());
                 report.updated.push(format!("node:{version}"));
             }
@@ -319,16 +298,9 @@ struct GithubAsset {
     browser_download_url: String,
 }
 
-fn fetch_binstall_release(client: &Client) -> Result<GithubRelease, RuntimeError> {
-    let response = client
-        .get("https://api.github.com/repos/cargo-bins/cargo-binstall/releases/latest")
-        .send()
-        .map_err(|err| RuntimeError::BinstallDownloadFailed(err.to_string()))?
-        .error_for_status()
-        .map_err(|err| RuntimeError::BinstallDownloadFailed(err.to_string()))?;
-
-    response
-        .json::<GithubRelease>()
+fn fetch_binstall_release(headers: &[(&str, &str)]) -> Result<GithubRelease, RuntimeError> {
+    let url = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/latest";
+    bkt_common::http::download_json::<GithubRelease>(url, headers)
         .map_err(|err| RuntimeError::BinstallDownloadFailed(err.to_string()))
 }
 
@@ -345,16 +317,6 @@ pub(crate) fn binstall_asset_name(platform: &Platform) -> Result<&'static str, R
             arch: platform.arch.as_str().to_string(),
         }),
     }
-}
-
-fn extract_tgz(bytes: &[u8], dest: &Path) -> Result<(), RuntimeError> {
-    let cursor = Cursor::new(bytes);
-    let decoder = GzDecoder::new(cursor);
-    let mut archive = Archive::new(decoder);
-    archive
-        .unpack(dest)
-        .map_err(|err| RuntimeError::BinstallDownloadFailed(err.to_string()))?;
-    Ok(())
 }
 
 fn verify_binstall_checksum(
@@ -413,18 +375,6 @@ fn find_binstall_binary(dir: &Path) -> Option<PathBuf> {
         }
     }
     None
-}
-
-fn set_executable(path: &Path) -> Result<(), RuntimeError> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(path)?.permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(path, perms)?;
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

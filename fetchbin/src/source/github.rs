@@ -3,65 +3,47 @@ mod api;
 #[path = "github/checksum.rs"]
 pub(crate) mod checksum;
 
-use bkt_common::archive::{
-    detect_archive_type, extract_tar_gz_binary, extract_zip_binary, set_executable, write_raw,
-    ArchiveType,
-};
-use bkt_common::checksum::sha256_hex;
 use crate::error::FetchError;
 use crate::manifest::{InstalledBinary, SourceSpec};
 use crate::platform::Platform;
 use crate::runtime::RuntimePool;
 use crate::source::{BinarySource, FetchedBinary, PackageSpec, ResolvedVersion, SourceConfig};
 use api::{Asset, Release};
+use bkt_common::archive::{
+    detect_archive_type, extract_tar_gz_binary, extract_zip_binary, set_executable, write_raw,
+    ArchiveType,
+};
+use bkt_common::checksum::sha256_hex;
 use checksum::{find_checksum_asset, parse_checksum_file};
 use glob::Pattern;
-use reqwest::blocking::Client;
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
 use std::env;
 use std::fs;
 use std::path::Path;
 
 pub struct GithubSource {
-    client: Client,
+    headers: Vec<(String, String)>,
 }
 
 impl GithubSource {
     pub fn new() -> Self {
-        let mut headers = HeaderMap::new();
-        headers.insert(USER_AGENT, HeaderValue::from_static("fetchbin"));
-
+        let mut headers = vec![("User-Agent".to_string(), "fetchbin".to_string())];
         if let Ok(token) = env::var("GITHUB_TOKEN") {
-            if let Ok(value) = HeaderValue::from_str(&format!("token {token}")) {
-                headers.insert(AUTHORIZATION, value);
-            }
+            headers.push(("Authorization".to_string(), format!("token {token}")));
         }
+        Self { headers }
+    }
 
-        let client = Client::builder()
-            .default_headers(headers)
-            .build()
-            .unwrap_or_else(|_| Client::new());
-
-        Self { client }
+    fn header_refs(&self) -> Vec<(&str, &str)> {
+        self.headers
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect()
     }
 
     fn fetch_releases(&self, repo: &str) -> Result<Vec<Release>, FetchError> {
         let url = format!("https://api.github.com/repos/{repo}/releases");
-        let response = self
-            .client
-            .get(url)
-            .send()
-            .map_err(|err| FetchError::Network(err.to_string()))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().unwrap_or_default();
-            return Err(FetchError::GitHubApi(format!("status {status}: {body}")));
-        }
-
-        response
-            .json::<Vec<Release>>()
-            .map_err(|err| FetchError::Parse(err.to_string()))
+        bkt_common::http::download_json::<Vec<Release>>(&url, &self.header_refs())
+            .map_err(|err| FetchError::GitHubApi(err.to_string()))
     }
 
     fn find_asset<'a>(
@@ -130,22 +112,8 @@ impl GithubSource {
             });
         }
 
-        let response = self
-            .client
-            .get(&asset.browser_download_url)
-            .send()
-            .map_err(|err| FetchError::Network(err.to_string()))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().unwrap_or_default();
-            return Err(FetchError::GitHubApi(format!("status {status}: {body}")));
-        }
-
-        let bytes = response
-            .bytes()
-            .map_err(|err| FetchError::Network(err.to_string()))?;
-        Ok(bytes.to_vec())
+        bkt_common::http::download_with_headers(&asset.browser_download_url, &self.header_refs())
+            .map_err(|err| FetchError::Network(err.to_string()))
     }
 }
 
