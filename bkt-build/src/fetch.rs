@@ -1,13 +1,13 @@
-use anyhow::{Context, Result, anyhow, bail};
-use bkt_common::archive::{self, ArchiveType, detect_archive_type};
+use anyhow::{anyhow, bail, Context, Result};
+use bkt_common::archive::{self, detect_archive_type, ArchiveType};
 use bkt_common::checksum::sha256_hex;
 use bkt_common::http::download;
 use bkt_common::manifest::{InstallConfig, UpstreamManifest};
 use std::path::Path;
 
 pub fn run(name: &str, manifest_path: &Path) -> Result<()> {
-    let manifest = UpstreamManifest::load_from(manifest_path)
-        .context("failed to load upstream manifest")?;
+    let manifest =
+        UpstreamManifest::load_from(manifest_path).context("failed to load upstream manifest")?;
 
     let upstream = manifest
         .find(name)

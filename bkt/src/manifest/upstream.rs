@@ -7,7 +7,9 @@ use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::PathBuf;
 
-pub use bkt_common::manifest::*;
+pub use bkt_common::manifest::{
+    InstallConfig, PinnedVersion, ReleaseType, Upstream, UpstreamManifest, UpstreamSource,
+};
 
 pub const MANIFEST_PATH: &str = "upstream/manifest.json";
 pub const VERIFIED_PATH: &str = "upstream/manifest.verified";

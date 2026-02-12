@@ -128,6 +128,27 @@ pub struct UpstreamManifest {
     pub upstreams: Vec<Upstream>,
 }
 
+/// An external RPM repository entry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ExternalRepo {
+    pub name: String,
+    pub display_name: String,
+    pub baseurl: String,
+    pub gpg_key: String,
+    pub packages: Vec<String>,
+}
+
+/// External repositories manifest (manifests/external-repos.json).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ExternalReposManifest {
+    #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
+    pub schema: Option<String>,
+
+    pub repos: Vec<ExternalRepo>,
+}
+
 impl UpstreamManifest {
     /// Load a manifest from a specific path.
     pub fn load_from(path: &Path) -> Result<Self, CommonError> {
@@ -179,5 +200,19 @@ impl UpstreamManifest {
     /// Check if an upstream exists.
     pub fn contains(&self, name: &str) -> bool {
         self.find(name).is_some()
+    }
+}
+
+impl ExternalReposManifest {
+    /// Load a manifest from a specific path.
+    pub fn load_from(path: &Path) -> Result<Self, CommonError> {
+        let content = fs::read_to_string(path)?;
+        let manifest: Self = serde_json::from_str(&content)?;
+        Ok(manifest)
+    }
+
+    /// Find an external repository by name.
+    pub fn find(&self, name: &str) -> Option<&ExternalRepo> {
+        self.repos.iter().find(|repo| repo.name == name)
     }
 }
