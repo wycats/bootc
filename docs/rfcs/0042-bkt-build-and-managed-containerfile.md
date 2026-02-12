@@ -38,9 +38,11 @@ Containerfile during `docker build`. It reads the manifests that are
 already COPY'd into the build context and replaces verbose shell
 pipelines with single commands.
 
-`bkt-build` is a new crate at `bkt-build/` that reuses the `fetchbin`
-library for GitHub release download, SHA256 verification, and archive
-extraction. It is compiled as a **statically linked musl binary**
+`bkt-build` is a new crate at `bkt-build/` that depends on a shared
+`bkt-common` library crate extracted from `fetchbin`. The shared crate
+provides HTTP download (`ureq` + rustls), SHA256 verification, and
+archive extraction (tar.gz, tar.xz via `lzma-rs`, zip). `bkt-build`
+is compiled as a **statically linked musl binary**
 (`x86_64-unknown-linux-musl`) for maximum portability across build
 environments.
 
@@ -118,13 +120,25 @@ Each stage that needs it does `COPY --from=tools /bkt-build /usr/local/bin/bkt-b
 CI builds `bkt-build` before `docker build` (same pattern as `rpmcheck`)
 and injects it into the build context.
 
-#### Relationship to `fetchbin`
+#### Relationship to `bkt-common` and `fetchbin`
 
-`bkt-build` depends on the `fetchbin` crate as a library for its core
-download/verify/extract logic. `fetchbin` already implements GitHub
-release download, SHA256 verification, and archive extraction (tar, zip).
-`bkt-build` adds the manifest-reading layer and the Containerfile-specific
-commands (`setup-repos`, `download-rpms`) on top.
+Core download/verify/extract logic lives in a shared `bkt-common/`
+crate, extracted from `fetchbin`. Both `bkt-build` and `fetchbin`
+depend on `bkt-common` as a path dependency. The shared crate uses
+`ureq` (pure Rust, synchronous) with `rustls` for HTTP — replacing
+`reqwest` to keep the dependency tree small (~30 deps vs ~100+) and
+avoid OpenSSL complications with musl static linking.
+
+`bkt-common` provides:
+- HTTP download (`ureq` + rustls)
+- SHA256 verification (`sha2`)
+- Archive extraction: tar.gz (`flate2` + `tar`), tar.xz (`lzma-rs` +
+  `tar`), zip (`zip`)
+- Upstream manifest types (`UpstreamManifest`, `Upstream`,
+  `UpstreamSource`, `PinnedVersion`, `InstallConfig`)
+
+`bkt-build` adds the Containerfile-specific commands (`setup-repos`,
+`download-rpms`) and the `fetch` dispatch logic on top.
 
 ### 2. Fully Managed Containerfile Generation
 
@@ -463,18 +477,23 @@ Fedora-only packages. Add `ExternalReposManifest` type to bkt. Remove
   starts with `/tmp/rpms/*.rpm`; external packages absent from
   `system-packages.json`
 
-### PER D: `bkt-build fetch`
+### PER D: Shared Crate + `bkt-build fetch`
 
-New `bkt-build/` crate, musl target, depends on `fetchbin` library.
-Implements `bkt-build fetch <name>` — manifest-driven download, sha256
-verify, install. Covers: starship, lazygit, getnf, bibata, JetBrains
-Mono Nerd Font.
+Extract `bkt-common/` shared crate from `fetchbin` (HTTP download,
+sha256 verify, archive extraction, manifest types). Create `bkt-build/`
+crate depending on `bkt-common`. Implement `bkt-build fetch <name>` —
+manifest-driven download from `pinned.url`, sha256 verify, install.
+Covers: starship, lazygit, getnf, bibata, JetBrains Mono Nerd Font.
 
 - **Difficulty**: Hard
 - **Dependencies**: PER A
-- **Codebase touches**: `bkt-build/` (new crate), workspace `Cargo.toml`
+- **Codebase touches**: `bkt-common/` (new shared crate extracted from
+  fetchbin), `bkt-build/` (new crate), `fetchbin/` (refactored to
+  depend on bkt-common), `bkt/` (add bkt-common dependency for
+  manifest types)
 - **Verification**: `bkt-build fetch starship` inside a container
-  downloads, verifies, and installs to `/usr/bin/starship`
+  downloads, verifies, and installs to `/usr/bin/starship`;
+  `fetchbin` tests still pass after refactor
 
 ### PER E: `bkt-build` Repo Commands
 
@@ -556,12 +575,40 @@ PER A → PER D → PER E → PER F → PER G (5 serial cycles, two hard)
 provides portability across build environments without depending on the
 container's glibc. Same pattern as `rpmcheck`.
 
-### `fetchbin` Reuse
+### Shared `bkt-common` Crate
 
-`bkt-build` depends on the `fetchbin` crate as a library. `fetchbin`
-already implements GitHub release download, SHA256 verification, and
-archive extraction. `bkt-build` adds manifest-reading and
-Containerfile-specific commands on top. No functionality is duplicated.
+Core download/verify/extract logic and manifest types are extracted
+into `bkt-common/`, a shared library crate. Both `fetchbin` and
+`bkt-build` depend on it. This avoids duplicating the ~100 lines of
+manifest types and the archive/checksum utilities, while keeping each
+binary's own dependency footprint minimal.
+
+### `ureq` HTTP Client (Pure Rust)
+
+`bkt-common` uses `ureq` with `rustls` instead of `reqwest` with
+OpenSSL. This cuts the dependency tree from ~100+ crates to ~30 and
+eliminates the C library complications that make musl static linking
+painful. `fetchbin` will migrate from `reqwest` to `ureq` via
+`bkt-common` as part of the shared crate extraction.
+
+### `lzma-rs` for tar.xz (Pure Rust)
+
+bibata-cursor ships as `.tar.xz`. `fetchbin` currently doesn't support
+this format. `bkt-common` adds tar.xz support via `lzma-rs`, a pure
+Rust LZMA implementation that works out of the box with musl (no C
+toolchain or `liblzma-dev` headers needed). Acceptable performance
+tradeoff for a build tool extracting single archives.
+
+### `pinned.url` for All Entries
+
+`bkt upstream pin` resolves the actual download URL for every entry
+and stores it in `pinned.url`. This means `bkt-build fetch` never
+calls the GitHub API — it downloads from the stored URL, verifies
+sha256, and installs. The glob pattern in `asset_pattern` (e.g.,
+`lazygit_*_Linux_x86_64.tar.gz`) is preserved as the _update intent_
+for future `bkt upstream pin` runs. `pinned.url` is the _resolved
+build input_ for the currently pinned version. Both persist, serving
+different audiences.
 
 ### Manifest as Single Source of Truth
 
