@@ -28,7 +28,7 @@ pub fn run(name: &str, manifest_path: &Path) -> Result<()> {
         .ok_or_else(|| anyhow!("no pinned.url for '{}' — run bkt upstream pin first", name))?;
 
     eprintln!("Downloading {} from {}", name, url);
-    let data = download(url).context(format!("failed to download {}", name))?;
+    let data = download(url).with_context(|| format!("failed to download {}", name))?;
 
     eprintln!("Verifying SHA256...");
     let actual = sha256_hex(&data);
@@ -105,7 +105,15 @@ fn install_archive(data: &[u8], url: &str, extract_to: &str, strip_components: u
     match archive_type {
         ArchiveType::TarGz => archive::extract_tar_gz(data, target, strip_components)?,
         ArchiveType::TarXz => archive::extract_tar_xz(data, target, strip_components)?,
-        ArchiveType::Zip => archive::extract_zip(data, target)?,
+        ArchiveType::Zip => {
+            if strip_components != 0 {
+                bail!(
+                    "strip_components is not supported for ZIP archives (got {})",
+                    strip_components
+                );
+            }
+            archive::extract_zip(data, target)?
+        }
         ArchiveType::Raw => bail!("raw file not expected for archive install"),
     }
     Ok(())
