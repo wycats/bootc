@@ -4,7 +4,6 @@ use crate::runtime::{RuntimePool, RuntimeVersion};
 use crate::source::{
     BinarySource, EngineRequirements, FetchedBinary, PackageSpec, ResolvedVersion, SourceConfig,
 };
-use reqwest::blocking::Client;
 use semver::{Version, VersionReq};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -16,7 +15,6 @@ use std::process::Command;
 
 pub struct NpmSource {
     registry_base: String,
-    client: Client,
 }
 
 impl NpmSource {
@@ -27,7 +25,6 @@ impl NpmSource {
     pub fn with_registry_base(base: impl Into<String>) -> Self {
         Self {
             registry_base: base.into(),
-            client: Client::new(),
         }
     }
 
@@ -38,17 +35,8 @@ impl NpmSource {
 
     fn fetch_metadata(&self, package: &str) -> Result<NpmPackageMetadata, FetchError> {
         let url = self.registry_url(package);
-        let response = self
-            .client
-            .get(url)
-            .send()
-            .map_err(|err| FetchError::NpmRegistry(err.to_string()))?
-            .error_for_status()
-            .map_err(|err| FetchError::NpmRegistry(err.to_string()))?;
-
-        response
-            .json::<NpmPackageMetadata>()
-            .map_err(|err| FetchError::Parse(err.to_string()))
+        bkt_common::http::download_json::<NpmPackageMetadata>(&url, &[])
+            .map_err(|err| FetchError::NpmRegistry(err.to_string()))
     }
 }
 

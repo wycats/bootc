@@ -13,19 +13,14 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
-bkt-common = { path = "../bkt-common" }
+bkt-common = { path = "../bkt-common", features = ["http"] }
 clap = { version = "4", features = ["derive"] }
 dirs = "5"
-flate2 = "1"
 glob = "0.3"
-reqwest = { version = "0.12", features = ["blocking", "json"] }
 semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.10"
-tar = "0.4"
 thiserror = "1"
-zip = "0.6"
 
 [dev-dependencies]
 mockito = "1"

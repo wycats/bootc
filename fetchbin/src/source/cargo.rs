@@ -3,7 +3,6 @@ use crate::manifest::{InstalledBinary, SourceSpec};
 use crate::runtime::RuntimePool;
 use crate::source::github::checksum::sha256_hex;
 use crate::source::{BinarySource, FetchedBinary, PackageSpec, ResolvedVersion, SourceConfig};
-use reqwest::blocking::Client;
 use semver::{Version, VersionReq};
 use serde::Deserialize;
 use std::fs;
@@ -11,31 +10,18 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub struct CargoSource {
-    client: Client,
     data_dir: PathBuf,
 }
 
 impl CargoSource {
     pub fn new(data_dir: PathBuf) -> Self {
-        Self {
-            client: Client::new(),
-            data_dir,
-        }
+        Self { data_dir }
     }
 
     fn fetch_metadata(&self, crate_name: &str) -> Result<CratesIoResponse, FetchError> {
         let url = format!("https://crates.io/api/v1/crates/{crate_name}");
-        let response = self
-            .client
-            .get(url)
-            .send()
-            .map_err(|err| FetchError::CratesIoApi(err.to_string()))?
-            .error_for_status()
-            .map_err(|err| FetchError::CratesIoApi(err.to_string()))?;
-
-        response
-            .json::<CratesIoResponse>()
-            .map_err(|err| FetchError::Parse(err.to_string()))
+        bkt_common::http::download_json::<CratesIoResponse>(&url, &[])
+            .map_err(|err| FetchError::CratesIoApi(err.to_string()))
     }
 }
 
