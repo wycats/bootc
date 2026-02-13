@@ -468,20 +468,12 @@ equivalence. Each contains only the build commands, not full stage defs.
 - **Codebase touches**: `Containerfile.d/` (new directory + 3 files)
 - **Verification**: Fragment content matches current Containerfile sections
 
-### PER C: SYSTEM_PACKAGES Bug Fix
+### PER C: SYSTEM_PACKAGES Bug Fix *(folded into PER G1)*
 
-Update `generate_system_packages` in bkt to emit `/tmp/rpms/*.rpm` +
-Fedora-only packages. Add `ExternalReposManifest` type to bkt. Remove
-5 external packages from `system-packages.json`.
-
-- **Difficulty**: Moderate
-- **Dependencies**: PER A
-- **Codebase touches**: `manifests/system-packages.json`,
-  `bkt/src/containerfile.rs`, `bkt/src/commands/containerfile.rs`,
-  `bkt/src/manifest/` (new `ExternalReposManifest` type)
-- **Verification**: `bkt containerfile check` passes; install line
-  starts with `/tmp/rpms/*.rpm`; external packages absent from
-  `system-packages.json`
+> **Note**: PER C was folded into PER G1 because the `/tmp/rpms/*.rpm`
+> install pattern requires multi-stage `download-rpms` stages to exist
+> first. Landing PER C independently would remove external packages
+> from the `dnf install` line with nothing to replace them.
 
 ### PER D: Shared Crate + `bkt-build fetch`
 
@@ -526,14 +518,33 @@ equivalence.
 - **Verification**: Docker build produces identical image (verify via
   `rpm -qa` diff and binary checksums)
 
-### PER G: Full Containerfile Generation
+### PER G1: Multi-Stage Containerfile + RPM Fix
+
+Rewrite Containerfile to multi-stage structure: `FROM scratch AS tools`
+for bkt-build, `FROM tools AS fetch-*` for upstream fetches,
+`FROM tools AS dl-*` for `bkt-build download-rpms`, and `FROM base AS
+image` with `COPY --from=` assembly. Fold PER C: update
+`generate_system_packages` to emit `/tmp/rpms/*.rpm` + Fedora-only
+packages, remove 5 external packages from `system-packages.json`.
+Splice `Containerfile.d/` fragments into their respective stages.
+
+- **Difficulty**: Hard
+- **Dependencies**: PER B, PER F
+- **Codebase touches**: `Containerfile` (full rewrite to multi-stage),
+  `manifests/system-packages.json` (remove external packages),
+  `bkt/src/containerfile.rs` (`generate_system_packages` fix)
+- **Verification**: Docker build produces equivalent image (verify via
+  `rpm -qa` diff and binary checksums); external packages installed
+  from `/tmp/rpms/*.rpm`; `bkt containerfile check` passes
+
+### PER G2: Full Containerfile Generation
 
 Extend `bkt containerfile generate` to produce the entire file from
 manifests + fragments. `bkt containerfile check` diffs generated output
 vs. committed file. CI enforces no divergence.
 
 - **Difficulty**: Hard
-- **Dependencies**: PER B, PER F
+- **Dependencies**: PER G1
 - **Codebase touches**: `bkt/src/containerfile.rs` (major extension),
   `bkt/src/commands/containerfile.rs`, `.github/workflows/build.yml`
 - **Verification**: `bkt containerfile generate` output is byte-identical
@@ -546,7 +557,7 @@ rpmcheck for per-repo hashes and passes them as build-args. Each dl-\*
 stage busts independently.
 
 - **Difficulty**: Moderate
-- **Dependencies**: PER G, rpmcheck (PR #106)
+- **Dependencies**: PER G2, rpmcheck (PR #106)
 - **Codebase touches**: `bkt/src/containerfile.rs`,
   `.github/workflows/build.yml`
 - **Verification**: Changing one repo's version only invalidates that
@@ -555,22 +566,21 @@ stage busts independently.
 ### Dependency Graph
 
 ```
-PER A ──→ PER C
-  │
-  ├──→ PER D ──→ PER E ──→ PER F ──→ PER G ──→ PER H
-                                       ↑          ↑
-PER B ─────────────────────────────────┘      rpmcheck
-                                              (PR #106)
+PER A ──→ PER D ──→ PER E ──→ PER F ──→ PER G1 ──→ PER G2 ──→ PER H
+                                          ↑                      ↑
+PER B ────────────────────────────────────┘                  rpmcheck
+                                                            (PR #106)
+
+PER C folded into PER G1
 ```
 
 ### Critical Path
 
-PER A → PER D → PER E → PER F → PER G (5 serial cycles, two hard)
+PER A → PER D → PER E → PER F → PER G1 → PER G2 (6 serial cycles, two hard)
 
 ### Parallelizable Work
 
 - **PER A + PER B** can run simultaneously (no dependencies)
-- **PER C** can run alongside PER D once PER A lands
 - **PER B** is fully independent and can land at any time
 
 ## Design Decisions
