@@ -1,0 +1,11 @@
+# keyd: build from source at pinned tag
+# FORCE_SYSTEMD=1 is needed because /run/systemd/system doesn't exist in container builds
+set -eu
+ref="$(jq -r '.upstreams[] | select(.name == "keyd") | .pinned.version' /tmp/upstream-manifest.json)"
+dnf install -y git gcc make systemd-devel
+git clone --depth 1 --branch "${ref}" https://github.com/rvaiya/keyd.git /tmp/keyd
+make -C /tmp/keyd
+make -C /tmp/keyd PREFIX=/usr FORCE_SYSTEMD=1 install
+rm -rf /tmp/keyd
+dnf remove -y git gcc make systemd-devel || true
+dnf clean all
