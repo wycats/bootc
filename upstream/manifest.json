@@ -79,7 +79,7 @@
       "pinned": {
         "version": "v0.57.0",
         "url": "https://github.com/jesseduffield/lazygit/releases/download/v0.57.0/lazygit_0.57.0_Linux_x86_64.tar.gz",
-        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "sha256": "ced011ecd1459d069c66128fbf172b7248c8b99d8983fa17d84a247a98146d5e",
         "pinned_at": "2024-12-28T15:17:00Z"
       },
       "install": {
@@ -98,7 +98,7 @@
       "pinned": {
         "version": "v1.24.1",
         "url": "https://github.com/starship/starship/releases/download/v1.24.1/starship-x86_64-unknown-linux-gnu.tar.gz",
-        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "sha256": "afa28fc0b33cfcf6da95f0f2cf2ec47b5f7460d64cf3eff17e2c11c5dfffab43",
         "pinned_at": "2024-12-28T15:17:00Z"
       },
       "install": {
