@@ -322,12 +322,19 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-gnu
+          targets: x86_64-unknown-linux-gnu,x86_64-unknown-linux-musl
+
+      - name: Install musl tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: bkt -> target
+          workspaces: |
+            bkt -> target
+            bkt-build -> target
           # Different key for cross-compiled release builds
           shared-key: rust-release-x86_64
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -338,6 +345,13 @@ jobs:
           cargo build --release --target x86_64-unknown-linux-gnu
           chmod +x target/x86_64-unknown-linux-gnu/release/bkt
           cp target/x86_64-unknown-linux-gnu/release/bkt ../scripts/bkt
+
+      - name: Build bkt-build (musl static)
+        run: |
+          cd bkt-build
+          cargo build --release --target x86_64-unknown-linux-musl
+          chmod +x target/x86_64-unknown-linux-musl/release/bkt-build
+          cp target/x86_64-unknown-linux-musl/release/bkt-build ../scripts/bkt-build
 
       - name: Generate build info
         id: build-info

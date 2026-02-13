@@ -1,34 +1,11 @@
 FROM ghcr.io/ublue-os/bazzite-gnome:stable
 
-# Layered packages detected in system_profile.txt
+# bkt-build: build-time helper (musl static binary, built by CI)
+COPY scripts/bkt-build /usr/bin/bkt-build
+COPY manifests/external-repos.json /tmp/external-repos.json
 RUN set -eu; \
     mkdir -p /var/opt /var/usrlocal/bin; \
-    rpm --import https://packages.microsoft.com/keys/microsoft.asc; \
-        printf '%s\n' \
-            '[code]' \
-            'name=Visual Studio Code' \
-            'baseurl=https://packages.microsoft.com/yumrepos/vscode' \
-            'enabled=1' \
-            'gpgcheck=1' \
-            'gpgkey=https://packages.microsoft.com/keys/microsoft.asc' \
-            >/etc/yum.repos.d/vscode.repo; \
-        printf '%s\n' \
-            '[microsoft-edge]' \
-            'name=microsoft-edge' \
-            'baseurl=https://packages.microsoft.com/yumrepos/edge' \
-            'enabled=1' \
-            'gpgcheck=1' \
-            'gpgkey=https://packages.microsoft.com/keys/microsoft.asc' \
-            >/etc/yum.repos.d/microsoft-edge.repo; \
-        rpm --import https://downloads.1password.com/linux/keys/1password.asc; \
-        printf '%s\n' \
-            '[1password]' \
-            'name=1Password Stable Channel' \
-            'baseurl=https://downloads.1password.com/linux/rpm/stable/$basearch' \
-            'enabled=1' \
-            'gpgcheck=1' \
-            'gpgkey=https://downloads.1password.com/linux/keys/1password.asc' \
-            >/etc/yum.repos.d/1password.repo
+    bkt-build setup-repos
 
 # === COPR_REPOS (managed by bkt) ===
 # No COPR repositories configured
@@ -85,32 +62,11 @@ RUN printf '%s\n' \
     'L+ /var/opt/microsoft - - - - /usr/lib/opt/microsoft' \
     >/usr/lib/tmpfiles.d/bootc-opt.conf
 
-# starship (pinned via upstream/manifest.json + verified by sha256)
-# Rationale: Not available in standard Fedora repos.
+# Upstream binaries and archives (managed by bkt-build, pinned in upstream/manifest.json)
 COPY upstream/manifest.json /tmp/upstream-manifest.json
-RUN set -eu; \
-    tag="$(jq -r '.upstreams[] | select(.name == "starship") | .pinned.version' /tmp/upstream-manifest.json)"; \
-    asset="starship-x86_64-unknown-linux-gnu.tar.gz"; \
-    curl -fsSL "https://github.com/starship/starship/releases/download/${tag}/${asset}" -o /tmp/${asset}; \
-    curl -fsSL "https://github.com/starship/starship/releases/download/${tag}/${asset}.sha256" -o /tmp/${asset}.sha256; \
-    expected="$(cat /tmp/${asset}.sha256)"; \
-    echo "${expected}  /tmp/${asset}" | sha256sum -c -; \
-    tar -xzf /tmp/${asset} -C /usr/bin starship; \
-    chmod 0755 /usr/bin/starship; \
-    rm -f /tmp/${asset} /tmp/${asset}.sha256
+RUN bkt-build fetch starship
 
-# lazygit (pinned via upstream/manifest.json + verified by checksums.txt)
-# Rationale: Not available in standard Fedora repos.
-RUN set -eu; \
-    tag="$(jq -r '.upstreams[] | select(.name == "lazygit") | .pinned.version' /tmp/upstream-manifest.json)"; \
-    ver="${tag#v}"; \
-    asset="lazygit_${ver}_linux_x86_64.tar.gz"; \
-    curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/${tag}/${asset}" -o /tmp/${asset}; \
-    curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/${tag}/checksums.txt" -o /tmp/lazygit.checksums.txt; \
-    (cd /tmp && grep " ${asset}$" lazygit.checksums.txt | sha256sum -c -); \
-    tar -xzf /tmp/${asset} -C /usr/bin lazygit; \
-    chmod 0755 /usr/bin/lazygit; \
-    rm -f /tmp/${asset} /tmp/lazygit.checksums.txt
+RUN bkt-build fetch lazygit
 
 # keyd (built from source at pinned tag from upstream/manifest.json)
 # Rationale: Not available in standard Fedora repos.
@@ -125,27 +81,7 @@ RUN set -eu; \
     dnf remove -y git gcc make systemd-devel || true; \
     dnf clean all
 
-# getnf (pinned via upstream/manifest.json + verified by sha256)
-# Rationale: Not available in standard Fedora repos.
-RUN set -eu; \
-    ref="$(jq -r '.upstreams[] | select(.name == "getnf") | .pinned.commit' /tmp/upstream-manifest.json)"; \
-    expected_sha="$(jq -r '.upstreams[] | select(.name == "getnf") | .pinned.sha256' /tmp/upstream-manifest.json)"; \
-    ok=0; \
-    for attempt in 1 2 3; do \
-        curl -fsSL \
-            --retry 5 \
-            --retry-delay 2 \
-            "https://raw.githubusercontent.com/getnf/getnf/${ref}/getnf" \
-            -o /usr/bin/getnf; \
-        if echo "${expected_sha}  /usr/bin/getnf" | sha256sum -c -; then \
-            ok=1; \
-            break; \
-        fi; \
-        echo "getnf checksum mismatch; retrying (${attempt}/3)" >&2; \
-        sleep $((attempt * 2)); \
-    done; \
-    test "${ok}" = 1; \
-    chmod 0755 /usr/bin/getnf
+RUN bkt-build fetch getnf
 
 # Emoji rendering fix for Electron/Chromium apps.
 # Noto Color Emoji (COLRv1) renders monochrome in Chromium's Skia renderer.
@@ -155,26 +91,9 @@ RUN set -eu; \
 RUN rm -f /etc/fonts/conf.d/99-emoji-fix.conf
 COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
 
-# Fonts (system-wide): Inter (RPM) + JetBrainsMono Nerd Font (zip from nerd-fonts)
-# Rationale: Nerd Fonts patched versions are not available in standard Fedora repos.
-RUN set -eu; \
-    mkdir -p /usr/share/fonts/nerd-fonts/JetBrainsMono; \
-    curl -fsSL "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip" -o /tmp/JetBrainsMono.zip; \
-    unzip -o /tmp/JetBrainsMono.zip -d /usr/share/fonts/nerd-fonts/JetBrainsMono; \
-    rm -f /tmp/JetBrainsMono.zip; \
-    fc-cache -f
+RUN bkt-build fetch jetbrains-mono-nerd-font && fc-cache -f
 
-# Bibata cursor theme (pinned via upstream/manifest.json + verified by sha256)
-# Rationale: Not available in standard Fedora repos.
-RUN set -eu; \
-    version="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .pinned.version' /tmp/upstream-manifest.json)"; \
-    expected_sha="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .pinned.sha256' /tmp/upstream-manifest.json)"; \
-    asset="$(jq -r '.upstreams[] | select(.name == "bibata-cursor") | .source.asset_pattern' /tmp/upstream-manifest.json)"; \
-    curl -fsSL "https://github.com/ful1e5/Bibata_Cursor/releases/download/${version}/${asset}" -o /tmp/${asset}; \
-    echo "${expected_sha}  /tmp/${asset}" | sha256sum -c -; \
-    mkdir -p /usr/share/icons; \
-    tar -xJf /tmp/${asset} -C /usr/share/icons; \
-    rm -f /tmp/${asset}
+RUN bkt-build fetch bibata-cursor
 
 # WhiteSur icon theme (pinned via upstream/manifest.json, installed system-wide)
 # Rationale: Not available in standard Fedora repos.
@@ -190,8 +109,8 @@ RUN set -eu; \
     dnf remove -y git || true; \
     dnf clean all
 
-# Clean up upstream manifest (no longer needed after this point)
-RUN rm -f /tmp/upstream-manifest.json
+# Clean up build-time artifacts (no longer needed after this point)
+RUN rm -f /tmp/upstream-manifest.json /tmp/external-repos.json /usr/bin/bkt-build
 
 # Host-level config extracted from wycats/asahi-env (now sourced here)
 COPY system/keyd/default.conf /etc/keyd/default.conf
