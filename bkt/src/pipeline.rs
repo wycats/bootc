@@ -7,7 +7,7 @@
 //!
 //! This is the core infrastructure for Phase 2's command punning philosophy.
 
-use crate::Cli;
+use crate::cli::Cli;
 use crate::context::{
     CommandDomain, ExecutionContext, PrMode, resolve_context, validate_context_for_domain,
 };

@@ -8,7 +8,7 @@ use clap_complete::Generator;
 use clap_complete_nushell::Nushell;
 use std::io;
 
-use crate::Cli;
+use crate::cli::Cli;
 
 /// Supported shell types for completion generation.
 #[derive(Debug, Clone, Copy, ValueEnum)]
