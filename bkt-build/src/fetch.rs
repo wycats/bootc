@@ -49,6 +49,7 @@ pub fn run(name: &str, manifest_path: &Path) -> Result<()> {
         InstallConfig::Archive {
             extract_to,
             strip_components,
+            ..
         } => {
             install_archive(&data, url, extract_to, *strip_components)?;
             eprintln!("Extracted {} to {}", name, extract_to);

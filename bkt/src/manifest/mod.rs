@@ -17,6 +17,7 @@ pub mod fetchbin;
 pub mod flatpak;
 pub mod gsetting;
 pub mod homebrew;
+pub mod image_config;
 pub mod parsers;
 pub mod shim;
 pub mod system_config;

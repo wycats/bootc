@@ -31,6 +31,16 @@
               "description": "Target directory for extraction",
               "type": "string"
             },
+            "outputs": {
+              "description": "Output paths produced by the archive extraction",
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
             "strip_components": {
               "description": "Number of leading path components to strip",
               "type": "integer",
@@ -70,6 +80,16 @@
           "description": "Run an install script",
           "type": "object",
           "properties": {
+            "build_script": {
+              "description": "Full build script lines (each line is a shell command).\nWhen present, the generator emits these as a heredoc RUN block\ninstead of using `bkt-build fetch`.",
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
             "command": {
               "description": "Script command to run",
               "type": "string"
@@ -82,6 +102,13 @@
               "items": {
                 "type": "string"
               }
+            },
+            "stage_name": {
+              "description": "Optional override for the stage name in the Containerfile.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "type": {
               "type": "string",

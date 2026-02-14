@@ -77,7 +77,7 @@ cd /tmp/whitesur-icons && git checkout "${ref}" && ./install.sh -d /usr/share/ic
 rm -rf /tmp/whitesur-icons
 EOF
 
-# ── Final image assembly ────────────────────────────────────────────────────
+# ── Final image assembly ─────────────────────────────────────────────────────
 FROM base AS image
 
 # === COPR_REPOS (managed by bkt) ===
@@ -95,7 +95,6 @@ COPY --from=dl-1password /rpms/ /tmp/rpms/
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
-    /tmp/rpms/*.rpm \
     curl \
     distrobox \
     fontconfig \
@@ -167,7 +166,7 @@ COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
 # Rebuild font cache after all font/icon COPYs
 RUN fc-cache -f
 
-# ── System configuration (spliced from Containerfile.d/90-system-config.tail) ─
+# ── System configuration (spliced from Containerfile.d/90-system-config.tail) 
 
 # keyd keyboard remapping config
 COPY system/keyd/default.conf /etc/keyd/default.conf
@@ -230,8 +229,7 @@ RUN mkdir -p /usr/lib/bootc/kargs.d && \
     > /usr/lib/bootc/kargs.d/tuning.karg
 
 # Optional: remote play / console mode (off by default; enabled via `ujust enable-remote-play`)
-RUN mkdir -p /usr/share/bootc-optional/remote-play/bin \
-    /usr/share/bootc-optional/remote-play/systemd
+RUN mkdir -p /usr/share/bootc-optional/remote-play/bin /usr/share/bootc-optional/remote-play/systemd
 COPY system/remote-play/bootc-remote-play-tty2 /usr/share/bootc-optional/remote-play/bin/bootc-remote-play-tty2
 COPY system/remote-play/bootc-remote-play-tty2@.service /usr/share/bootc-optional/remote-play/systemd/bootc-remote-play-tty2@.service
 
