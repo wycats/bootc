@@ -1,9 +1,5 @@
 {
   "packages": [
-    "1password",
-    "1password-cli",
-    "code",
-    "code-insiders",
     "curl",
     "distrobox",
     "fontconfig",
@@ -14,7 +10,6 @@
     "google-noto-sans-meroitic-fonts",
     "google-noto-sans-mongolian-fonts",
     "jq",
-    "microsoft-edge-stable",
     "papirus-icon-theme",
     "rsms-inter-fonts",
     "toolbox",

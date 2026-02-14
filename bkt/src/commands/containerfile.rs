@@ -109,6 +109,7 @@ impl Plannable for ContainerfileSyncCommand {
         let manifest = load_merged_manifest()?;
         let system_config = SystemConfigManifest::load()?;
         let shims_manifest = load_merged_shims_manifest()?;
+        let has_external_rpms = load_has_external_rpms()?;
 
         let mut section_updates = Vec::new();
         let mut warnings = Vec::new();
@@ -117,7 +118,7 @@ impl Plannable for ContainerfileSyncCommand {
         check_section(
             &editor,
             Section::SystemPackages,
-            generate_system_packages(&manifest.packages),
+            generate_system_packages(&manifest.packages, has_external_rpms),
             true,
             &mut section_updates,
             &mut warnings,
@@ -424,4 +425,16 @@ fn load_merged_shims_manifest() -> Result<ShimsManifest> {
     let repo = ShimsManifest::load_repo()?;
     let user = ShimsManifest::load_user()?;
     Ok(ShimsManifest::merged(&repo, &user))
+}
+
+/// Check whether external-repos.json defines any repos (i.e. external RPMs exist).
+fn load_has_external_rpms() -> Result<bool> {
+    let repo_path = crate::repo::find_repo_path()?;
+    let manifest_path = repo_path.join("manifests").join("external-repos.json");
+    if !manifest_path.exists() {
+        return Ok(false);
+    }
+    let content = std::fs::read_to_string(&manifest_path)?;
+    let manifest: crate::manifest::ExternalReposManifest = serde_json::from_str(&content)?;
+    Ok(!manifest.repos.is_empty())
 }
