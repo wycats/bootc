@@ -27,10 +27,19 @@ fn manifest_repo_urls_are_reachable() {
 
         eprintln!("  {}: HEAD {repomd_url}", repo.name);
 
-        let resp = client
-            .head(&repomd_url)
-            .send()
-            .unwrap_or_else(|e| panic!("repo '{}': request failed: {e}", repo.name));
+        // Try HEAD first; fall back to GET if the server rejects it
+        // (some repos block HEAD while allowing GET).
+        let resp = client.head(&repomd_url).send();
+        let resp = match resp {
+            Ok(r) if r.status().is_success() => r,
+            _ => {
+                eprintln!("  {}: HEAD failed, retrying with GET", repo.name);
+                client
+                    .get(&repomd_url)
+                    .send()
+                    .unwrap_or_else(|e| panic!("repo '{}': request failed: {e}", repo.name))
+            }
+        };
 
         assert!(
             resp.status().is_success(),
