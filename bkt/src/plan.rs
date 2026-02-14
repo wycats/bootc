@@ -702,7 +702,7 @@ impl Plan for CompositePlan {
 /// The `*_dyn` method names use a suffix to distinguish them from the [`Plan`]
 /// trait methods they mirror. This suffix makes explicit that these are the
 /// object-safe adapters used for dynamic dispatch, not the primary API.
-trait DynPlan {
+pub trait DynPlan {
     /// Object-safe adapter for [`Plan::describe`].
     fn describe_dyn(&self) -> PlanSummary;
     /// Object-safe adapter for [`Plan::execute`], taking ownership via `Box<Self>`.
