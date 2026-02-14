@@ -20,10 +20,10 @@ The multi-stage Containerfile (RFC 0041) works, but it has two problems:
    Containerfile by hand, significant bugs result. The goal is a fully
    managed Containerfile where bkt owns the entire file.
 
-There is also a latent bug: the SYSTEM_PACKAGES section lists external
+There is also a latent bug: the SYSTEM*PACKAGES section lists external
 packages by name (`1password`, `code`, `microsoft-edge-stable`), so
 `dnf install` re-downloads them from repos. The pre-downloaded RPMs
-in `/tmp/rpms/` from the dl-_ stages sit unused. The install line
+in `/tmp/rpms/` from the dl-* stages sit unused. The install line
 should be `dnf install -y /tmp/rpms/_.rpm curl distrobox ...` — local
 files for external packages, repo resolution for Fedora packages only.
 
@@ -468,7 +468,7 @@ equivalence. Each contains only the build commands, not full stage defs.
 - **Codebase touches**: `Containerfile.d/` (new directory + 3 files)
 - **Verification**: Fragment content matches current Containerfile sections
 
-### PER C: SYSTEM_PACKAGES Bug Fix *(folded into PER G1)*
+### PER C: SYSTEM_PACKAGES Bug Fix _(folded into PER G1)_
 
 > **Note**: PER C was folded into PER G1 because the `/tmp/rpms/*.rpm`
 > install pattern requires multi-stage `download-rpms` stages to exist
