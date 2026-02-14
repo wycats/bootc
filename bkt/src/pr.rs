@@ -18,10 +18,11 @@
 //! - Auth: GitHub authentication issues
 //! - Git state: Conflicts, dirty working directory
 
+use crate::command_runner::{CommandOptions, CommandRunner, RealCommandRunner};
 use crate::repo::{RepoConfig, find_repo_path};
 use anyhow::{Context, Result, bail};
 use std::path::PathBuf;
-use std::process::Command;
+use std::sync::Arc;
 
 /// Trait for PR creation operations - enables testing without git/gh.
 pub trait PrBackend: Send + Sync {
@@ -35,7 +36,23 @@ pub trait PrBackend: Send + Sync {
 }
 
 /// Production backend that uses real git/gh commands.
-pub struct GitHubBackend;
+pub struct GitHubBackend {
+    command_runner: Arc<dyn CommandRunner>,
+}
+
+impl GitHubBackend {
+    pub fn new(runner: Arc<dyn CommandRunner>) -> Self {
+        Self {
+            command_runner: runner,
+        }
+    }
+}
+
+impl Default for GitHubBackend {
+    fn default() -> Self {
+        Self::new(Arc::new(RealCommandRunner))
+    }
+}
 
 impl PrBackend for GitHubBackend {
     fn create_pr(
@@ -44,7 +61,12 @@ impl PrBackend for GitHubBackend {
         manifest_content: &str,
         skip_preflight: bool,
     ) -> Result<()> {
-        run_pr_workflow(change, manifest_content, skip_preflight)
+        run_pr_workflow(
+            &*self.command_runner,
+            change,
+            manifest_content,
+            skip_preflight,
+        )
     }
 }
 
@@ -125,25 +147,25 @@ impl PreflightResult {
 
 /// Run all pre-flight checks for the PR workflow.
 /// Returns Ok if all checks pass, or Err with details about what failed.
-pub fn run_preflight_checks() -> Result<Vec<PreflightResult>> {
+pub fn run_preflight_checks(runner: &dyn CommandRunner) -> Result<Vec<PreflightResult>> {
     Ok(vec![
         // Check 1: gh CLI available
-        check_gh_available(),
+        check_gh_available(runner),
         // Check 2: gh authenticated
-        check_gh_auth_status(),
+        check_gh_auth_status(runner),
         // Check 3: git available
-        check_git_available(),
+        check_git_available(runner),
         // Check 4: git user.name configured
-        check_git_user_name(),
+        check_git_user_name(runner),
         // Check 5: git user.email configured
-        check_git_user_email(),
+        check_git_user_email(runner),
         // Check 6: repo.json exists
         check_repo_config(),
     ])
 }
 
-fn check_gh_available() -> PreflightResult {
-    match Command::new("gh").arg("--version").output() {
+fn check_gh_available(runner: &dyn CommandRunner) -> PreflightResult {
+    match runner.run_output("gh", &["--version"], &CommandOptions::default()) {
         Ok(output) if output.status.success() => {
             let version = String::from_utf8_lossy(&output.stdout);
             let version_line = version.lines().next().unwrap_or("gh installed");
@@ -157,8 +179,8 @@ fn check_gh_available() -> PreflightResult {
     }
 }
 
-fn check_gh_auth_status() -> PreflightResult {
-    let output = match Command::new("gh").args(["auth", "status"]).output() {
+fn check_gh_auth_status(runner: &dyn CommandRunner) -> PreflightResult {
+    let output = match runner.run_output("gh", &["auth", "status"], &CommandOptions::default()) {
         Ok(o) => o,
         Err(_) => {
             return PreflightResult::fail(
@@ -188,8 +210,8 @@ fn check_gh_auth_status() -> PreflightResult {
     }
 }
 
-fn check_git_available() -> PreflightResult {
-    match Command::new("git").arg("--version").output() {
+fn check_git_available(runner: &dyn CommandRunner) -> PreflightResult {
+    match runner.run_output("git", &["--version"], &CommandOptions::default()) {
         Ok(output) if output.status.success() => {
             let version = String::from_utf8_lossy(&output.stdout);
             PreflightResult::pass("git", version.trim())
@@ -198,11 +220,12 @@ fn check_git_available() -> PreflightResult {
     }
 }
 
-fn check_git_user_name() -> PreflightResult {
-    let output = match Command::new("git")
-        .args(["config", "--get", "user.name"])
-        .output()
-    {
+fn check_git_user_name(runner: &dyn CommandRunner) -> PreflightResult {
+    let output = match runner.run_output(
+        "git",
+        &["config", "--get", "user.name"],
+        &CommandOptions::default(),
+    ) {
         Ok(o) => o,
         Err(_) => {
             return PreflightResult::fail(
@@ -225,11 +248,12 @@ fn check_git_user_name() -> PreflightResult {
     }
 }
 
-fn check_git_user_email() -> PreflightResult {
-    let output = match Command::new("git")
-        .args(["config", "--get", "user.email"])
-        .output()
-    {
+fn check_git_user_email(runner: &dyn CommandRunner) -> PreflightResult {
+    let output = match runner.run_output(
+        "git",
+        &["config", "--get", "user.email"],
+        &CommandOptions::default(),
+    ) {
         Ok(o) => o,
         Err(_) => {
             return PreflightResult::fail(
@@ -263,12 +287,12 @@ fn check_repo_config() -> PreflightResult {
 
 /// Check all preflight conditions and return error if any fail.
 /// Set `skip` to true to bypass checks (for --skip-preflight flag).
-pub fn ensure_preflight(skip: bool) -> Result<()> {
+pub fn ensure_preflight(runner: &dyn CommandRunner, skip: bool) -> Result<()> {
     if skip {
         return Ok(());
     }
 
-    let results = run_preflight_checks()?;
+    let results = run_preflight_checks(runner)?;
     let failed: Vec<_> = results.iter().filter(|r| !r.passed).collect();
 
     if failed.is_empty() {
@@ -349,7 +373,7 @@ impl PrChange {
 }
 
 /// Find or clone the source repository.
-pub fn ensure_repo() -> Result<PathBuf> {
+pub fn ensure_repo(runner: &dyn CommandRunner) -> Result<PathBuf> {
     // First, try to find existing checkout
     if let Ok(path) = find_repo_path() {
         return Ok(path);
@@ -374,10 +398,12 @@ pub fn ensure_repo() -> Result<PathBuf> {
         println!("Updating existing checkout at {}", repo_path.display());
 
         // Check for uncommitted changes and commit them first
-        let status_output = Command::new("git")
-            .args(["status", "--porcelain"])
-            .current_dir(&repo_path)
-            .output()
+        let status_output = runner
+            .run_output(
+                "git",
+                &["status", "--porcelain"],
+                &CommandOptions::with_cwd(&repo_path),
+            )
             .context("Failed to check git status")?;
 
         if !status_output.status.success() {
@@ -387,30 +413,32 @@ pub fn ensure_repo() -> Result<PathBuf> {
         if !status_output.stdout.is_empty() {
             println!("Committing local changes before pull...");
             // Stage all changes
-            let add_status = Command::new("git")
-                .args(["add", "-A"])
-                .current_dir(&repo_path)
-                .status()
+            let add_status = runner
+                .run_status("git", &["add", "-A"], &CommandOptions::with_cwd(&repo_path))
                 .context("Failed to stage changes")?;
             if !add_status.success() {
                 bail!("git add failed");
             }
 
             // Commit with auto-message
-            let commit_status = Command::new("git")
-                .args(["commit", "-m", "Auto-commit local changes before sync"])
-                .current_dir(&repo_path)
-                .status()
+            let commit_status = runner
+                .run_status(
+                    "git",
+                    &["commit", "-m", "Auto-commit local changes before sync"],
+                    &CommandOptions::with_cwd(&repo_path),
+                )
                 .context("Failed to commit changes")?;
             if !commit_status.success() {
                 bail!("git commit failed");
             }
         }
 
-        let status = Command::new("git")
-            .args(["pull", "--rebase"])
-            .current_dir(&repo_path)
-            .status()
+        let status = runner
+            .run_status(
+                "git",
+                &["pull", "--rebase"],
+                &CommandOptions::with_cwd(&repo_path),
+            )
             .context("Failed to run git pull")?;
         if !status.success() {
             bail!("git pull failed");
@@ -423,10 +451,15 @@ pub fn ensure_repo() -> Result<PathBuf> {
                 .parent()
                 .ok_or_else(|| anyhow::anyhow!("Invalid repo path: no parent directory"))?,
         )?;
-        let status = Command::new("git")
-            .args(["clone", &config.url])
-            .arg(&repo_path)
-            .status()
+        let repo_path_str = repo_path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid repo path"))?;
+        let status = runner
+            .run_status(
+                "git",
+                &["clone", &config.url, repo_path_str],
+                &CommandOptions::default(),
+            )
             .context("Failed to run git clone")?;
         if !status.success() {
             bail!("git clone failed");
@@ -448,6 +481,7 @@ pub fn ensure_repo() -> Result<PathBuf> {
 /// - GitHub PR creation fails
 /// - Manifest path validation fails (path traversal attempt)
 pub fn run_pr_workflow(
+    runner: &dyn CommandRunner,
     change: &PrChange,
     manifest_content: &str,
     skip_preflight: bool,
@@ -455,9 +489,9 @@ pub fn run_pr_workflow(
     // Validate manifest path before proceeding
     validate_manifest_path(&change.manifest_file)?;
 
-    ensure_preflight(skip_preflight)?;
+    ensure_preflight(runner, skip_preflight)?;
 
-    let repo_path = ensure_repo()?;
+    let repo_path = ensure_repo(runner)?;
 
     // Determine the full path - skel files go directly, others go in manifests/
     let manifest_path = if change.manifest_file.starts_with("skel/") {
@@ -472,10 +506,12 @@ pub fn run_pr_workflow(
     validate_branch_pattern(&branch)?;
     println!("Creating branch: {}", branch);
 
-    let status = Command::new("git")
-        .args(["checkout", "-b", &branch])
-        .current_dir(&repo_path)
-        .status()
+    let status = runner
+        .run_status(
+            "git",
+            &["checkout", "-b", &branch],
+            &CommandOptions::with_cwd(&repo_path),
+        )
         .context("Failed to create branch")?;
     if !status.success() {
         bail!("Failed to create branch {}", branch);
@@ -486,46 +522,52 @@ pub fn run_pr_workflow(
         .with_context(|| format!("Failed to write {}", manifest_path.display()))?;
 
     // Commit
-    let status = Command::new("git")
-        .args(["add", "--"])
-        .arg(&manifest_path)
-        .current_dir(&repo_path)
-        .status()?;
+    let manifest_path_str = manifest_path
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("Invalid manifest path"))?;
+    let status = runner.run_status(
+        "git",
+        &["add", "--", manifest_path_str],
+        &CommandOptions::with_cwd(&repo_path),
+    )?;
     if !status.success() {
         bail!("git add failed");
     }
 
-    let status = Command::new("git")
-        .args(["commit", "-m", &change.commit_message()])
-        .current_dir(&repo_path)
-        .status()?;
+    let status = runner.run_status(
+        "git",
+        &["commit", "-m", &change.commit_message()],
+        &CommandOptions::with_cwd(&repo_path),
+    )?;
     if !status.success() {
         bail!("git commit failed");
     }
 
     // Push
     println!("Pushing branch...");
-    let status = Command::new("git")
-        .args(["push", "-u", "origin", &branch])
-        .current_dir(&repo_path)
-        .status()?;
+    let status = runner.run_status(
+        "git",
+        &["push", "-u", "origin", &branch],
+        &CommandOptions::with_cwd(&repo_path),
+    )?;
     if !status.success() {
         bail!("git push failed");
     }
 
     // Create PR
     println!("Creating pull request...");
-    let status = Command::new("gh")
-        .args([
+    let status = runner.run_status(
+        "gh",
+        &[
             "pr",
             "create",
             "--title",
             &change.pr_title(),
             "--body",
             &change.pr_body(),
-        ])
-        .current_dir(&repo_path)
-        .status()?;
+        ],
+        &CommandOptions::with_cwd(&repo_path),
+    )?;
     if !status.success() {
         bail!("gh pr create failed");
     }
@@ -533,11 +575,11 @@ pub fn run_pr_workflow(
     // Return to default branch
     let config = RepoConfig::load()?;
     validate_branch_pattern(&config.default_branch)?;
-    match Command::new("git")
-        .args(["checkout", &config.default_branch])
-        .current_dir(&repo_path)
-        .status()
-    {
+    match runner.run_status(
+        "git",
+        &["checkout", &config.default_branch],
+        &CommandOptions::with_cwd(&repo_path),
+    ) {
         Ok(status) if !status.success() => {
             eprintln!(
                 "Warning: failed to switch back to '{}' branch",
