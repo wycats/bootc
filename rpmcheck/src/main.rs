@@ -5,24 +5,9 @@ use anyhow::{bail, Context, Result};
 use flate2::read::GzDecoder;
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use serde::{Deserialize, Serialize};
+use rpmcheck::{expand_repo_url, Manifest, RepoEntry};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
-
-// ---------------------------------------------------------------------------
-// Manifest types
-// ---------------------------------------------------------------------------
-
-#[derive(Deserialize)]
-struct Manifest {
-    repos: Vec<RepoEntry>,
-}
-
-#[derive(Deserialize)]
-struct RepoEntry {
-    name: String,
-    baseurl: String,
-    packages: Vec<String>,
-}
 
 // ---------------------------------------------------------------------------
 // Package version (from primary.xml)
@@ -182,19 +167,6 @@ fn run(manifest_path: &str, baseline: Option<&str>, json: bool) -> Result<()> {
 // ---------------------------------------------------------------------------
 // Repo checking
 // ---------------------------------------------------------------------------
-
-/// Expand DNF-style variables in a URL (e.g. `$basearch`).
-fn expand_repo_url(url: &str) -> String {
-    let basearch = match std::env::consts::ARCH {
-        "x86_64" => "x86_64",
-        "aarch64" => "aarch64",
-        "arm" => "armhfp",
-        "powerpc64" => "ppc64le",
-        "s390x" => "s390x",
-        other => other,
-    };
-    url.replace("$basearch", basearch)
-}
 
 fn check_repo(
     client: &reqwest::blocking::Client,

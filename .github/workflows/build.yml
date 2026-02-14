@@ -54,7 +54,9 @@ jobs:
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: bkt -> target
+          workspaces: |
+            bkt -> target
+            rpmcheck -> target
           shared-key: rust-ci
           # Only save cache on main to prevent PR cache pollution
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -67,6 +69,14 @@ jobs:
 
       - name: Run tests
         run: cargo test
+
+      - name: Build and test rpmcheck
+        working-directory: rpmcheck
+        env:
+          RPMCHECK_LIVE: "1"
+        run: |
+          cargo clippy -- -D warnings
+          cargo test
 
       - name: Check Containerfile is in sync with manifests
         working-directory: ${{ github.workspace }}
