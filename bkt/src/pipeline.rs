@@ -7,7 +7,8 @@
 //!
 //! This is the core infrastructure for Phase 2's command punning philosophy.
 
-use crate::Cli;
+use crate::cli::Cli;
+use crate::command_runner::{CommandRunner, RealCommandRunner};
 use crate::context::{
     CommandDomain, ExecutionContext, PrMode, resolve_context, validate_context_for_domain,
 };
@@ -30,6 +31,8 @@ pub struct ExecutionPlan {
     pub skip_preflight: bool,
     /// Backend for PR creation (enables testing)
     pr_backend: Arc<dyn PrBackend>,
+    /// Backend for external command execution (enables testing)
+    command_runner: Arc<dyn CommandRunner>,
 }
 
 impl ExecutionPlan {
@@ -45,12 +48,15 @@ impl ExecutionPlan {
             PrMode::Both
         };
 
+        let command_runner: Arc<dyn CommandRunner> = Arc::new(RealCommandRunner);
+
         Self {
             context,
             pr_mode,
             dry_run: cli.dry_run,
             skip_preflight: cli.skip_preflight,
-            pr_backend: Arc::new(GitHubBackend),
+            pr_backend: Arc::new(GitHubBackend::new(command_runner.clone())),
+            command_runner,
         }
     }
 
@@ -62,7 +68,18 @@ impl ExecutionPlan {
             dry_run,
             skip_preflight: self.skip_preflight,
             pr_backend: self.pr_backend.clone(),
+            command_runner: self.command_runner.clone(),
         }
+    }
+
+    /// Get the command runner for external command execution.
+    pub fn runner(&self) -> &dyn CommandRunner {
+        &*self.command_runner
+    }
+
+    /// Get a clone of the command runner Arc for downstream ownership.
+    pub(crate) fn command_runner_arc(&self) -> Arc<dyn CommandRunner> {
+        self.command_runner.clone()
     }
 
     /// Check if this plan allows local execution.
@@ -126,12 +143,14 @@ impl ExecutionPlan {
 
 impl Default for ExecutionPlan {
     fn default() -> Self {
+        let command_runner: Arc<dyn CommandRunner> = Arc::new(RealCommandRunner);
         Self {
             context: ExecutionContext::Host,
             pr_mode: PrMode::Both,
             dry_run: false,
             skip_preflight: false,
-            pr_backend: Arc::new(GitHubBackend),
+            pr_backend: Arc::new(GitHubBackend::new(command_runner.clone())),
+            command_runner,
         }
     }
 }
@@ -144,6 +163,7 @@ pub struct ExecutionPlanBuilder {
     dry_run: bool,
     skip_preflight: bool,
     pr_backend: Option<Arc<dyn PrBackend>>,
+    command_runner: Option<Arc<dyn CommandRunner>>,
 }
 
 impl ExecutionPlanBuilder {
@@ -176,13 +196,26 @@ impl ExecutionPlanBuilder {
         self
     }
 
+    pub fn command_runner(mut self, runner: Arc<dyn CommandRunner>) -> Self {
+        self.command_runner = Some(runner);
+        self
+    }
+
     pub fn build(self) -> ExecutionPlan {
+        let command_runner = self
+            .command_runner
+            .unwrap_or_else(|| Arc::new(RealCommandRunner));
+        let pr_backend = self
+            .pr_backend
+            .unwrap_or_else(|| Arc::new(GitHubBackend::new(command_runner.clone())));
+
         ExecutionPlan {
             context: self.context.unwrap_or(ExecutionContext::Host),
             pr_mode: self.pr_mode.unwrap_or(PrMode::Both),
             dry_run: self.dry_run,
             skip_preflight: self.skip_preflight,
-            pr_backend: self.pr_backend.unwrap_or_else(|| Arc::new(GitHubBackend)),
+            pr_backend,
+            command_runner,
         }
     }
 }

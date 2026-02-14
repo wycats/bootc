@@ -167,7 +167,7 @@ impl ExecuteContext {
     /// Create a new execution context.
     pub fn new(execution_plan: ExecutionPlan) -> Self {
         Self {
-            executor: Executor::new(execution_plan.dry_run),
+            executor: Executor::new(execution_plan.dry_run, execution_plan.command_runner_arc()),
             execution_plan,
             progress_callback: None,
             current_op: 0,
@@ -702,7 +702,7 @@ impl Plan for CompositePlan {
 /// The `*_dyn` method names use a suffix to distinguish them from the [`Plan`]
 /// trait methods they mirror. This suffix makes explicit that these are the
 /// object-safe adapters used for dynamic dispatch, not the primary API.
-trait DynPlan {
+pub trait DynPlan {
     /// Object-safe adapter for [`Plan::describe`].
     fn describe_dyn(&self) -> PlanSummary;
     /// Object-safe adapter for [`Plan::execute`], taking ownership via `Box<Self>`.

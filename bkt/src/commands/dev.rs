@@ -28,6 +28,7 @@
 //! bkt dev enter
 //! ```
 
+use crate::command_runner::{CommandOptions, CommandRunner};
 use crate::context::is_in_toolbox;
 use crate::manifest::{CoprRepo, ToolboxPackagesManifest};
 use crate::output::Output;
@@ -125,23 +126,25 @@ pub enum CoprAction {
 
 /// Run the dev command.
 pub fn run(args: DevArgs, plan: &ExecutionPlan) -> Result<()> {
+    let runner = plan.runner();
+
     match args.action {
         DevAction::Install {
             packages,
             manifest_only,
             force,
-        } => handle_install(packages, manifest_only, force, plan),
+        } => handle_install(packages, manifest_only, force, plan, runner),
         DevAction::Remove {
             packages,
             manifest_only,
-        } => handle_remove(packages, manifest_only, plan),
-        DevAction::List { format } => handle_list(format),
+        } => handle_remove(packages, manifest_only, plan, runner),
+        DevAction::List { format } => handle_list(format, runner),
         DevAction::Sync => handle_sync(plan),
         DevAction::Capture { apply } => handle_capture(apply, plan),
-        DevAction::Copr { action } => handle_copr(action, plan),
-        DevAction::Enter { name } => handle_enter(name),
-        DevAction::Status => handle_status(plan),
-        DevAction::Diff => handle_diff(plan),
+        DevAction::Copr { action } => handle_copr(action, plan, runner),
+        DevAction::Enter { name } => handle_enter(name, runner),
+        DevAction::Status => handle_status(plan, runner),
+        DevAction::Diff => handle_diff(plan, runner),
     }
 }
 
@@ -154,6 +157,7 @@ fn handle_install(
     manifest_only: bool,
     force: bool,
     plan: &ExecutionPlan,
+    runner: &dyn CommandRunner,
 ) -> Result<()> {
     if packages.is_empty() {
         bail!("No packages specified");
@@ -162,7 +166,7 @@ fn handle_install(
     // Validate that packages exist in repositories
     if !force {
         for pkg in &packages {
-            validate_dnf_package(pkg)?;
+            validate_dnf_package(runner, pkg)?;
         }
     }
 
@@ -206,7 +210,7 @@ fn handle_install(
 
     // Execute dnf if not manifest-only
     if !manifest_only && !plan.dry_run {
-        install_via_dnf(&packages)?;
+        install_via_dnf(&packages, runner)?;
     } else if !manifest_only && plan.dry_run {
         Output::dry_run(format!("Would run: dnf install -y {}", packages.join(" ")));
     }
@@ -214,7 +218,7 @@ fn handle_install(
     Ok(())
 }
 
-fn install_via_dnf(packages: &[String]) -> Result<()> {
+fn install_via_dnf(packages: &[String], runner: &dyn CommandRunner) -> Result<()> {
     let mut args = vec!["install", "-y"];
 
     for pkg in packages {
@@ -223,9 +227,8 @@ fn install_via_dnf(packages: &[String]) -> Result<()> {
 
     Output::running(format!("dnf {}", args.join(" ")));
 
-    let status = Command::new("dnf")
-        .args(&args)
-        .status()
+    let status = runner
+        .run_status("dnf", &args, &CommandOptions::default())
         .context("Failed to run dnf")?;
 
     if !status.success() {
@@ -240,7 +243,12 @@ fn install_via_dnf(packages: &[String]) -> Result<()> {
 // Remove Command
 // =============================================================================
 
-fn handle_remove(packages: Vec<String>, manifest_only: bool, plan: &ExecutionPlan) -> Result<()> {
+fn handle_remove(
+    packages: Vec<String>,
+    manifest_only: bool,
+    plan: &ExecutionPlan,
+    runner: &dyn CommandRunner,
+) -> Result<()> {
     if packages.is_empty() {
         bail!("No packages specified");
     }
@@ -267,7 +275,7 @@ fn handle_remove(packages: Vec<String>, manifest_only: bool, plan: &ExecutionPla
 
     // Execute dnf if not manifest-only
     if !manifest_only && !plan.dry_run {
-        remove_via_dnf(&packages)?;
+        remove_via_dnf(&packages, runner)?;
     } else if !manifest_only && plan.dry_run {
         Output::dry_run(format!("Would run: dnf remove -y {}", packages.join(" ")));
     }
@@ -275,7 +283,7 @@ fn handle_remove(packages: Vec<String>, manifest_only: bool, plan: &ExecutionPla
     Ok(())
 }
 
-fn remove_via_dnf(packages: &[String]) -> Result<()> {
+fn remove_via_dnf(packages: &[String], runner: &dyn CommandRunner) -> Result<()> {
     let mut args = vec!["remove", "-y"];
 
     for pkg in packages {
@@ -284,9 +292,8 @@ fn remove_via_dnf(packages: &[String]) -> Result<()> {
 
     Output::running(format!("dnf {}", args.join(" ")));
 
-    let status = Command::new("dnf")
-        .args(&args)
-        .status()
+    let status = runner
+        .run_status("dnf", &args, &CommandOptions::default())
         .context("Failed to run dnf")?;
 
     if !status.success() {
@@ -301,7 +308,7 @@ fn remove_via_dnf(packages: &[String]) -> Result<()> {
 // List Command
 // =============================================================================
 
-fn handle_list(format: String) -> Result<()> {
+fn handle_list(format: String, runner: &dyn CommandRunner) -> Result<()> {
     let manifest = ToolboxPackagesManifest::load_user()?;
 
     if format == "json" {
@@ -320,7 +327,7 @@ fn handle_list(format: String) -> Result<()> {
         println!("{:<40} STATUS", "NAME".cyan());
         Output::separator();
         for pkg in &manifest.packages {
-            let installed = if is_package_installed(pkg) {
+            let installed = if is_package_installed(pkg, runner) {
                 "✓".green().to_string()
             } else {
                 "✗".red().to_string()
@@ -433,21 +440,26 @@ fn handle_capture(apply: bool, plan: &ExecutionPlan) -> Result<()> {
 // COPR Commands
 // =============================================================================
 
-fn handle_copr(action: CoprAction, plan: &ExecutionPlan) -> Result<()> {
+fn handle_copr(action: CoprAction, plan: &ExecutionPlan, runner: &dyn CommandRunner) -> Result<()> {
     match action {
         CoprAction::Enable {
             name,
             manifest_only,
-        } => handle_copr_enable(name, manifest_only, plan),
+        } => handle_copr_enable(name, manifest_only, plan, runner),
         CoprAction::Disable {
             name,
             manifest_only,
-        } => handle_copr_disable(name, manifest_only, plan),
+        } => handle_copr_disable(name, manifest_only, plan, runner),
         CoprAction::List => handle_copr_list(),
     }
 }
 
-fn handle_copr_enable(name: String, manifest_only: bool, plan: &ExecutionPlan) -> Result<()> {
+fn handle_copr_enable(
+    name: String,
+    manifest_only: bool,
+    plan: &ExecutionPlan,
+    runner: &dyn CommandRunner,
+) -> Result<()> {
     let mut manifest = ToolboxPackagesManifest::load_user()?;
 
     if manifest
@@ -472,9 +484,12 @@ fn handle_copr_enable(name: String, manifest_only: bool, plan: &ExecutionPlan) -
 
     if !manifest_only && !plan.dry_run {
         Output::running(format!("dnf copr enable -y {}", name));
-        let status = Command::new("dnf")
-            .args(["copr", "enable", "-y", &name])
-            .status()
+        let status = runner
+            .run_status(
+                "dnf",
+                &["copr", "enable", "-y", &name],
+                &CommandOptions::default(),
+            )
             .context("Failed to enable COPR")?;
 
         if !status.success() {
@@ -489,7 +504,12 @@ fn handle_copr_enable(name: String, manifest_only: bool, plan: &ExecutionPlan) -
     Ok(())
 }
 
-fn handle_copr_disable(name: String, manifest_only: bool, plan: &ExecutionPlan) -> Result<()> {
+fn handle_copr_disable(
+    name: String,
+    manifest_only: bool,
+    plan: &ExecutionPlan,
+    runner: &dyn CommandRunner,
+) -> Result<()> {
     let mut manifest = ToolboxPackagesManifest::load_user()?;
 
     let in_manifest = manifest.copr_repos.iter().any(|c| c.name == name);
@@ -511,9 +531,12 @@ fn handle_copr_disable(name: String, manifest_only: bool, plan: &ExecutionPlan) 
 
     if !manifest_only && !plan.dry_run {
         Output::running(format!("dnf copr disable {}", name));
-        let status = Command::new("dnf")
-            .args(["copr", "disable", &name])
-            .status()
+        let status = runner
+            .run_status(
+                "dnf",
+                &["copr", "disable", &name],
+                &CommandOptions::default(),
+            )
             .context("Failed to disable COPR")?;
 
         if !status.success() {
@@ -560,15 +583,15 @@ fn handle_copr_list() -> Result<()> {
 // Enter Command
 // =============================================================================
 
-fn handle_enter(name: Option<String>) -> Result<()> {
+fn handle_enter(name: Option<String>, runner: &dyn CommandRunner) -> Result<()> {
     let toolbox_name = name.unwrap_or_else(|| "bootc-dev".to_string());
 
     // Check if toolbox exists
-    let exists = check_toolbox_exists(&toolbox_name)?;
+    let exists = check_toolbox_exists(&toolbox_name, runner)?;
 
     if !exists {
         Output::info(format!("Toolbox '{}' not found. Creating...", toolbox_name));
-        create_toolbox(&toolbox_name)?;
+        create_toolbox(&toolbox_name, runner)?;
     }
 
     // Enter toolbox (uses exec, doesn't return)
@@ -576,10 +599,13 @@ fn handle_enter(name: Option<String>) -> Result<()> {
     enter_toolbox(&toolbox_name)
 }
 
-fn check_toolbox_exists(name: &str) -> Result<bool> {
-    let output = Command::new("toolbox")
-        .args(["list", "--containers"])
-        .output()
+fn check_toolbox_exists(name: &str, runner: &dyn CommandRunner) -> Result<bool> {
+    let output = runner
+        .run_output(
+            "toolbox",
+            &["list", "--containers"],
+            &CommandOptions::default(),
+        )
         .context("Failed to run `toolbox list`")?;
 
     if !output.status.success() {
@@ -590,10 +616,9 @@ fn check_toolbox_exists(name: &str) -> Result<bool> {
     Ok(stdout.lines().any(|line| line.contains(name)))
 }
 
-fn create_toolbox(name: &str) -> Result<()> {
-    let status = Command::new("toolbox")
-        .args(["create", name])
-        .status()
+fn create_toolbox(name: &str, runner: &dyn CommandRunner) -> Result<()> {
+    let status = runner
+        .run_status("toolbox", &["create", name], &CommandOptions::default())
         .context("Failed to create toolbox")?;
 
     if !status.success() {
@@ -617,7 +642,7 @@ fn enter_toolbox(name: &str) -> Result<()> {
 // Status Command
 // =============================================================================
 
-fn handle_status(plan: &ExecutionPlan) -> Result<()> {
+fn handle_status(plan: &ExecutionPlan, runner: &dyn CommandRunner) -> Result<()> {
     Output::header("=== Development Toolbox Status ===");
 
     // Check if we're in a toolbox
@@ -649,7 +674,7 @@ fn handle_status(plan: &ExecutionPlan) -> Result<()> {
         Output::separator();
 
         for pkg in &manifest.packages {
-            let installed = if is_package_installed(pkg) {
+            let installed = if is_package_installed(pkg, runner) {
                 format!("{} installed", "✓".green())
             } else {
                 format!("{} not installed", "✗".red())
@@ -688,7 +713,7 @@ fn handle_status(plan: &ExecutionPlan) -> Result<()> {
     let missing: Vec<_> = manifest
         .packages
         .iter()
-        .filter(|p| !is_package_installed(p))
+        .filter(|p| !is_package_installed(p, runner))
         .collect();
 
     let installed_count = manifest.packages.len() - missing.len();
@@ -717,7 +742,7 @@ fn handle_status(plan: &ExecutionPlan) -> Result<()> {
 // Diff Command
 // =============================================================================
 
-fn handle_diff(plan: &ExecutionPlan) -> Result<()> {
+fn handle_diff(plan: &ExecutionPlan, runner: &dyn CommandRunner) -> Result<()> {
     let manifest = ToolboxPackagesManifest::load_user()?;
 
     if manifest.packages.is_empty() {
@@ -729,7 +754,7 @@ fn handle_diff(plan: &ExecutionPlan) -> Result<()> {
     let mut installed = Vec::new();
 
     for pkg in &manifest.packages {
-        if is_package_installed(pkg) {
+        if is_package_installed(pkg, runner) {
             installed.push(pkg);
         } else {
             missing.push(pkg);
@@ -768,10 +793,9 @@ fn handle_diff(plan: &ExecutionPlan) -> Result<()> {
 // =============================================================================
 
 /// Check if a package is installed (uses rpm).
-fn is_package_installed(package: &str) -> bool {
-    Command::new("rpm")
-        .args(["-q", package])
-        .output()
+fn is_package_installed(package: &str, runner: &dyn CommandRunner) -> bool {
+    runner
+        .run_output("rpm", &["-q", package], &CommandOptions::default())
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
@@ -794,14 +818,16 @@ pub struct DevSyncPlan {
 impl Plannable for DevSyncCommand {
     type Plan = DevSyncPlan;
 
-    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+    fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
+        let runner = ctx.execution_plan().runner();
+
         let manifest = ToolboxPackagesManifest::load_user()?;
 
         let mut to_install = Vec::new();
         let mut already_installed = 0;
 
         for pkg in manifest.packages {
-            if is_package_installed(&pkg) {
+            if is_package_installed(&pkg, runner) {
                 already_installed += 1;
             } else {
                 to_install.push(pkg);
@@ -837,8 +863,10 @@ impl Plan for DevSyncPlan {
             return Ok(report);
         }
 
+        let runner = ctx.execution_plan().runner();
+
         // Install all packages in one batch for efficiency
-        let result = install_via_dnf(&self.to_install);
+        let result = install_via_dnf(&self.to_install, runner);
 
         match result {
             Ok(()) => {
@@ -888,9 +916,11 @@ pub struct DevCapturePlan {
 impl Plannable for DevCaptureCommand {
     type Plan = DevCapturePlan;
 
-    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+    fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
+        let runner = ctx.execution_plan().runner();
+
         // Get explicitly installed packages (not auto-installed dependencies)
-        let installed = get_user_installed_packages();
+        let installed = get_user_installed_packages(runner);
 
         // Load manifest to check what's already tracked
         let manifest = ToolboxPackagesManifest::load_user()?;
@@ -965,11 +995,13 @@ impl Plan for DevCapturePlan {
 ///
 /// This returns packages that were explicitly installed by the user,
 /// not auto-installed as dependencies.
-fn get_user_installed_packages() -> Vec<String> {
+fn get_user_installed_packages(runner: &dyn CommandRunner) -> Vec<String> {
     // Use dnf repoquery to find user-installed packages
-    let output = Command::new("dnf")
-        .args(["repoquery", "--userinstalled", "--qf", "%{name}"])
-        .output();
+    let output = runner.run_output(
+        "dnf",
+        &["repoquery", "--userinstalled", "--qf", "%{name}"],
+        &CommandOptions::default(),
+    );
 
     let output = match output {
         Ok(o) if o.status.success() => o,
@@ -987,6 +1019,7 @@ fn get_user_installed_packages() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::command_runner::RealCommandRunner;
 
     #[test]
     fn test_is_in_toolbox_returns() {
@@ -1000,7 +1033,8 @@ mod tests {
         // bash should be installed on any Linux system
         #[cfg(target_os = "linux")]
         {
-            let _ = is_package_installed("bash");
+            let runner = RealCommandRunner;
+            let _ = is_package_installed("bash", &runner);
         }
     }
 }

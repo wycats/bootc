@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::command_runner::{CommandOptions, CommandRunner};
 use crate::context::{CommandDomain, run_command};
 use crate::manifest::{DistroboxBins, DistroboxContainer, DistroboxManifest};
 use crate::output::Output;
@@ -39,6 +40,8 @@ pub enum DistroboxAction {
 
 pub fn run(args: DistroboxArgs, plan: &ExecutionPlan) -> Result<()> {
     plan.validate_domain(CommandDomain::Distrobox)?;
+
+    let runner = plan.runner();
 
     let cwd = std::env::current_dir()?;
     let plan_ctx = PlanContext::new(cwd, plan.clone());
@@ -81,7 +84,7 @@ pub fn run(args: DistroboxArgs, plan: &ExecutionPlan) -> Result<()> {
             if let Some(container_name) = packages {
                 let manifest = DistroboxManifest::load_from_dir(plan_ctx.manifest_dir())?;
                 let base_image = get_container_base_image(&manifest, &container_name)?;
-                let captured = capture_container_packages(&container_name, &base_image)?;
+                let captured = capture_container_packages(&container_name, &base_image, runner)?;
 
                 if captured.is_empty() {
                     println!(
@@ -482,12 +485,12 @@ fn list_bins_in_dir(container: &str, dir: &str, original_dir: &str) -> Result<Ve
 }
 
 /// Validate that a container exists and is running.
-fn validate_container_state(container_name: &str) -> Result<()> {
-    use std::process::Command;
-
-    let exists = Command::new("podman")
-        .args(["container", "exists", container_name])
-        .status()?;
+fn validate_container_state(container_name: &str, runner: &dyn CommandRunner) -> Result<()> {
+    let exists = runner.run_status(
+        "podman",
+        &["container", "exists", container_name],
+        &CommandOptions::default(),
+    )?;
 
     if !exists.success() {
         bail!(
@@ -496,15 +499,17 @@ fn validate_container_state(container_name: &str) -> Result<()> {
         );
     }
 
-    let ps_output = Command::new("podman")
-        .args([
+    let ps_output = runner.run_output(
+        "podman",
+        &[
             "ps",
             "--filter",
             &format!("name=^{}$", container_name),
             "--format",
             "{{.State}}",
-        ])
-        .output()?;
+        ],
+        &CommandOptions::default(),
+    )?;
 
     let state = String::from_utf8_lossy(&ps_output.stdout)
         .trim()
@@ -544,11 +549,11 @@ fn get_container_base_image(manifest: &DistroboxManifest, container_name: &str) 
 /// Extract packages from a running distrobox container.
 fn extract_packages_from_container(
     container_name: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<std::collections::BTreeSet<String>> {
-    use std::process::Command;
-
-    let output = Command::new("distrobox")
-        .args([
+    let output = runner.run_output(
+        "distrobox",
+        &[
             "enter",
             container_name,
             "--",
@@ -556,8 +561,9 @@ fn extract_packages_from_container(
             "-qa",
             "--qf",
             "%{NAME}\n",
-        ])
-        .output()?;
+        ],
+        &CommandOptions::default(),
+    )?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -579,11 +585,13 @@ fn extract_packages_from_container(
 }
 
 /// Extract packages from a container image.
-fn extract_packages_from_image(image: &str) -> Result<std::collections::BTreeSet<String>> {
-    use std::process::Command;
-
-    let output = Command::new("podman")
-        .args([
+fn extract_packages_from_image(
+    image: &str,
+    runner: &dyn CommandRunner,
+) -> Result<std::collections::BTreeSet<String>> {
+    let output = runner.run_output(
+        "podman",
+        &[
             "run",
             "--rm",
             "--entrypoint",
@@ -592,8 +600,9 @@ fn extract_packages_from_image(image: &str) -> Result<std::collections::BTreeSet
             "-qa",
             "--qf",
             "%{NAME}\n",
-        ])
-        .output()?;
+        ],
+        &CommandOptions::default(),
+    )?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -615,15 +624,19 @@ fn extract_packages_from_image(image: &str) -> Result<std::collections::BTreeSet
 }
 
 /// Capture user-installed packages from a running distrobox container.
-fn capture_container_packages(container_name: &str, base_image: &str) -> Result<Vec<String>> {
-    validate_container_state(container_name)?;
+fn capture_container_packages(
+    container_name: &str,
+    base_image: &str,
+    runner: &dyn CommandRunner,
+) -> Result<Vec<String>> {
+    validate_container_state(container_name, runner)?;
 
     println!("Extracting packages from container '{}'...", container_name);
-    let container_packages = extract_packages_from_container(container_name)?;
+    let container_packages = extract_packages_from_container(container_name, runner)?;
     println!("Found {} packages in container", container_packages.len());
 
     println!("Extracting packages from base image '{}'...", base_image);
-    let base_packages = extract_packages_from_image(base_image)?;
+    let base_packages = extract_packages_from_image(base_image, runner)?;
     println!("Found {} packages in base image", base_packages.len());
 
     let user_installed: Vec<String> = container_packages

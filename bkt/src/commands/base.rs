@@ -12,12 +12,12 @@
 //! - Get early warning of breaking changes in upstream
 //! - Document our dependencies on the base image
 
+use crate::command_runner::{CommandOptions, CommandRunner};
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
 use std::env;
 use std::path::PathBuf;
-use std::process::Command;
 
 use crate::manifest::{
     BaseImageAssumptions, ChangeCategory, ChangeType, ChangelogEntry, ChangelogManager,
@@ -74,18 +74,18 @@ pub enum BaseAction {
     },
 }
 
-pub fn run(args: BaseArgs) -> Result<()> {
+pub fn run(args: BaseArgs, runner: &dyn CommandRunner) -> Result<()> {
     match args.action {
-        BaseAction::Verify => handle_verify(),
-        BaseAction::Assume { package, reason } => handle_assume(package, reason),
+        BaseAction::Verify => handle_verify(runner),
+        BaseAction::Assume { package, reason } => handle_assume(package, reason, runner),
         BaseAction::Unassume { package } => handle_unassume(package),
         BaseAction::List => handle_list(),
-        BaseAction::Info => handle_info(),
+        BaseAction::Info => handle_info(runner),
         BaseAction::Snapshot {
             filter,
             output,
             yes,
-        } => handle_snapshot(filter, output, yes),
+        } => handle_snapshot(filter, output, yes, runner),
     }
 }
 
@@ -95,7 +95,7 @@ fn get_repo_root() -> Result<PathBuf> {
         .context("Not in a git repository. Run this command from within the bootc repository.")
 }
 
-fn handle_verify() -> Result<()> {
+fn handle_verify(runner: &dyn CommandRunner) -> Result<()> {
     let assumptions = BaseImageAssumptions::load_from_repo()?;
 
     if assumptions.packages.is_empty() {
@@ -114,7 +114,7 @@ fn handle_verify() -> Result<()> {
     let mut missing = Vec::new();
 
     for pkg in &assumptions.packages {
-        if !is_package_installed(&pkg.name)? {
+        if !is_package_installed(&pkg.name, runner)? {
             missing.push(&pkg.name);
         }
     }
@@ -148,7 +148,11 @@ fn handle_verify() -> Result<()> {
     Ok(())
 }
 
-fn handle_assume(package: String, reason: Option<String>) -> Result<()> {
+fn handle_assume(
+    package: String,
+    reason: Option<String>,
+    runner: &dyn CommandRunner,
+) -> Result<()> {
     let mut assumptions = BaseImageAssumptions::load_from_repo()?;
 
     // Check if already assumed
@@ -158,7 +162,7 @@ fn handle_assume(package: String, reason: Option<String>) -> Result<()> {
     }
 
     // Verify the package exists
-    if !is_package_installed(&package)? {
+    if !is_package_installed(&package, runner)? {
         Output::warning(format!(
             "Package '{}' is not currently installed. Adding anyway.",
             package
@@ -265,7 +269,7 @@ fn handle_list() -> Result<()> {
     Ok(())
 }
 
-fn handle_info() -> Result<()> {
+fn handle_info(runner: &dyn CommandRunner) -> Result<()> {
     let repo_root = get_repo_root()?;
 
     Output::header("Base Image Information");
@@ -292,9 +296,11 @@ fn handle_info() -> Result<()> {
     }
 
     // Get current rpm-ostree status
-    let output = Command::new("rpm-ostree")
-        .args(["status", "--json"])
-        .output();
+    let output = runner.run_output(
+        "rpm-ostree",
+        &["status", "--json"],
+        &CommandOptions::default(),
+    );
 
     if let Ok(output) = output
         && output.status.success()
@@ -316,14 +322,22 @@ fn handle_info() -> Result<()> {
     Ok(())
 }
 
-fn handle_snapshot(filter: Option<String>, output: Option<PathBuf>, _yes: bool) -> Result<()> {
+fn handle_snapshot(
+    filter: Option<String>,
+    output: Option<PathBuf>,
+    _yes: bool,
+    runner: &dyn CommandRunner,
+) -> Result<()> {
     Output::info("Collecting installed packages from base image...");
 
     // Get list of packages that came with the base image
     // On rpm-ostree systems, we can look at the base package list
-    let pkg_output = Command::new("rpm")
-        .args(["-qa", "--queryformat", "%{NAME}\n"])
-        .output()
+    let pkg_output = runner
+        .run_output(
+            "rpm",
+            &["-qa", "--queryformat", "%{NAME}\n"],
+            &CommandOptions::default(),
+        )
         .context("Failed to query RPM packages")?;
 
     if !pkg_output.status.success() {
@@ -364,10 +378,9 @@ fn handle_snapshot(filter: Option<String>, output: Option<PathBuf>, _yes: bool) 
     Ok(())
 }
 
-fn is_package_installed(package: &str) -> Result<bool> {
-    let output = Command::new("rpm")
-        .args(["-q", package])
-        .output()
+fn is_package_installed(package: &str, runner: &dyn CommandRunner) -> Result<bool> {
+    let output = runner
+        .run_output("rpm", &["-q", package], &CommandOptions::default())
         .context("Failed to check if package is installed")?;
 
     Ok(output.status.success())

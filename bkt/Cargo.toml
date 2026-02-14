@@ -5,6 +5,14 @@ edition = "2024"
 description = "Bucket - manage your bootc manifests"
 authors = ["Yehuda Katz"]
 
+[lib]
+name = "bkt"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bkt"
+path = "src/main.rs"
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"

@@ -3,6 +3,7 @@
 //! Manages external resources (themes, icons, fonts, tools) with version
 //! pinning and cryptographic verification.
 
+use crate::command_runner::{CommandOptions, CommandRunner};
 use crate::manifest::{
     InstallConfig, ManifestRepo, PinnedVersion, ReleaseType, Upstream, UpstreamManifest,
     UpstreamSource,
@@ -13,7 +14,6 @@ use chrono::Utc;
 use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
 use sha2::{Digest, Sha256};
-use std::process::Command;
 
 #[derive(Debug, Args)]
 pub struct UpstreamArgs {
@@ -81,14 +81,14 @@ pub enum UpstreamAction {
     },
 }
 
-pub fn run(args: UpstreamArgs) -> Result<()> {
+pub fn run(args: UpstreamArgs, runner: &dyn CommandRunner) -> Result<()> {
     match args.action {
         UpstreamAction::List { format } => handle_list(&format),
         UpstreamAction::Check {
             name,
             include_prereleases,
-        } => handle_check(name, include_prereleases),
-        UpstreamAction::Update { name, all } => handle_update(name, all),
+        } => handle_check(name, include_prereleases, runner),
+        UpstreamAction::Update { name, all } => handle_update(name, all, runner),
         UpstreamAction::Add {
             source,
             name,
@@ -96,8 +96,8 @@ pub fn run(args: UpstreamArgs) -> Result<()> {
         } => handle_add(source, name, asset),
         UpstreamAction::Pin { name, version } => handle_pin(name, version),
         UpstreamAction::Remove { name } => handle_remove(name),
-        UpstreamAction::Verify => handle_verify(),
-        UpstreamAction::Lock => handle_lock(),
+        UpstreamAction::Verify => handle_verify(runner),
+        UpstreamAction::Lock => handle_lock(runner),
         UpstreamAction::Generate => handle_generate(),
         UpstreamAction::Info { name } => handle_info(&name),
     }
@@ -157,7 +157,11 @@ fn handle_list(format: &str) -> Result<()> {
     Ok(())
 }
 
-fn handle_check(name: Option<String>, include_prereleases: bool) -> Result<()> {
+fn handle_check(
+    name: Option<String>,
+    include_prereleases: bool,
+    runner: &dyn CommandRunner,
+) -> Result<()> {
     let manifest = UpstreamManifest::load()?;
 
     let upstreams: Vec<&Upstream> = match &name {
@@ -181,7 +185,7 @@ fn handle_check(name: Option<String>, include_prereleases: bool) -> Result<()> {
     for upstream in upstreams {
         let spinner = Output::spinner(format!("Checking {}...", upstream.name));
 
-        match check_for_update(upstream, include_prereleases) {
+        match check_for_update(upstream, include_prereleases, runner) {
             Ok(Some(new_version)) => {
                 spinner.finish_clear();
                 println!(
@@ -223,10 +227,14 @@ fn handle_check(name: Option<String>, include_prereleases: bool) -> Result<()> {
     Ok(())
 }
 
-fn check_for_update(upstream: &Upstream, include_prereleases: bool) -> Result<Option<String>> {
+fn check_for_update(
+    upstream: &Upstream,
+    include_prereleases: bool,
+    runner: &dyn CommandRunner,
+) -> Result<Option<String>> {
     match &upstream.source {
         UpstreamSource::GitHub { repo, .. } => {
-            check_github_update(repo, &upstream.pinned.version, include_prereleases)
+            check_github_update(repo, &upstream.pinned.version, include_prereleases, runner)
         }
         UpstreamSource::Url { .. } => {
             // URL sources can't be automatically checked
@@ -239,23 +247,30 @@ fn check_github_update(
     repo: &str,
     current_version: &str,
     include_prereleases: bool,
+    runner: &dyn CommandRunner,
 ) -> Result<Option<String>> {
     // Use gh CLI to query latest release
-    let output = Command::new("gh")
-        .args([
-            "api",
-            &format!("repos/{}/releases/latest", repo),
-            "--jq",
-            ".tag_name",
-        ])
-        .output()
+    let output = runner
+        .run_output(
+            "gh",
+            &[
+                "api",
+                &format!("repos/{}/releases/latest", repo),
+                "--jq",
+                ".tag_name",
+            ],
+            &CommandOptions::default(),
+        )
         .context("Failed to run gh CLI")?;
 
     if !output.status.success() {
         // Maybe no releases, try tags
-        let output = Command::new("gh")
-            .args(["api", &format!("repos/{}/tags", repo), "--jq", ".[0].name"])
-            .output()
+        let output = runner
+            .run_output(
+                "gh",
+                &["api", &format!("repos/{}/tags", repo), "--jq", ".[0].name"],
+                &CommandOptions::default(),
+            )
             .context("Failed to query tags")?;
 
         if !output.status.success() {
@@ -296,7 +311,7 @@ fn is_prerelease(version: &str) -> bool {
         || version.contains("-pre")
 }
 
-fn handle_update(name: Option<String>, all: bool) -> Result<()> {
+fn handle_update(name: Option<String>, all: bool, runner: &dyn CommandRunner) -> Result<()> {
     if name.is_none() && !all {
         Output::error("Specify an upstream name or use --all to update all.");
         return Ok(());
@@ -312,7 +327,7 @@ fn handle_update(name: Option<String>, all: bool) -> Result<()> {
     for upstream_name in names {
         let spinner = Output::spinner(format!("Updating {}...", upstream_name));
 
-        match update_upstream(&mut manifest, &upstream_name) {
+        match update_upstream(&mut manifest, &upstream_name, runner) {
             Ok(Some(new_version)) => {
                 spinner.finish_clear();
                 Output::success(format!("{} updated to {}", upstream_name, new_version));
@@ -334,7 +349,11 @@ fn handle_update(name: Option<String>, all: bool) -> Result<()> {
     Ok(())
 }
 
-fn update_upstream(manifest: &mut UpstreamManifest, name: &str) -> Result<Option<String>> {
+fn update_upstream(
+    manifest: &mut UpstreamManifest,
+    name: &str,
+    runner: &dyn CommandRunner,
+) -> Result<Option<String>> {
     let upstream = manifest
         .find(name)
         .with_context(|| format!("Upstream '{}' not found", name))?
@@ -342,7 +361,7 @@ fn update_upstream(manifest: &mut UpstreamManifest, name: &str) -> Result<Option
 
     let new_version = match &upstream.source {
         UpstreamSource::GitHub { repo, .. } => {
-            check_github_update(repo, &upstream.pinned.version, false)?
+            check_github_update(repo, &upstream.pinned.version, false, runner)?
         }
         UpstreamSource::Url { .. } => None,
     };
@@ -470,7 +489,7 @@ fn handle_remove(name: String) -> Result<()> {
     Ok(())
 }
 
-fn handle_verify() -> Result<()> {
+fn handle_verify(runner: &dyn CommandRunner) -> Result<()> {
     let manifest = UpstreamManifest::load()?;
 
     if manifest.upstreams.is_empty() {
@@ -499,7 +518,7 @@ fn handle_verify() -> Result<()> {
 
         let spinner = Output::spinner(format!("Verifying {}...", upstream.name));
 
-        match verify_upstream(upstream) {
+        match verify_upstream(upstream, runner) {
             Ok(true) => {
                 spinner.finish_clear();
                 println!(
@@ -547,14 +566,14 @@ fn handle_verify() -> Result<()> {
     Ok(())
 }
 
-fn verify_upstream(upstream: &Upstream) -> Result<bool> {
+fn verify_upstream(upstream: &Upstream, runner: &dyn CommandRunner) -> Result<bool> {
     // Download and compute checksum
-    let url = get_download_url(upstream)?;
-    let computed_hash = download_and_hash(&url)?;
+    let url = get_download_url(upstream, runner)?;
+    let computed_hash = download_and_hash(&url, runner)?;
     Ok(computed_hash == upstream.pinned.sha256)
 }
 
-fn get_download_url(upstream: &Upstream) -> Result<String> {
+fn get_download_url(upstream: &Upstream, runner: &dyn CommandRunner) -> Result<String> {
     match &upstream.source {
         UpstreamSource::GitHub {
             repo,
@@ -567,8 +586,9 @@ fn get_download_url(upstream: &Upstream) -> Result<String> {
                 ReleaseType::Release => {
                     if let Some(pattern) = asset_pattern {
                         // Get specific asset from release
-                        let output = Command::new("gh")
-                            .args([
+                        let output = runner.run_output(
+                            "gh",
+                            &[
                                 "release",
                                 "view",
                                 version,
@@ -581,8 +601,9 @@ fn get_download_url(upstream: &Upstream) -> Result<String> {
                                     ".assets[] | select(.name | test(\"{}\")) | .url",
                                     pattern.replace('*', ".*")
                                 ),
-                            ])
-                            .output()?;
+                            ],
+                            &CommandOptions::default(),
+                        )?;
 
                         if output.status.success() {
                             let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -610,10 +631,9 @@ fn get_download_url(upstream: &Upstream) -> Result<String> {
     }
 }
 
-fn download_and_hash(url: &str) -> Result<String> {
-    let output = Command::new("curl")
-        .args(["-fsSL", url])
-        .output()
+fn download_and_hash(url: &str, runner: &dyn CommandRunner) -> Result<String> {
+    let output = runner
+        .run_output("curl", &["-fsSL", url], &CommandOptions::default())
         .context("Failed to download")?;
 
     if !output.status.success() {
@@ -627,7 +647,7 @@ fn download_and_hash(url: &str) -> Result<String> {
     Ok(hex::encode(hash))
 }
 
-fn handle_lock() -> Result<()> {
+fn handle_lock(runner: &dyn CommandRunner) -> Result<()> {
     let mut manifest = UpstreamManifest::load()?;
 
     if manifest.upstreams.is_empty() {
@@ -645,7 +665,7 @@ fn handle_lock() -> Result<()> {
         let upstream = manifest.find(&name).unwrap().clone();
         let spinner = Output::spinner(format!("Downloading {}...", upstream.name));
 
-        match lock_upstream(&upstream) {
+        match lock_upstream(&upstream, runner) {
             Ok((sha256, url)) => {
                 spinner.finish_clear();
                 if let Some(u) = manifest.find_mut(&name) {
@@ -681,9 +701,9 @@ fn handle_lock() -> Result<()> {
     Ok(())
 }
 
-fn lock_upstream(upstream: &Upstream) -> Result<(String, String)> {
-    let url = get_download_url(upstream)?;
-    let hash = download_and_hash(&url)?;
+fn lock_upstream(upstream: &Upstream, runner: &dyn CommandRunner) -> Result<(String, String)> {
+    let url = get_download_url(upstream, runner)?;
+    let hash = download_and_hash(&url, runner)?;
     Ok((hash, url))
 }
 

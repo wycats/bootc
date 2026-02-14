@@ -2,11 +2,11 @@
 //!
 //! Provides passwordless access to bootc operations via polkit + pkexec.
 
+use crate::command_runner::{CommandOptions, CommandRunner};
 use anyhow::{Context, Result, bail};
 use clap::Subcommand;
 use is_terminal::IsTerminal;
 use owo_colors::OwoColorize;
-use std::process::Command;
 
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
@@ -69,20 +69,22 @@ pub enum BootcAction {
 
 /// Execute a bootc action.
 pub fn run(action: BootcAction, plan: &ExecutionPlan) -> Result<()> {
+    let runner = plan.runner();
+
     match action {
-        BootcAction::Status => handle_status(plan),
-        BootcAction::Upgrade { confirm, yes } => handle_upgrade(plan, confirm, yes),
+        BootcAction::Status => handle_status(plan, runner),
+        BootcAction::Upgrade { confirm, yes } => handle_upgrade(plan, confirm, yes, runner),
         BootcAction::Switch {
             image,
             confirm,
             yes,
-        } => handle_switch(plan, &image, confirm, yes),
-        BootcAction::Rollback { confirm, yes } => handle_rollback(plan, confirm, yes),
+        } => handle_switch(plan, &image, confirm, yes, runner),
+        BootcAction::Rollback { confirm, yes } => handle_rollback(plan, confirm, yes, runner),
     }
 }
 
 /// Handle `bkt admin bootc status`.
-fn handle_status(plan: &ExecutionPlan) -> Result<()> {
+fn handle_status(plan: &ExecutionPlan, runner: &dyn CommandRunner) -> Result<()> {
     if plan.dry_run {
         Output::dry_run(format!(
             "Would execute: {}",
@@ -91,11 +93,16 @@ fn handle_status(plan: &ExecutionPlan) -> Result<()> {
         return Ok(());
     }
 
-    exec_bootc("status", &[])
+    exec_bootc("status", &[], runner)
 }
 
 /// Handle `bkt admin bootc upgrade`.
-fn handle_upgrade(plan: &ExecutionPlan, confirm: bool, yes: bool) -> Result<()> {
+fn handle_upgrade(
+    plan: &ExecutionPlan,
+    confirm: bool,
+    yes: bool,
+    runner: &dyn CommandRunner,
+) -> Result<()> {
     // --yes implies --confirm (for non-interactive automation)
     let confirmed = confirm || yes;
     require_confirmation("upgrade", confirmed)?;
@@ -114,11 +121,17 @@ fn handle_upgrade(plan: &ExecutionPlan, confirm: bool, yes: bool) -> Result<()> 
         return Ok(());
     }
 
-    exec_bootc("upgrade", &[])
+    exec_bootc("upgrade", &[], runner)
 }
 
 /// Handle `bkt admin bootc switch`.
-fn handle_switch(plan: &ExecutionPlan, image: &str, confirm: bool, yes: bool) -> Result<()> {
+fn handle_switch(
+    plan: &ExecutionPlan,
+    image: &str,
+    confirm: bool,
+    yes: bool,
+    runner: &dyn CommandRunner,
+) -> Result<()> {
     // --yes implies --confirm (for non-interactive automation)
     let confirmed = confirm || yes;
     require_confirmation("switch", confirmed)?;
@@ -137,11 +150,16 @@ fn handle_switch(plan: &ExecutionPlan, image: &str, confirm: bool, yes: bool) ->
         return Ok(());
     }
 
-    exec_bootc("switch", &[image.to_string()])
+    exec_bootc("switch", &[image.to_string()], runner)
 }
 
 /// Handle `bkt admin bootc rollback`.
-fn handle_rollback(plan: &ExecutionPlan, confirm: bool, yes: bool) -> Result<()> {
+fn handle_rollback(
+    plan: &ExecutionPlan,
+    confirm: bool,
+    yes: bool,
+    runner: &dyn CommandRunner,
+) -> Result<()> {
     // --yes implies --confirm (for non-interactive automation)
     let confirmed = confirm || yes;
     require_confirmation("rollback", confirmed)?;
@@ -162,7 +180,7 @@ fn handle_rollback(plan: &ExecutionPlan, confirm: bool, yes: bool) -> Result<()>
         return Ok(());
     }
 
-    exec_bootc("rollback", &[])
+    exec_bootc("rollback", &[], runner)
 }
 
 /// Require the --confirm or --yes flag for mutating operations.
@@ -252,12 +270,12 @@ fn prompt_continue(message: &str) -> Result<bool> {
 ///
 /// Global delegation ensures we're on the host, so we just need pkexec
 /// for privilege elevation.
-fn exec_bootc(subcommand: &str, args: &[String]) -> Result<()> {
-    let status = Command::new("pkexec")
-        .arg("bootc")
-        .arg(subcommand)
-        .args(args)
-        .status()
+fn exec_bootc(subcommand: &str, args: &[String], runner: &dyn CommandRunner) -> Result<()> {
+    let mut argv = vec!["bootc", subcommand];
+    argv.extend(args.iter().map(String::as_str));
+
+    let status = runner
+        .run_status("pkexec", &argv, &CommandOptions::default())
         .context("Failed to execute pkexec bootc")?;
 
     if !status.success() {

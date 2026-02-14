@@ -2,6 +2,7 @@
 //!
 //! Manages Linuxbrew/Homebrew packages on the host system.
 
+use crate::command_runner::{CommandOptions, CommandRunner};
 use crate::context::CommandDomain;
 use crate::manifest::homebrew::HomebrewManifest;
 use crate::output::Output;
@@ -12,7 +13,6 @@ use crate::plan::{
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use std::collections::HashSet;
-use std::process::Command;
 
 #[derive(Debug, Args)]
 pub struct HomebrewArgs {
@@ -224,13 +224,15 @@ pub struct HomebrewSyncPlan {
 impl Plannable for HomebrewSyncCommand {
     type Plan = HomebrewSyncPlan;
 
-    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+    fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
+        let runner = ctx.execution_plan().runner();
+
         let system = HomebrewManifest::load_system()?;
         let user = HomebrewManifest::load_user()?;
         let merged = HomebrewManifest::merged(&system, &user);
 
-        let installed = get_installed_formulae();
-        let installed_taps = get_installed_taps();
+        let installed = get_installed_formulae(runner);
+        let installed_taps = get_installed_taps(runner);
 
         let mut to_install = Vec::new();
         let mut already_installed = 0;
@@ -285,12 +287,13 @@ impl Plan for HomebrewSyncPlan {
         summary
     }
 
-    fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
+    fn execute(self, ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
         let mut report = ExecutionReport::new();
+        let runner = ctx.execution_plan().runner();
 
         // Add taps first
         for tap in self.taps_to_add {
-            if install_tap(&tap)? {
+            if install_tap(&tap, runner)? {
                 report.record_success(Verb::Install, format!("tap:{}", tap));
             } else {
                 report.record_failure(Verb::Install, format!("tap:{}", tap), "failed to add tap");
@@ -299,7 +302,7 @@ impl Plan for HomebrewSyncPlan {
 
         // Install formulae
         for formula in self.to_install {
-            if install_formula(&formula)? {
+            if install_formula(&formula, runner)? {
                 report.record_success(Verb::Install, format!("formula:{}", formula));
             } else {
                 report.record_failure(
@@ -330,13 +333,15 @@ pub struct HomebrewCapturePlan {
 impl Plannable for HomebrewCaptureCommand {
     type Plan = HomebrewCapturePlan;
 
-    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+    fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
+        let runner = ctx.execution_plan().runner();
+
         let system = HomebrewManifest::load_system()?;
         let user = HomebrewManifest::load_user()?;
         let merged = HomebrewManifest::merged(&system, &user);
 
         // Get explicitly installed formulae (leaves that were requested)
-        let installed = get_explicitly_installed_formulae();
+        let installed = get_explicitly_installed_formulae(runner);
 
         let mut to_capture = Vec::new();
         let mut already_in_manifest = 0;
@@ -401,10 +406,12 @@ impl Plan for HomebrewCapturePlan {
 // =============================================================================
 
 /// Get set of installed formula names.
-fn get_installed_formulae() -> HashSet<String> {
-    let output = Command::new("brew")
-        .args(["list", "--formula", "-1"])
-        .output();
+fn get_installed_formulae(runner: &dyn CommandRunner) -> HashSet<String> {
+    let output = runner.run_output(
+        "brew",
+        &["list", "--formula", "-1"],
+        &CommandOptions::default(),
+    );
 
     match output {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
@@ -417,8 +424,8 @@ fn get_installed_formulae() -> HashSet<String> {
 }
 
 /// Get explicitly installed formulae (not dependencies).
-fn get_explicitly_installed_formulae() -> Vec<String> {
-    let output = Command::new("brew").args(["leaves", "-r"]).output();
+fn get_explicitly_installed_formulae(runner: &dyn CommandRunner) -> Vec<String> {
+    let output = runner.run_output("brew", &["leaves", "-r"], &CommandOptions::default());
 
     match output {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
@@ -431,8 +438,8 @@ fn get_explicitly_installed_formulae() -> Vec<String> {
 }
 
 /// Get installed taps.
-fn get_installed_taps() -> HashSet<String> {
-    let output = Command::new("brew").args(["tap"]).output();
+fn get_installed_taps(runner: &dyn CommandRunner) -> HashSet<String> {
+    let output = runner.run_output("brew", &["tap"], &CommandOptions::default());
 
     match output {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
@@ -445,20 +452,18 @@ fn get_installed_taps() -> HashSet<String> {
 }
 
 /// Install a formula.
-fn install_formula(formula: &str) -> Result<bool> {
-    let status = Command::new("brew")
-        .args(["install", formula])
-        .status()
+fn install_formula(formula: &str, runner: &dyn CommandRunner) -> Result<bool> {
+    let status = runner
+        .run_status("brew", &["install", formula], &CommandOptions::default())
         .context("Failed to run brew install")?;
 
     Ok(status.success())
 }
 
 /// Add a tap.
-fn install_tap(tap: &str) -> Result<bool> {
-    let status = Command::new("brew")
-        .args(["tap", tap])
-        .status()
+fn install_tap(tap: &str, runner: &dyn CommandRunner) -> Result<bool> {
+    let status = runner
+        .run_status("brew", &["tap", tap], &CommandOptions::default())
         .context("Failed to run brew tap")?;
 
     Ok(status.success())

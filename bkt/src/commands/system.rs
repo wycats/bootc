@@ -24,6 +24,7 @@
 //! bkt system capture --apply
 //! ```
 
+use crate::command_runner::{CommandOptions, CommandRunner};
 use crate::containerfile::{
     ContainerfileEditor, Section, generate_copr_repos, generate_system_packages,
 };
@@ -39,7 +40,6 @@ use crate::validation::validate_dnf_package;
 use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
-use std::process::Command;
 
 #[derive(Debug, Args)]
 pub struct SystemArgs {
@@ -104,10 +104,12 @@ pub enum CoprAction {
 }
 
 pub fn run(args: SystemArgs, plan: &ExecutionPlan) -> Result<()> {
+    let runner = plan.runner();
+
     match args.action {
-        SystemAction::Add { packages, force } => handle_add(packages, force, plan),
+        SystemAction::Add { packages, force } => handle_add(packages, force, plan, runner),
         SystemAction::Remove { packages } => handle_remove(packages, plan),
-        SystemAction::List { format } => handle_list(format),
+        SystemAction::List { format } => handle_list(format, runner),
         SystemAction::Capture { apply } => {
             // Use the Plan-based implementation
             let plan_ctx =
@@ -145,7 +147,12 @@ pub fn run(args: SystemArgs, plan: &ExecutionPlan) -> Result<()> {
 // Add Command
 // =============================================================================
 
-fn handle_add(packages: Vec<String>, force: bool, plan: &ExecutionPlan) -> Result<()> {
+fn handle_add(
+    packages: Vec<String>,
+    force: bool,
+    plan: &ExecutionPlan,
+    runner: &dyn CommandRunner,
+) -> Result<()> {
     plan.validate_domain(CommandDomain::System)?;
 
     if packages.is_empty() {
@@ -155,7 +162,7 @@ fn handle_add(packages: Vec<String>, force: bool, plan: &ExecutionPlan) -> Resul
     // Validate that packages exist in repositories
     if !force {
         for pkg in &packages {
-            validate_dnf_package(pkg)?;
+            validate_dnf_package(runner, pkg)?;
         }
     }
 
@@ -337,7 +344,7 @@ fn handle_remove(packages: Vec<String>, plan: &ExecutionPlan) -> Result<()> {
 // List Command
 // =============================================================================
 
-fn handle_list(format: String) -> Result<()> {
+fn handle_list(format: String, runner: &dyn CommandRunner) -> Result<()> {
     let system = SystemPackagesManifest::load_system()?;
     let user = SystemPackagesManifest::load_user()?;
     let merged = SystemPackagesManifest::merged(&system, &user);
@@ -364,7 +371,7 @@ fn handle_list(format: String) -> Result<()> {
             } else {
                 "system".dimmed().to_string()
             };
-            let installed = if is_package_installed(pkg) {
+            let installed = if is_package_installed(pkg, runner) {
                 "✓".green().to_string()
             } else {
                 "✗".red().to_string()
@@ -568,10 +575,9 @@ fn handle_copr_list() -> Result<()> {
 // =============================================================================
 
 /// Check if a package is installed on the system.
-fn is_package_installed(pkg: &str) -> bool {
-    Command::new("rpm")
-        .args(["-q", pkg])
-        .output()
+fn is_package_installed(pkg: &str, runner: &dyn CommandRunner) -> bool {
+    runner
+        .run_output("rpm", &["-q", pkg], &CommandOptions::default())
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
@@ -639,9 +645,11 @@ pub struct SystemCapturePlan {
 impl Plannable for SystemCaptureCommand {
     type Plan = SystemCapturePlan;
 
-    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+    fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
+        let runner = ctx.execution_plan().runner();
+
         // Get layered packages from rpm-ostree
-        let layered = get_layered_packages();
+        let layered = get_layered_packages(runner);
 
         // Load manifest to check what's already tracked
         let system = SystemPackagesManifest::load_system()?;
@@ -714,10 +722,12 @@ impl Plan for SystemCapturePlan {
 }
 
 /// Get layered packages from rpm-ostree status.
-fn get_layered_packages() -> Vec<String> {
-    let output = Command::new("rpm-ostree")
-        .args(["status", "--json"])
-        .output();
+fn get_layered_packages(runner: &dyn CommandRunner) -> Vec<String> {
+    let output = runner.run_output(
+        "rpm-ostree",
+        &["status", "--json"],
+        &CommandOptions::default(),
+    );
 
     let output = match output {
         Ok(o) if o.status.success() => o,

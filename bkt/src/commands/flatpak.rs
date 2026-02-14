@@ -1,5 +1,6 @@
 //! Flatpak command implementation.
 
+use crate::command_runner::{CommandOptions, CommandRunner};
 use crate::context::{CommandDomain, PrMode, run_command};
 use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{
@@ -15,7 +16,6 @@ use crate::validation::validate_flatpak_app;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
-use std::process::Command;
 
 #[derive(Debug, Args)]
 pub struct FlatpakArgs {
@@ -63,46 +63,55 @@ pub enum FlatpakAction {
     },
 }
 
-fn install_flatpak(app: &FlatpakApp) -> Result<bool> {
+fn install_flatpak(app: &FlatpakApp, runner: &dyn CommandRunner) -> Result<bool> {
     let scope_flag = match app.scope {
         FlatpakScope::System => "--system",
         FlatpakScope::User => "--user",
     };
 
-    let status = Command::new("flatpak")
-        .args([
-            "install",
-            "-y",
-            "--noninteractive",
-            "--or-update",
-            scope_flag,
-            &app.remote,
-            &app.id,
-        ])
-        .status()
+    let status = runner
+        .run_status(
+            "flatpak",
+            &[
+                "install",
+                "-y",
+                "--noninteractive",
+                "--or-update",
+                scope_flag,
+                &app.remote,
+                &app.id,
+            ],
+            &CommandOptions::default(),
+        )
         .context("Failed to run flatpak install")?;
 
     Ok(status.success())
 }
 
-fn uninstall_flatpak(app_id: &str, scope: FlatpakScope) -> Result<bool> {
+fn uninstall_flatpak(
+    app_id: &str,
+    scope: FlatpakScope,
+    runner: &dyn CommandRunner,
+) -> Result<bool> {
     let scope_flag = match scope {
         FlatpakScope::System => "--system",
         FlatpakScope::User => "--user",
     };
 
-    let status = Command::new("flatpak")
-        .args(["uninstall", "-y", "--noninteractive", scope_flag, app_id])
-        .status()
+    let status = runner
+        .run_status(
+            "flatpak",
+            &["uninstall", "-y", "--noninteractive", scope_flag, app_id],
+            &CommandOptions::default(),
+        )
         .context("Failed to run flatpak uninstall")?;
 
     Ok(status.success())
 }
 
-fn is_installed(app_id: &str) -> bool {
-    Command::new("flatpak")
-        .args(["info", app_id])
-        .output()
+fn is_installed(app_id: &str, runner: &dyn CommandRunner) -> bool {
+    runner
+        .run_output("flatpak", &["info", app_id], &CommandOptions::default())
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
@@ -110,7 +119,12 @@ fn is_installed(app_id: &str) -> bool {
 /// Apply overrides to a flatpak app.
 ///
 /// Uses `flatpak override --user` or `--system` depending on scope.
-fn apply_overrides(app_id: &str, scope: FlatpakScope, overrides: &[String]) -> Result<bool> {
+fn apply_overrides(
+    app_id: &str,
+    scope: FlatpakScope,
+    overrides: &[String],
+    runner: &dyn CommandRunner,
+) -> Result<bool> {
     if overrides.is_empty() {
         return Ok(true);
     }
@@ -128,15 +142,16 @@ fn apply_overrides(app_id: &str, scope: FlatpakScope, overrides: &[String]) -> R
         args.push(flag);
     }
 
-    let status = Command::new("flatpak")
-        .args(&args)
-        .status()
+    let status = runner
+        .run_status("flatpak", &args, &CommandOptions::default())
         .context("Failed to run flatpak override")?;
 
     Ok(status.success())
 }
 
 pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
+    let runner = plan.runner();
+
     match args.action {
         FlatpakAction::Add {
             app_id,
@@ -149,7 +164,7 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
 
             // Validate that the app exists on the remote
             if !force {
-                validate_flatpak_app(&app_id, &remote)?;
+                validate_flatpak_app(runner, &app_id, &remote)?;
             }
 
             let scope: FlatpakScope = scope.parse()?;
@@ -196,7 +211,7 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
             }
 
             // Install the flatpak
-            if plan.should_execute_locally() && !is_installed(&app_id) {
+            if plan.should_execute_locally() && !is_installed(&app_id, runner) {
                 let spinner = Output::spinner(format!("Installing {}...", app_id));
                 let app = FlatpakApp {
                     id: app_id.clone(),
@@ -206,14 +221,14 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
                     commit: None,
                     overrides: None,
                 };
-                if install_flatpak(&app)? {
+                if install_flatpak(&app, runner)? {
                     spinner.finish_success(format!("Installed {}", app_id));
                 } else {
                     spinner.finish_error(format!("Failed to install {}", app_id));
                 }
-            } else if plan.dry_run && !is_installed(&app_id) {
+            } else if plan.dry_run && !is_installed(&app_id, runner) {
                 Output::dry_run(format!("Would install: {}", app_id));
-            } else if is_installed(&app_id) {
+            } else if is_installed(&app_id, runner) {
                 Output::info(format!("Already installed: {}", app_id));
             }
 
@@ -283,17 +298,17 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
             }
 
             // Optionally uninstall
-            if plan.should_execute_locally() && is_installed(&app_id) {
+            if plan.should_execute_locally() && is_installed(&app_id, runner) {
                 let spinner = Output::spinner(format!("Uninstalling {}...", app_id));
                 // Try system first, then user
-                if uninstall_flatpak(&app_id, FlatpakScope::System)?
-                    || uninstall_flatpak(&app_id, FlatpakScope::User)?
+                if uninstall_flatpak(&app_id, FlatpakScope::System, runner)?
+                    || uninstall_flatpak(&app_id, FlatpakScope::User, runner)?
                 {
                     spinner.finish_success(format!("Uninstalled {}", app_id));
                 } else {
                     spinner.finish_warning(format!("May need manual removal: {}", app_id));
                 }
-            } else if plan.dry_run && is_installed(&app_id) {
+            } else if plan.dry_run && is_installed(&app_id, runner) {
                 Output::dry_run(format!("Would uninstall: {}", app_id));
             }
 
@@ -345,7 +360,7 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
                     } else {
                         "system".dimmed().to_string()
                     };
-                    let installed = if is_installed(&app.id) {
+                    let installed = if is_installed(&app.id, runner) {
                         "✓".green().to_string()
                     } else {
                         "✗".red().to_string()
@@ -454,7 +469,7 @@ pub struct FlatpakSyncPlan {
 impl Plannable for FlatpakSyncCommand {
     type Plan = FlatpakSyncPlan;
 
-    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+    fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
         // Load and merge manifests (read-only, no side effects)
         let system = FlatpakAppsManifest::load_system()?;
         let user = FlatpakAppsManifest::load_user()?;
@@ -463,8 +478,10 @@ impl Plannable for FlatpakSyncCommand {
         let mut to_install = Vec::new();
         let mut already_installed = 0;
 
+        let runner = ctx.execution_plan().runner();
+
         for app in merged.apps {
-            if is_installed(&app.id) {
+            if is_installed(&app.id, runner) {
                 already_installed += 1;
             } else {
                 to_install.push(FlatpakToInstall { app });
@@ -501,7 +518,12 @@ impl Plan for FlatpakSyncPlan {
         let mut report = ExecutionReport::new();
 
         for item in self.to_install {
-            match install_flatpak(&item.app) {
+            let install_result = {
+                let runner = ctx.execution_plan().runner();
+                install_flatpak(&item.app, runner)
+            };
+
+            match install_result {
                 Ok(true) => {
                     report.record_success_and_notify(
                         ctx,
@@ -513,7 +535,12 @@ impl Plan for FlatpakSyncPlan {
                     if let Some(ref overrides) = item.app.overrides
                         && !overrides.is_empty()
                     {
-                        match apply_overrides(&item.app.id, item.app.scope, overrides) {
+                        let overrides_result = {
+                            let runner = ctx.execution_plan().runner();
+                            apply_overrides(&item.app.id, item.app.scope, overrides, runner)
+                        };
+
+                        match overrides_result {
                             Ok(true) => {
                                 report.record_success_and_notify(
                                     ctx,

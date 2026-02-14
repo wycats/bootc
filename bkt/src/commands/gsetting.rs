@@ -1,5 +1,6 @@
 //! GSettings command implementation.
 
+use crate::command_runner::{CommandOptions, CommandRunner};
 use crate::context::PrMode;
 use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{GSetting, GSettingsManifest};
@@ -12,7 +13,6 @@ use crate::validation::{validate_gsettings_key, validate_gsettings_schema};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
-use std::process::Command;
 
 #[derive(Debug, Args)]
 pub struct GSettingArgs {
@@ -66,25 +66,33 @@ pub enum GSettingAction {
 }
 
 /// Get current value of a gsetting.
-fn get_current_value(schema: &str, key: &str) -> Option<String> {
-    Command::new("gsettings")
-        .args(["get", schema, key])
-        .output()
+fn get_current_value(schema: &str, key: &str, runner: &dyn CommandRunner) -> Option<String> {
+    runner
+        .run_output(
+            "gsettings",
+            &["get", schema, key],
+            &CommandOptions::default(),
+        )
         .ok()
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
 }
 
 /// Set a gsetting value.
-fn set_gsetting(schema: &str, key: &str, value: &str) -> Result<bool> {
-    let status = Command::new("gsettings")
-        .args(["set", schema, key, value])
-        .status()
+fn set_gsetting(schema: &str, key: &str, value: &str, runner: &dyn CommandRunner) -> Result<bool> {
+    let status = runner
+        .run_status(
+            "gsettings",
+            &["set", schema, key, value],
+            &CommandOptions::default(),
+        )
         .context("Failed to run gsettings set")?;
     Ok(status.success())
 }
 
 pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
+    let runner = plan.runner();
+
     match args.action {
         GSettingAction::Set {
             schema,
@@ -95,8 +103,8 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
         } => {
             // Validate schema and key exist before modifying manifest
             if !force {
-                validate_gsettings_schema(&schema)?;
-                validate_gsettings_key(&schema, &key)?;
+                validate_gsettings_schema(runner, &schema)?;
+                validate_gsettings_key(runner, &schema, &key)?;
             }
 
             let system = GSettingsManifest::load_system()?;
@@ -168,7 +176,7 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
             if plan.should_execute_locally() {
                 let spinner =
                     Output::spinner(format!("Applying {}.{} = {}...", schema, key, value));
-                if set_gsetting(&schema, &key, &value)? {
+                if set_gsetting(&schema, &key, &value, runner)? {
                     spinner.finish_success(format!("Applied {}.{}", schema, key));
                 } else {
                     spinner.finish_error(format!("Failed to apply {}.{}", schema, key));
@@ -238,9 +246,12 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
             if plan.should_execute_locally() {
                 let spinner =
                     Output::spinner(format!("Resetting {}.{} to default...", schema, key));
-                let status = Command::new("gsettings")
-                    .args(["reset", &schema, &key])
-                    .status()
+                let status = runner
+                    .run_status(
+                        "gsettings",
+                        &["reset", &schema, &key],
+                        &CommandOptions::default(),
+                    )
                     .context("Failed to run gsettings reset")?;
                 if status.success() {
                     spinner.finish_success(format!("Reset {}.{}", schema, key));
@@ -303,7 +314,7 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
                     } else {
                         "system".dimmed().to_string()
                     };
-                    let current = get_current_value(&setting.schema, &setting.key)
+                    let current = get_current_value(&setting.schema, &setting.key, runner)
                         .unwrap_or_else(|| "(unset)".to_string());
                     let matches = if current == setting.value {
                         "✓".green().to_string()
@@ -356,7 +367,7 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
         }
         GSettingAction::Capture { schema, key, apply } => {
             // Validate schema exists
-            validate_gsettings_schema(&schema)?;
+            validate_gsettings_schema(runner, &schema)?;
 
             // Use the Plan-based capture implementation
             let cwd = std::env::current_dir()?;
@@ -430,7 +441,9 @@ pub struct GsettingApplyPlan {
 impl Plannable for GsettingApplyCommand {
     type Plan = GsettingApplyPlan;
 
-    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+    fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
+        let runner = ctx.execution_plan().runner();
+
         // Load and merge manifests (read-only, no side effects)
         let system = GSettingsManifest::load_system()?;
         let user = GSettingsManifest::load_user()?;
@@ -440,7 +453,7 @@ impl Plannable for GsettingApplyCommand {
         let mut already_set = 0;
 
         for setting in merged.settings {
-            let current = get_current_value(&setting.schema, &setting.key);
+            let current = get_current_value(&setting.schema, &setting.key, runner);
 
             if current.as_deref() == Some(&setting.value) {
                 already_set += 1;
@@ -482,7 +495,17 @@ impl Plan for GsettingApplyPlan {
         for item in self.to_apply {
             let target = format!("{}.{}", item.setting.schema, item.setting.key);
 
-            match set_gsetting(&item.setting.schema, &item.setting.key, &item.setting.value) {
+            let result = {
+                let runner = ctx.execution_plan().runner();
+                set_gsetting(
+                    &item.setting.schema,
+                    &item.setting.key,
+                    &item.setting.value,
+                    runner,
+                )
+            };
+
+            match result {
                 Ok(true) => {
                     report.record_success_and_notify(
                         ctx,
@@ -522,10 +545,12 @@ impl Plan for GsettingApplyPlan {
 // ============================================================================
 
 /// Get all keys for a schema.
-fn get_schema_keys(schema: &str) -> Vec<String> {
-    let output = Command::new("gsettings")
-        .args(["list-keys", schema])
-        .output();
+fn get_schema_keys(schema: &str, runner: &dyn CommandRunner) -> Vec<String> {
+    let output = runner.run_output(
+        "gsettings",
+        &["list-keys", schema],
+        &CommandOptions::default(),
+    );
 
     match output {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
@@ -563,12 +588,14 @@ pub struct GsettingCapturePlan {
 impl Plannable for GsettingCaptureCommand {
     type Plan = GsettingCapturePlan;
 
-    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+    fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
+        let runner = ctx.execution_plan().runner();
+
         // Get keys to capture
         let keys = if let Some(ref key) = self.key {
             vec![key.clone()]
         } else {
-            get_schema_keys(&self.schema)
+            get_schema_keys(&self.schema, runner)
         };
 
         // Load manifests to see what's already tracked
@@ -582,7 +609,7 @@ impl Plannable for GsettingCaptureCommand {
         for key in keys {
             if merged.find(&self.schema, &key).is_some() {
                 already_in_manifest += 1;
-            } else if let Some(value) = get_current_value(&self.schema, &key) {
+            } else if let Some(value) = get_current_value(&self.schema, &key, runner) {
                 to_capture.push(SettingToCapture {
                     setting: GSetting {
                         schema: self.schema.clone(),

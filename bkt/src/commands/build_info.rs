@@ -9,8 +9,8 @@ use clap::{Args, Subcommand};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
+use crate::command_runner::{CommandOptions, CommandRunner};
 use crate::manifest::base_image;
 use crate::manifest::build_info::{
     AppImageDiff, BuildInfo, BuildMetadata, ExtensionDiff, FlatpakAppDiff, FlatpakRemoteDiff,
@@ -71,9 +71,9 @@ pub enum BuildInfoAction {
     },
 }
 
-pub fn run(args: BuildInfoArgs) -> Result<()> {
+pub fn run(args: BuildInfoArgs, runner: &dyn CommandRunner) -> Result<()> {
     match args.action {
-        BuildInfoAction::Generate { from, to, output } => generate(from, to, output),
+        BuildInfoAction::Generate { from, to, output } => generate(from, to, output, runner),
         BuildInfoAction::Render { input, output } => render(input, output),
         BuildInfoAction::Summary { input, max_length } => summary(input, max_length),
     }
@@ -83,7 +83,12 @@ pub fn run(args: BuildInfoArgs) -> Result<()> {
 // Generate implementation
 // ============================================================================
 
-fn generate(from: Option<String>, to: Option<String>, output: Option<PathBuf>) -> Result<()> {
+fn generate(
+    from: Option<String>,
+    to: Option<String>,
+    output: Option<PathBuf>,
+    runner: &dyn CommandRunner,
+) -> Result<()> {
     let repo_path = find_repo_path()?;
 
     // Check for shallow clone when using default from ref
@@ -100,8 +105,8 @@ fn generate(from: Option<String>, to: Option<String>, output: Option<PathBuf>) -
     let to_ref = to.as_deref().unwrap_or("HEAD");
 
     // Resolve to actual commit hashes
-    let from_commit = resolve_commit(&repo_path, from_ref)?;
-    let to_commit = resolve_commit(&repo_path, to_ref)?;
+    let from_commit = resolve_commit(&repo_path, from_ref, runner)?;
+    let to_commit = resolve_commit(&repo_path, to_ref, runner)?;
 
     Output::info(format!(
         "Comparing {} → {}",
@@ -110,13 +115,13 @@ fn generate(from: Option<String>, to: Option<String>, output: Option<PathBuf>) -
     ));
 
     // Generate manifest diffs
-    let manifests = diff_all_manifests(&repo_path, &from_commit, &to_commit)?;
+    let manifests = diff_all_manifests(&repo_path, &from_commit, &to_commit, runner)?;
 
     // Generate system config diffs
-    let system_config = diff_system_config(&repo_path, &from_commit, &to_commit)?;
+    let system_config = diff_system_config(&repo_path, &from_commit, &to_commit, runner)?;
 
     // Generate upstream changes (base image diff)
-    let upstream = diff_upstream_changes(&repo_path, &from_commit, &to_commit)?;
+    let upstream = diff_upstream_changes(&repo_path, &from_commit, &to_commit, runner)?;
 
     // Build the build info
     let mut build_info = BuildInfo::new(
@@ -158,11 +163,17 @@ fn is_shallow_clone(repo_path: &Path) -> Result<bool> {
     Ok(shallow_file.exists())
 }
 
-fn resolve_commit(repo_path: &PathBuf, ref_spec: &str) -> Result<String> {
-    let output = Command::new("git")
-        .args(["rev-parse", ref_spec])
-        .current_dir(repo_path)
-        .output()
+fn resolve_commit(
+    repo_path: &PathBuf,
+    ref_spec: &str,
+    runner: &dyn CommandRunner,
+) -> Result<String> {
+    let output = runner
+        .run_output(
+            "git",
+            &["rev-parse", ref_spec],
+            &CommandOptions::with_cwd(repo_path),
+        )
         .context("Failed to run git rev-parse")?;
 
     if !output.status.success() {
@@ -177,12 +188,15 @@ fn get_file_at_commit(
     repo_path: &PathBuf,
     commit: &str,
     file_path: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<Option<String>> {
     let git_path = format!("{}:{}", commit, file_path);
-    let output = Command::new("git")
-        .args(["show", &git_path])
-        .current_dir(repo_path)
-        .output()
+    let output = runner
+        .run_output(
+            "git",
+            &["show", &git_path],
+            &CommandOptions::with_cwd(repo_path),
+        )
         .context("Failed to run git show")?;
 
     if !output.status.success() {
@@ -203,41 +217,42 @@ fn diff_all_manifests(
     repo_path: &PathBuf,
     from_commit: &str,
     to_commit: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<ManifestDiffs> {
     let mut diffs = ManifestDiffs::default();
 
     // Flatpak apps
-    let diff = diff_flatpak_apps(repo_path, from_commit, to_commit)?;
+    let diff = diff_flatpak_apps(repo_path, from_commit, to_commit, runner)?;
     if !diff.is_empty() {
         diffs.flatpak_apps = Some(convert_diff_result(diff));
     }
 
     // Flatpak remotes
-    let diff = diff_flatpak_remotes(repo_path, from_commit, to_commit)?;
+    let diff = diff_flatpak_remotes(repo_path, from_commit, to_commit, runner)?;
     if !diff.is_empty() {
         diffs.flatpak_remotes = Some(convert_diff_result(diff));
     }
 
     // GNOME extensions
-    let diff = diff_extensions(repo_path, from_commit, to_commit)?;
+    let diff = diff_extensions(repo_path, from_commit, to_commit, runner)?;
     if !diff.is_empty() {
         diffs.gnome_extensions = Some(convert_diff_result(diff));
     }
 
     // GSettings
-    let diff = diff_gsettings(repo_path, from_commit, to_commit)?;
+    let diff = diff_gsettings(repo_path, from_commit, to_commit, runner)?;
     if !diff.is_empty() {
         diffs.gsettings = Some(convert_diff_result(diff));
     }
 
     // Host shims
-    let diff = diff_shims(repo_path, from_commit, to_commit)?;
+    let diff = diff_shims(repo_path, from_commit, to_commit, runner)?;
     if !diff.is_empty() {
         diffs.host_shims = Some(convert_diff_result(diff));
     }
 
     // AppImage apps
-    let diff = diff_appimages(repo_path, from_commit, to_commit)?;
+    let diff = diff_appimages(repo_path, from_commit, to_commit, runner)?;
     if !diff.is_empty() {
         diffs.appimage_apps = Some(convert_diff_result(diff));
     }
@@ -248,6 +263,7 @@ fn diff_all_manifests(
         from_commit,
         to_commit,
         "manifests/system-packages.json",
+        runner,
     )?;
     if !diff.is_empty() {
         diffs.system_packages = Some(diff);
@@ -259,6 +275,7 @@ fn diff_all_manifests(
         from_commit,
         to_commit,
         "manifests/toolbox-packages.json",
+        runner,
     )?;
     if !diff.is_empty() {
         diffs.toolbox_packages = Some(diff);
@@ -275,9 +292,16 @@ fn diff_flatpak_apps(
     repo_path: &PathBuf,
     from_commit: &str,
     to_commit: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<DiffResult<FlatpakApp>> {
-    let old_content = get_file_at_commit(repo_path, from_commit, "manifests/flatpak-apps.json")?;
-    let new_content = get_file_at_commit(repo_path, to_commit, "manifests/flatpak-apps.json")?;
+    let old_content = get_file_at_commit(
+        repo_path,
+        from_commit,
+        "manifests/flatpak-apps.json",
+        runner,
+    )?;
+    let new_content =
+        get_file_at_commit(repo_path, to_commit, "manifests/flatpak-apps.json", runner)?;
 
     let old: FlatpakAppsManifest = parse_or_default(old_content)?;
     let new: FlatpakAppsManifest = parse_or_default(new_content)?;
@@ -289,9 +313,20 @@ fn diff_flatpak_remotes(
     repo_path: &PathBuf,
     from_commit: &str,
     to_commit: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<DiffResult<FlatpakRemote>> {
-    let old_content = get_file_at_commit(repo_path, from_commit, "manifests/flatpak-remotes.json")?;
-    let new_content = get_file_at_commit(repo_path, to_commit, "manifests/flatpak-remotes.json")?;
+    let old_content = get_file_at_commit(
+        repo_path,
+        from_commit,
+        "manifests/flatpak-remotes.json",
+        runner,
+    )?;
+    let new_content = get_file_at_commit(
+        repo_path,
+        to_commit,
+        "manifests/flatpak-remotes.json",
+        runner,
+    )?;
 
     let old: FlatpakRemotesManifest = parse_or_default(old_content)?;
     let new: FlatpakRemotesManifest = parse_or_default(new_content)?;
@@ -303,10 +338,20 @@ fn diff_extensions(
     repo_path: &PathBuf,
     from_commit: &str,
     to_commit: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<DiffResult<ExtensionItem>> {
-    let old_content =
-        get_file_at_commit(repo_path, from_commit, "manifests/gnome-extensions.json")?;
-    let new_content = get_file_at_commit(repo_path, to_commit, "manifests/gnome-extensions.json")?;
+    let old_content = get_file_at_commit(
+        repo_path,
+        from_commit,
+        "manifests/gnome-extensions.json",
+        runner,
+    )?;
+    let new_content = get_file_at_commit(
+        repo_path,
+        to_commit,
+        "manifests/gnome-extensions.json",
+        runner,
+    )?;
 
     let old: GnomeExtensionsManifest = parse_or_default(old_content)?;
     let new: GnomeExtensionsManifest = parse_or_default(new_content)?;
@@ -318,9 +363,11 @@ fn diff_gsettings(
     repo_path: &PathBuf,
     from_commit: &str,
     to_commit: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<DiffResult<GSetting>> {
-    let old_content = get_file_at_commit(repo_path, from_commit, "manifests/gsettings.json")?;
-    let new_content = get_file_at_commit(repo_path, to_commit, "manifests/gsettings.json")?;
+    let old_content =
+        get_file_at_commit(repo_path, from_commit, "manifests/gsettings.json", runner)?;
+    let new_content = get_file_at_commit(repo_path, to_commit, "manifests/gsettings.json", runner)?;
 
     let old: GSettingsManifest = parse_or_default(old_content)?;
     let new: GSettingsManifest = parse_or_default(new_content)?;
@@ -328,9 +375,16 @@ fn diff_gsettings(
     Ok(diff_collections(&old.settings, &new.settings))
 }
 
-fn diff_shims(repo_path: &PathBuf, from_commit: &str, to_commit: &str) -> Result<DiffResult<Shim>> {
-    let old_content = get_file_at_commit(repo_path, from_commit, "manifests/host-shims.json")?;
-    let new_content = get_file_at_commit(repo_path, to_commit, "manifests/host-shims.json")?;
+fn diff_shims(
+    repo_path: &PathBuf,
+    from_commit: &str,
+    to_commit: &str,
+    runner: &dyn CommandRunner,
+) -> Result<DiffResult<Shim>> {
+    let old_content =
+        get_file_at_commit(repo_path, from_commit, "manifests/host-shims.json", runner)?;
+    let new_content =
+        get_file_at_commit(repo_path, to_commit, "manifests/host-shims.json", runner)?;
 
     let old: ShimsManifest = parse_or_default(old_content)?;
     let new: ShimsManifest = parse_or_default(new_content)?;
@@ -342,9 +396,16 @@ fn diff_appimages(
     repo_path: &PathBuf,
     from_commit: &str,
     to_commit: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<DiffResult<AppImageApp>> {
-    let old_content = get_file_at_commit(repo_path, from_commit, "manifests/appimage-apps.json")?;
-    let new_content = get_file_at_commit(repo_path, to_commit, "manifests/appimage-apps.json")?;
+    let old_content = get_file_at_commit(
+        repo_path,
+        from_commit,
+        "manifests/appimage-apps.json",
+        runner,
+    )?;
+    let new_content =
+        get_file_at_commit(repo_path, to_commit, "manifests/appimage-apps.json", runner)?;
 
     let old: AppImageAppsManifest = parse_or_default(old_content)?;
     let new: AppImageAppsManifest = parse_or_default(new_content)?;
@@ -373,9 +434,10 @@ fn diff_string_manifest(
     from_commit: &str,
     to_commit: &str,
     manifest_path: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<DiffResult<String>> {
-    let old_content = get_file_at_commit(repo_path, from_commit, manifest_path)?;
-    let new_content = get_file_at_commit(repo_path, to_commit, manifest_path)?;
+    let old_content = get_file_at_commit(repo_path, from_commit, manifest_path, runner)?;
+    let new_content = get_file_at_commit(repo_path, to_commit, manifest_path, runner)?;
 
     let old_packages: Vec<String> = match old_content {
         Some(content) => {
@@ -409,11 +471,18 @@ fn diff_system_config(
     repo_path: &PathBuf,
     from_commit: &str,
     to_commit: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<SystemConfigDiffs> {
     let mut diffs = SystemConfigDiffs::default();
 
     // Get the list of changed files in system config directories
-    let changed_files = get_changed_files(repo_path, from_commit, to_commit, SYSTEM_CONFIG_DIRS)?;
+    let changed_files = get_changed_files(
+        repo_path,
+        from_commit,
+        to_commit,
+        SYSTEM_CONFIG_DIRS,
+        runner,
+    )?;
 
     for (status, path) in changed_files {
         match status.as_str() {
@@ -427,8 +496,8 @@ fn diff_system_config(
             }
             "M" => {
                 // Modified file - compute semantic diff
-                let old_content = get_file_at_commit(repo_path, from_commit, &path)?;
-                let new_content = get_file_at_commit(repo_path, to_commit, &path)?;
+                let old_content = get_file_at_commit(repo_path, from_commit, &path, runner)?;
+                let new_content = get_file_at_commit(repo_path, to_commit, &path, runner)?;
 
                 let file_type = ConfigFileType::from_path(&path);
                 let semantic_diff = match (&old_content, &new_content) {
@@ -461,6 +530,7 @@ fn get_changed_files(
     from_commit: &str,
     to_commit: &str,
     dirs: &[&str],
+    runner: &dyn CommandRunner,
 ) -> Result<Vec<(String, String)>> {
     let mut args = vec![
         "diff".to_string(),
@@ -470,10 +540,9 @@ fn get_changed_files(
     ];
     args.extend(dirs.iter().map(|s| s.to_string()));
 
-    let output = Command::new("git")
-        .args(&args)
-        .current_dir(repo_path)
-        .output()
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let output = runner
+        .run_output("git", &arg_refs, &CommandOptions::with_cwd(repo_path))
         .context("Failed to run git diff --name-status")?;
 
     if !output.status.success() {
@@ -511,10 +580,11 @@ fn diff_upstream_changes(
     repo_path: &PathBuf,
     from_commit: &str,
     to_commit: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<Option<UpstreamChanges>> {
     // Check if the digest file changed
-    let old_digest = get_base_image_digest_at_commit(repo_path, from_commit)?;
-    let new_digest = get_base_image_digest_at_commit(repo_path, to_commit)?;
+    let old_digest = get_base_image_digest_at_commit(repo_path, from_commit, runner)?;
+    let new_digest = get_base_image_digest_at_commit(repo_path, to_commit, runner)?;
 
     // If either digest is missing or they're the same, no change
     match (&old_digest, &new_digest) {
@@ -522,7 +592,7 @@ fn diff_upstream_changes(
             tracing::info!("Base image changed: {} → {}", &old[..16], &new[..16]);
 
             // Try to compute package diffs
-            match base_image::diff_base_image(repo_path, BASE_IMAGE_NAME, old, new) {
+            match base_image::diff_base_image(repo_path, BASE_IMAGE_NAME, old, new, runner) {
                 Ok(base_image_change) => Ok(Some(UpstreamChanges {
                     base_image: Some(base_image_change),
                     tools: None,
@@ -571,8 +641,12 @@ fn parse_digest_file(content: &str) -> Option<String> {
 }
 
 /// Get the base image digest at a specific commit.
-fn get_base_image_digest_at_commit(repo_path: &PathBuf, commit: &str) -> Result<Option<String>> {
-    let content = get_file_at_commit(repo_path, commit, BASE_IMAGE_DIGEST_FILE)?;
+fn get_base_image_digest_at_commit(
+    repo_path: &PathBuf,
+    commit: &str,
+    runner: &dyn CommandRunner,
+) -> Result<Option<String>> {
+    let content = get_file_at_commit(repo_path, commit, BASE_IMAGE_DIGEST_FILE, runner)?;
     Ok(content.as_ref().and_then(|c| parse_digest_file(c)))
 }
 

@@ -1,5 +1,6 @@
 //! Fetchbin command implementation.
 
+use crate::command_runner::CommandRunner;
 use crate::manifest::{HostBinariesManifest, HostBinary, HostBinarySource};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
@@ -65,7 +66,7 @@ pub fn run(args: FetchbinArgs, plan: &ExecutionPlan) -> Result<()> {
             asset,
         } => handle_add(&spec, binary, asset, plan),
         FetchbinAction::Remove { name } => handle_remove(&name, plan),
-        FetchbinAction::List { format } => handle_list(&format),
+        FetchbinAction::List { format } => handle_list(&format, plan),
         FetchbinAction::Sync => handle_sync(plan),
         FetchbinAction::Capture => handle_capture(plan),
     }
@@ -81,7 +82,7 @@ fn handle_add(
     asset: Option<String>,
     plan: &ExecutionPlan,
 ) -> Result<()> {
-    let manifests_dir = get_manifest_path()?;
+    let manifests_dir = get_manifest_path(plan.runner())?;
     let mut manifest = HostBinariesManifest::load_from_dir(&manifests_dir)?;
 
     let mut spec = PackageSpec::from_str(spec)?;
@@ -137,7 +138,7 @@ fn handle_add(
 // =============================================================================
 
 fn handle_remove(name: &str, plan: &ExecutionPlan) -> Result<()> {
-    let manifests_dir = get_manifest_path()?;
+    let manifests_dir = get_manifest_path(plan.runner())?;
     let mut manifest = HostBinariesManifest::load_from_dir(&manifests_dir)?;
 
     let entry = match manifest.find(name).cloned() {
@@ -183,8 +184,8 @@ struct FetchbinListEntry {
     installed_version: Option<String>,
 }
 
-fn handle_list(format: &str) -> Result<()> {
-    let manifests_dir = get_manifest_path()?;
+fn handle_list(format: &str, plan: &ExecutionPlan) -> Result<()> {
+    let manifests_dir = get_manifest_path(plan.runner())?;
     let manifest = HostBinariesManifest::load_from_dir(&manifests_dir)?;
     let fetchbin_manifest = load_fetchbin_manifest().unwrap_or_default();
 
@@ -349,8 +350,8 @@ pub struct FetchbinSyncPlan {
 impl Plannable for FetchbinSyncCommand {
     type Plan = FetchbinSyncPlan;
 
-    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
-        let manifests_dir = get_manifest_path()?;
+    fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
+        let manifests_dir = get_manifest_path(ctx.execution_plan().runner())?;
         let manifest = HostBinariesManifest::load_from_dir(&manifests_dir)?;
         let fetchbin_manifest = load_fetchbin_manifest().unwrap_or_default();
 
@@ -467,8 +468,8 @@ pub struct FetchbinCapturePlan {
 impl Plannable for FetchbinCaptureCommand {
     type Plan = FetchbinCapturePlan;
 
-    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
-        let manifests_dir = get_manifest_path()?;
+    fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
+        let manifests_dir = get_manifest_path(ctx.execution_plan().runner())?;
         let manifest = HostBinariesManifest::load_from_dir(&manifests_dir)?;
         let fetchbin_manifest = load_fetchbin_manifest().unwrap_or_default();
 
@@ -520,7 +521,7 @@ impl Plan for FetchbinCapturePlan {
 
     fn execute(self, ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
         let mut report = ExecutionReport::new();
-        let manifests_dir = get_manifest_path()?;
+        let manifests_dir = get_manifest_path(ctx.execution_plan().runner())?;
         let mut manifest = HostBinariesManifest::load_from_dir(&manifests_dir)?;
 
         for entry in self.to_capture {
@@ -542,8 +543,8 @@ impl Plan for FetchbinCapturePlan {
 // Helpers
 // =============================================================================
 
-fn get_manifest_path() -> Result<PathBuf> {
-    let repo_path = ensure_repo()?;
+fn get_manifest_path(runner: &dyn CommandRunner) -> Result<PathBuf> {
+    let repo_path = ensure_repo(runner)?;
     Ok(repo_path.join("manifests"))
 }
 

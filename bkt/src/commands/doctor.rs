@@ -2,6 +2,7 @@
 //!
 //! Runs pre-flight checks and reports system readiness.
 
+use crate::command_runner::RealCommandRunner;
 use crate::output::Output;
 use crate::pr::run_preflight_checks;
 use anyhow::Result;
@@ -16,7 +17,8 @@ pub struct DoctorArgs {
 }
 
 pub fn run(args: DoctorArgs) -> Result<()> {
-    let mut results = run_preflight_checks()?;
+    let runner = RealCommandRunner;
+    let mut results = run_preflight_checks(&runner)?;
 
     // Additional environment readiness checks (not specific to PR workflows).
     results.push(check_distrobox_shims_path());

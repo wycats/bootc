@@ -1370,8 +1370,8 @@ mod tests {
         let registry = SubsystemRegistry::builtin();
         let all = registry.all();
 
-        // Should have all 8 subsystems
-        assert_eq!(all.len(), 8);
+        // Should have all 9 subsystems
+        assert_eq!(all.len(), 9);
 
         // Verify expected IDs
         let ids: Vec<_> = all.iter().map(|s| s.id()).collect();
@@ -1381,6 +1381,7 @@ mod tests {
         assert!(ids.contains(&"gsetting"));
         assert!(ids.contains(&"shim"));
         assert!(ids.contains(&"appimage"));
+        assert!(ids.contains(&"fetchbin"));
         assert!(ids.contains(&"homebrew"));
         assert!(ids.contains(&"system"));
     }
@@ -1396,6 +1397,7 @@ mod tests {
                 "distrobox",
                 "flatpak",
                 "appimage",
+                "fetchbin",
                 "homebrew",
                 "system",
                 "extension",
@@ -1415,7 +1417,7 @@ mod tests {
 
         // Exclude gsetting
         let selected = registry.filtered(None, &["gsetting"]);
-        assert_eq!(selected.len(), 7);
+        assert_eq!(selected.len(), 8);
 
         // Include extension but exclude it (exclude wins)
         let selected = registry.filtered(Some(&["extension"]), &["extension"]);
@@ -1448,6 +1450,7 @@ mod tests {
                 "extension",
                 "flatpak",
                 "appimage",
+                "fetchbin",
                 "homebrew",
                 "system",
                 "distrobox"

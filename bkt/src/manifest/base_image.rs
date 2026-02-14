@@ -10,12 +10,12 @@
 //! host but not in toolbox. When running from toolbox, commands are automatically
 //! delegated to the host via `flatpak-spawn --host`.
 
-use crate::context::run_command;
+use crate::command_runner::{CommandOptions, CommandRunner};
+use crate::context::run_command_with;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::process::Command;
 
 use super::build_info::{BaseImageChange, PackageChanges, PackageUpdate};
 
@@ -72,8 +72,9 @@ pub struct ImagePackageList {
 }
 
 /// Get the digest of an image using skopeo.
-pub fn get_image_digest(image_ref: &str) -> Result<String> {
-    let output = run_command(
+pub fn get_image_digest(image_ref: &str, runner: &dyn CommandRunner) -> Result<String> {
+    let output = run_command_with(
+        runner,
         "skopeo",
         &[
             "inspect",
@@ -95,26 +96,32 @@ pub fn get_image_digest(image_ref: &str) -> Result<String> {
 ///
 /// This uses `podman run --rm` to start a temporary container and extract
 /// the package list. The container is immediately removed after extraction.
-pub fn extract_packages_from_image(image_ref: &str) -> Result<ImagePackageList> {
+pub fn extract_packages_from_image(
+    image_ref: &str,
+    runner: &dyn CommandRunner,
+) -> Result<ImagePackageList> {
     tracing::info!("Extracting packages from {}", image_ref);
 
     // First get the digest
-    let digest = get_image_digest(image_ref)?;
+    let digest = get_image_digest(image_ref, runner)?;
 
     // Use podman to run rpm -qa inside the container
     // We use --entrypoint to override any custom entrypoint
-    let output = Command::new("podman")
-        .args([
-            "run",
-            "--rm",
-            "--entrypoint",
-            "rpm",
-            image_ref,
-            "-qa",
-            "--qf",
-            "%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n",
-        ])
-        .output()
+    let output = runner
+        .run_output(
+            "podman",
+            &[
+                "run",
+                "--rm",
+                "--entrypoint",
+                "rpm",
+                image_ref,
+                "-qa",
+                "--qf",
+                "%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n",
+            ],
+            &CommandOptions::default(),
+        )
         .context("Failed to run podman")?;
 
     if !output.status.success() {
@@ -199,6 +206,7 @@ pub fn get_packages_cached(
     repo_path: &Path,
     image_ref: &str,
     digest: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<ImagePackageList> {
     // Check cache first
     if let Some(cached) = load_cached_packages(repo_path, digest) {
@@ -206,7 +214,7 @@ pub fn get_packages_cached(
     }
 
     // Extract and cache
-    let list = extract_packages_from_image(image_ref)?;
+    let list = extract_packages_from_image(image_ref, runner)?;
     save_cached_packages(repo_path, &list)?;
     Ok(list)
 }
@@ -265,13 +273,14 @@ pub fn diff_base_image(
     image_name: &str,
     old_digest: &str,
     new_digest: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<BaseImageChange> {
     // Get package lists for both images
     let old_ref = format!("{}@{}", image_name, old_digest);
     let new_ref = format!("{}@{}", image_name, new_digest);
 
-    let old_packages = get_packages_cached(repo_path, &old_ref, old_digest)?;
-    let new_packages = get_packages_cached(repo_path, &new_ref, new_digest)?;
+    let old_packages = get_packages_cached(repo_path, &old_ref, old_digest, runner)?;
+    let new_packages = get_packages_cached(repo_path, &new_ref, new_digest, runner)?;
 
     let package_changes = diff_packages(&old_packages, &new_packages);
 

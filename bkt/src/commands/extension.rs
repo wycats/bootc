@@ -1,5 +1,6 @@
 //! GNOME extension command implementation.
 
+use crate::command_runner::{CommandOptions, CommandRunner};
 use crate::context::PrMode;
 use crate::manifest::GnomeExtensionsManifest;
 use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
@@ -12,7 +13,6 @@ use crate::validation::validate_gnome_extension;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
-use std::process::Command;
 
 #[derive(Debug, Args)]
 pub struct ExtensionArgs {
@@ -62,19 +62,25 @@ pub enum ExtensionAction {
 }
 
 /// Check if an extension is installed.
-fn is_installed(uuid: &str) -> bool {
-    Command::new("gnome-extensions")
-        .args(["info", uuid])
-        .output()
+fn is_installed(uuid: &str, runner: &dyn CommandRunner) -> bool {
+    runner
+        .run_output(
+            "gnome-extensions",
+            &["info", uuid],
+            &CommandOptions::default(),
+        )
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
 
 /// Check if an extension is enabled.
-fn is_enabled(uuid: &str) -> bool {
-    Command::new("gnome-extensions")
-        .args(["info", uuid])
-        .output()
+fn is_enabled(uuid: &str, runner: &dyn CommandRunner) -> bool {
+    runner
+        .run_output(
+            "gnome-extensions",
+            &["info", uuid],
+            &CommandOptions::default(),
+        )
         .map(|o| {
             // GNOME uses "State: ACTIVE" for enabled extensions, "State: INACTIVE" for disabled
             o.status.success() && String::from_utf8_lossy(&o.stdout).contains("State: ACTIVE")
@@ -83,30 +89,38 @@ fn is_enabled(uuid: &str) -> bool {
 }
 
 /// Enable an extension.
-fn enable_extension(uuid: &str) -> Result<bool> {
-    let status = Command::new("gnome-extensions")
-        .args(["enable", uuid])
-        .status()
+fn enable_extension(uuid: &str, runner: &dyn CommandRunner) -> Result<bool> {
+    let status = runner
+        .run_status(
+            "gnome-extensions",
+            &["enable", uuid],
+            &CommandOptions::default(),
+        )
         .context("Failed to run gnome-extensions enable")?;
     Ok(status.success())
 }
 
 /// Disable an extension.
 #[allow(dead_code)]
-fn disable_extension(uuid: &str) -> Result<bool> {
-    let status = Command::new("gnome-extensions")
-        .args(["disable", uuid])
-        .status()
+fn disable_extension(uuid: &str, runner: &dyn CommandRunner) -> Result<bool> {
+    let status = runner
+        .run_status(
+            "gnome-extensions",
+            &["disable", uuid],
+            &CommandOptions::default(),
+        )
         .context("Failed to run gnome-extensions disable")?;
     Ok(status.success())
 }
 
 pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
+    let runner = plan.runner();
+
     match args.action {
         ExtensionAction::Add { uuid, force } => {
             // Validate that the extension exists on extensions.gnome.org
             if !force {
-                validate_gnome_extension(&uuid)?;
+                validate_gnome_extension(runner, &uuid)?;
             }
 
             let system = GnomeExtensionsManifest::load_system()?;
@@ -140,10 +154,10 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
 
             // Enable if installed
             if plan.should_execute_locally() {
-                if is_installed(&uuid) {
-                    if !is_enabled(&uuid) {
+                if is_installed(&uuid, runner) {
+                    if !is_enabled(&uuid, runner) {
                         let spinner = Output::spinner(format!("Enabling {}...", uuid));
-                        if enable_extension(&uuid)? {
+                        if enable_extension(&uuid, runner)? {
                             spinner.finish_success(format!("Enabled {}", uuid));
                         } else {
                             spinner.finish_error(format!("Failed to enable {}", uuid));
@@ -210,15 +224,15 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
 
             // Disable if enabled
             if plan.should_execute_locally() {
-                if is_enabled(&uuid) {
+                if is_enabled(&uuid, runner) {
                     let spinner = Output::spinner(format!("Disabling {}...", uuid));
-                    if disable_extension(&uuid)? {
+                    if disable_extension(&uuid, runner)? {
                         spinner.finish_success(format!("Disabled {}", uuid));
                     } else {
                         spinner.finish_error(format!("Failed to disable {}", uuid));
                     }
                 }
-            } else if plan.dry_run && is_enabled(&uuid) {
+            } else if plan.dry_run && is_enabled(&uuid, runner) {
                 Output::dry_run(format!("Would disable extension: {}", uuid));
             }
 
@@ -268,9 +282,9 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
             }
 
             // Also disable the extension on the system if it's enabled
-            if plan.should_execute_locally() && is_enabled(&uuid) {
+            if plan.should_execute_locally() && is_enabled(&uuid, runner) {
                 let spinner = Output::spinner(format!("Disabling {}...", uuid));
-                if disable_extension(&uuid)? {
+                if disable_extension(&uuid, runner)? {
                     spinner.finish_success(format!("Disabled {}", uuid));
                 } else {
                     spinner.finish_error(format!("Failed to disable {}", uuid));
@@ -300,9 +314,12 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
             }
 
             // Also enable the extension on the system
-            if plan.should_execute_locally() && !is_enabled(&uuid) && is_installed(&uuid) {
+            if plan.should_execute_locally()
+                && !is_enabled(&uuid, runner)
+                && is_installed(&uuid, runner)
+            {
                 let spinner = Output::spinner(format!("Enabling {}...", uuid));
-                if enable_extension(&uuid)? {
+                if enable_extension(&uuid, runner)? {
                     spinner.finish_success(format!("Enabled {}", uuid));
                 } else {
                     spinner.finish_error(format!("Failed to enable {}", uuid));
@@ -338,13 +355,13 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
                     } else {
                         "system".dimmed().to_string()
                     };
-                    let status = if is_enabled(uuid) {
+                    let status = if is_enabled(uuid, runner) {
                         if item.enabled() {
                             format!("{} enabled", "✓".green())
                         } else {
                             format!("{} enabled (should be disabled)", "⚠".red())
                         }
-                    } else if is_installed(uuid) {
+                    } else if is_installed(uuid, runner) {
                         if item.enabled() {
                             format!("{} disabled", "○".yellow())
                         } else {
@@ -458,7 +475,9 @@ pub struct ExtensionSyncPlan {
 impl Plannable for ExtensionSyncCommand {
     type Plan = ExtensionSyncPlan;
 
-    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+    fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
+        let runner = ctx.execution_plan().runner();
+
         // Load and merge manifests (read-only, no side effects)
         let system = GnomeExtensionsManifest::load_system()?;
         let user = GnomeExtensionsManifest::load_user()?;
@@ -473,12 +492,12 @@ impl Plannable for ExtensionSyncCommand {
             let should_be_enabled = item.enabled();
             checked += 1;
 
-            if is_enabled(&uuid) {
+            if is_enabled(&uuid, runner) {
                 if !should_be_enabled {
                     to_disable.push(uuid);
                 }
             } else if should_be_enabled {
-                if is_installed(&uuid) {
+                if is_installed(&uuid, runner) {
                     to_enable.push(ExtensionToSync {
                         uuid,
                         state: ExtensionState::Disabled,
@@ -550,31 +569,38 @@ impl Plan for ExtensionSyncPlan {
 
         for ext in self.to_enable {
             match ext.state {
-                ExtensionState::Disabled => match enable_extension(&ext.uuid) {
-                    Ok(true) => {
-                        report.record_success_and_notify(
-                            ctx,
-                            Verb::Enable,
-                            format!("extension:{}", ext.uuid),
-                        );
+                ExtensionState::Disabled => {
+                    let result = {
+                        let runner = ctx.execution_plan().runner();
+                        enable_extension(&ext.uuid, runner)
+                    };
+
+                    match result {
+                        Ok(true) => {
+                            report.record_success_and_notify(
+                                ctx,
+                                Verb::Enable,
+                                format!("extension:{}", ext.uuid),
+                            );
+                        }
+                        Ok(false) => {
+                            report.record_failure_and_notify(
+                                ctx,
+                                Verb::Enable,
+                                format!("extension:{}", ext.uuid),
+                                "gnome-extensions enable failed",
+                            );
+                        }
+                        Err(e) => {
+                            report.record_failure_and_notify(
+                                ctx,
+                                Verb::Enable,
+                                format!("extension:{}", ext.uuid),
+                                e.to_string(),
+                            );
+                        }
                     }
-                    Ok(false) => {
-                        report.record_failure_and_notify(
-                            ctx,
-                            Verb::Enable,
-                            format!("extension:{}", ext.uuid),
-                            "gnome-extensions enable failed",
-                        );
-                    }
-                    Err(e) => {
-                        report.record_failure_and_notify(
-                            ctx,
-                            Verb::Enable,
-                            format!("extension:{}", ext.uuid),
-                            e.to_string(),
-                        );
-                    }
-                },
+                }
                 ExtensionState::NotInstalled => {
                     // Skip, don't record anything for not-installed extensions
                 }
@@ -582,7 +608,12 @@ impl Plan for ExtensionSyncPlan {
         }
 
         for uuid in self.to_disable {
-            match disable_extension(&uuid) {
+            let result = {
+                let runner = ctx.execution_plan().runner();
+                disable_extension(&uuid, runner)
+            };
+
+            match result {
                 Ok(true) => {
                     report.record_success_and_notify(
                         ctx,
@@ -629,10 +660,12 @@ impl Plan for ExtensionSyncPlan {
 // ============================================================================
 
 /// Get list of enabled GNOME extension UUIDs from the system.
-fn get_enabled_extensions() -> Vec<String> {
-    let output = std::process::Command::new("gnome-extensions")
-        .args(["list", "--enabled"])
-        .output();
+fn get_enabled_extensions(runner: &dyn CommandRunner) -> Vec<String> {
+    let output = runner.run_output(
+        "gnome-extensions",
+        &["list", "--enabled"],
+        &CommandOptions::default(),
+    );
 
     match output {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
@@ -645,10 +678,8 @@ fn get_enabled_extensions() -> Vec<String> {
 }
 
 /// Get list of all installed GNOME extension UUIDs from the system.
-fn get_installed_extensions_list() -> Vec<String> {
-    let output = std::process::Command::new("gnome-extensions")
-        .arg("list")
-        .output();
+fn get_installed_extensions_list(runner: &dyn CommandRunner) -> Vec<String> {
+    let output = runner.run_output("gnome-extensions", &["list"], &CommandOptions::default());
 
     match output {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
@@ -683,10 +714,13 @@ pub struct ExtensionCapturePlan {
 impl Plannable for ExtensionCaptureCommand {
     type Plan = ExtensionCapturePlan;
 
-    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+    fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
+        let runner = ctx.execution_plan().runner();
+
         // Get all installed extensions and enabled ones
-        let installed = get_installed_extensions_list();
-        let enabled: std::collections::HashSet<_> = get_enabled_extensions().into_iter().collect();
+        let installed = get_installed_extensions_list(runner);
+        let enabled: std::collections::HashSet<_> =
+            get_enabled_extensions(runner).into_iter().collect();
 
         // Load manifests to see what's already tracked
         let system = GnomeExtensionsManifest::load_system()?;

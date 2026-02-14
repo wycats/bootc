@@ -4,15 +4,18 @@
 //! before adding them to manifests. This prevents typos and invalid entries.
 
 use anyhow::{Context, Result, bail};
-use std::process::Command;
+
+use crate::command_runner::{CommandOptions, CommandRunner};
+
+#[cfg(test)]
+use crate::command_runner::RealCommandRunner;
 
 use crate::output::Output;
 
 /// Validate that a GSettings schema exists.
-pub fn validate_gsettings_schema(schema: &str) -> Result<()> {
-    let output = Command::new("gsettings")
-        .arg("list-schemas")
-        .output()
+pub fn validate_gsettings_schema(runner: &dyn CommandRunner, schema: &str) -> Result<()> {
+    let output = runner
+        .run_output("gsettings", &["list-schemas"], &CommandOptions::default())
         .context("Failed to list GSettings schemas")?;
 
     if !output.status.success() {
@@ -61,10 +64,13 @@ pub fn validate_gsettings_schema(schema: &str) -> Result<()> {
 }
 
 /// Validate that a key exists in a GSettings schema.
-pub fn validate_gsettings_key(schema: &str, key: &str) -> Result<()> {
-    let output = Command::new("gsettings")
-        .args(["list-keys", schema])
-        .output()
+pub fn validate_gsettings_key(runner: &dyn CommandRunner, schema: &str, key: &str) -> Result<()> {
+    let output = runner
+        .run_output(
+            "gsettings",
+            &["list-keys", schema],
+            &CommandOptions::default(),
+        )
         .context("Failed to list GSettings keys")?;
 
     if !output.status.success() {
@@ -105,17 +111,19 @@ pub fn validate_gsettings_key(schema: &str, key: &str) -> Result<()> {
 }
 
 /// Validate that a DNF package exists in repositories.
-pub fn validate_dnf_package(package: &str) -> Result<()> {
+pub fn validate_dnf_package(runner: &dyn CommandRunner, package: &str) -> Result<()> {
     // Try dnf5 first, fall back to dnf
-    let dnf_cmd = if Command::new("dnf5").arg("--version").output().is_ok() {
+    let dnf_cmd = if runner
+        .run_output("dnf5", &["--version"], &CommandOptions::default())
+        .is_ok()
+    {
         "dnf5"
     } else {
         "dnf"
     };
 
-    let output = Command::new(dnf_cmd)
-        .args(["info", package])
-        .output()
+    let output = runner
+        .run_output(dnf_cmd, &["info", package], &CommandOptions::default())
         .context("Failed to query package info")?;
 
     if output.status.success() {
@@ -123,9 +131,8 @@ pub fn validate_dnf_package(package: &str) -> Result<()> {
     }
 
     // Package not found - try to search for similar
-    let search_output = Command::new(dnf_cmd)
-        .args(["search", package])
-        .output()
+    let search_output = runner
+        .run_output(dnf_cmd, &["search", package], &CommandOptions::default())
         .ok();
 
     let suggestions: Vec<String> = search_output
@@ -161,11 +168,14 @@ pub fn validate_dnf_package(package: &str) -> Result<()> {
 }
 
 /// Validate that a Flatpak app exists on a remote.
-pub fn validate_flatpak_app(app_id: &str, remote: &str) -> Result<()> {
+pub fn validate_flatpak_app(runner: &dyn CommandRunner, app_id: &str, remote: &str) -> Result<()> {
     // Check if the remote exists first
-    let remotes_output = Command::new("flatpak")
-        .args(["remotes", "--columns=name"])
-        .output()
+    let remotes_output = runner
+        .run_output(
+            "flatpak",
+            &["remotes", "--columns=name"],
+            &CommandOptions::default(),
+        )
         .context("Failed to list Flatpak remotes")?;
 
     if !remotes_output.status.success() {
@@ -191,9 +201,12 @@ pub fn validate_flatpak_app(app_id: &str, remote: &str) -> Result<()> {
     }
 
     // Check if the app exists on the remote
-    let output = Command::new("flatpak")
-        .args(["remote-info", remote, app_id])
-        .output()
+    let output = runner
+        .run_output(
+            "flatpak",
+            &["remote-info", remote, app_id],
+            &CommandOptions::default(),
+        )
         .context("Failed to query Flatpak remote")?;
 
     if output.status.success() {
@@ -201,9 +214,8 @@ pub fn validate_flatpak_app(app_id: &str, remote: &str) -> Result<()> {
     }
 
     // App not found - search for similar
-    let search_output = Command::new("flatpak")
-        .args(["search", app_id])
-        .output()
+    let search_output = runner
+        .run_output("flatpak", &["search", app_id], &CommandOptions::default())
         .ok();
 
     let suggestions: Vec<String> = search_output
@@ -245,16 +257,18 @@ pub fn validate_flatpak_app(app_id: &str, remote: &str) -> Result<()> {
 ///
 /// This checks against extensions.gnome.org. If network is unavailable,
 /// it will warn but not fail.
-pub fn validate_gnome_extension(uuid: &str) -> Result<()> {
+pub fn validate_gnome_extension(runner: &dyn CommandRunner, uuid: &str) -> Result<()> {
     // Use curl to query the API (avoiding extra dependencies)
     let url = format!(
         "https://extensions.gnome.org/extension-info/?uuid={}",
         urlencoding::encode(uuid)
     );
 
-    let output = Command::new("curl")
-        .args(["-s", "-f", "-o", "/dev/null", "-w", "%{http_code}", &url])
-        .output();
+    let output = runner.run_output(
+        "curl",
+        &["-s", "-f", "-o", "/dev/null", "-w", "%{http_code}", &url],
+        &CommandOptions::default(),
+    );
 
     match output {
         Ok(o) if o.status.success() => {
@@ -289,7 +303,8 @@ mod tests {
     fn test_schema_validation_format() {
         // This test documents the error message format
         // Actual validation requires gsettings to be available
-        let err = validate_gsettings_schema("nonexistent.schema.that.does.not.exist");
+        let runner = RealCommandRunner;
+        let err = validate_gsettings_schema(&runner, "nonexistent.schema.that.does.not.exist");
         // Error should contain helpful suggestions
         if let Err(e) = err {
             let msg = e.to_string();
@@ -305,7 +320,8 @@ mod tests {
     fn test_dnf_validation_format() {
         // This test documents the error message format
         // Note: May fail with "Failed to query" if dnf5/dnf is not installed
-        let err = validate_dnf_package("nonexistent-package-xyz-12345");
+        let runner = RealCommandRunner;
+        let err = validate_dnf_package(&runner, "nonexistent-package-xyz-12345");
         if let Err(e) = err {
             let msg = e.to_string();
             assert!(
