@@ -5,8 +5,10 @@
 use anyhow::{Context, Result};
 use owo_colors::OwoColorize;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::sync::Arc;
 use tracing::{debug, info};
+
+use crate::command_runner::{CommandOptions, CommandRunner};
 
 /// Represents a side effect the CLI can perform.
 #[derive(Debug, Clone)]
@@ -71,14 +73,16 @@ impl Effect {
 pub struct Executor {
     dry_run: bool,
     effects: Vec<Effect>,
+    command_runner: Arc<dyn CommandRunner>,
 }
 
 impl Executor {
     /// Create a new executor.
-    pub fn new(dry_run: bool) -> Self {
+    pub fn new(dry_run: bool, command_runner: Arc<dyn CommandRunner>) -> Self {
         Self {
             dry_run,
             effects: Vec::new(),
+            command_runner,
         }
     }
 
@@ -142,10 +146,9 @@ impl Executor {
             Ok(true) // Assume success in dry-run
         } else {
             debug!(program, ?args, "Running command");
-            let status = Command::new(program)
-                .args(args)
-                .status()
-                .with_context(|| format!("Failed to run {}", program))?;
+            let status =
+                self.command_runner
+                    .run_status(program, args, &CommandOptions::default())?;
             info!(program, success = status.success(), "Command completed");
             Ok(status.success())
         }
@@ -171,11 +174,9 @@ impl Executor {
             Ok(true)
         } else {
             debug!(program, ?args, dir = %dir.display(), "Running command in directory");
-            let status = Command::new(program)
-                .args(args)
-                .current_dir(dir)
-                .status()
-                .with_context(|| format!("Failed to run {} in {}", program, dir.display()))?;
+            let status =
+                self.command_runner
+                    .run_status(program, args, &CommandOptions::with_cwd(dir))?;
             info!(program, success = status.success(), "Command completed");
             Ok(status.success())
         }
@@ -251,11 +252,12 @@ impl Executor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::command_runner::RealCommandRunner;
     use tempfile::tempdir;
 
     #[test]
     fn test_dry_run_collects_effects() {
-        let mut exec = Executor::new(true);
+        let mut exec = Executor::new(true, Arc::new(RealCommandRunner));
 
         exec.write_file(Path::new("/tmp/test"), "content", "test file")
             .unwrap();
@@ -271,7 +273,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("test.txt");
 
-        let mut exec = Executor::new(false);
+        let mut exec = Executor::new(false, Arc::new(RealCommandRunner));
         exec.write_file(&path, "hello", "test").unwrap();
 
         assert!(path.exists());

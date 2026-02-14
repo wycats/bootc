@@ -20,7 +20,9 @@ use std::ffi::OsString;
 use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
+
+use crate::command_runner::{CommandOptions, CommandRunner, RealCommandRunner};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Environment Trait (RFC-0019)
@@ -633,9 +635,17 @@ pub fn is_in_toolbox_with_env(env: &dyn Environment) -> bool {
 /// let output = run_command("flatpak", &["list", "--app"])?;
 /// ```
 pub fn run_command(program: &str, args: &[&str]) -> Result<Output> {
-    Command::new(program)
-        .args(args)
-        .output()
+    run_command_with(&RealCommandRunner, program, args)
+}
+
+/// Run a command and return its output using a provided command runner.
+pub fn run_command_with(
+    runner: &dyn CommandRunner,
+    program: &str,
+    args: &[&str],
+) -> Result<Output> {
+    runner
+        .run_output(program, args, &CommandOptions::default())
         .with_context(|| format!("Failed to run '{}'", program))
 }
 

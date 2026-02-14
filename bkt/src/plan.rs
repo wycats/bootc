@@ -167,7 +167,7 @@ impl ExecuteContext {
     /// Create a new execution context.
     pub fn new(execution_plan: ExecutionPlan) -> Self {
         Self {
-            executor: Executor::new(execution_plan.dry_run),
+            executor: Executor::new(execution_plan.dry_run, execution_plan.command_runner_arc()),
             execution_plan,
             progress_callback: None,
             current_op: 0,
