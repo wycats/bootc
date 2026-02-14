@@ -70,7 +70,7 @@ jobs:
 
       - name: Check Containerfile is in sync with manifests
         working-directory: ${{ github.workspace }}
-        run: cargo run -p bkt --quiet -- containerfile check
+        run: cargo run --manifest-path bkt/Cargo.toml --quiet -- containerfile check
 
   lint:
     runs-on: ubuntu-latest
