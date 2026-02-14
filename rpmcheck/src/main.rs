@@ -183,15 +183,30 @@ fn run(manifest_path: &str, baseline: Option<&str>, json: bool) -> Result<()> {
 // Repo checking
 // ---------------------------------------------------------------------------
 
+/// Expand DNF-style variables in a URL (e.g. `$basearch`).
+fn expand_repo_url(url: &str) -> String {
+    let basearch = match std::env::consts::ARCH {
+        "x86_64" => "x86_64",
+        "aarch64" => "aarch64",
+        "arm" => "armhfp",
+        "powerpc64" => "ppc64le",
+        "s390x" => "s390x",
+        other => other,
+    };
+    url.replace("$basearch", basearch)
+}
+
 fn check_repo(
     client: &reqwest::blocking::Client,
     repo: &RepoEntry,
     tracked: &HashSet<&str>,
 ) -> Result<Vec<PackageVersion>> {
+    let baseurl = expand_repo_url(&repo.baseurl);
+
     // 1. Fetch repomd.xml to discover primary.xml.gz location
     let repomd_url = format!(
         "{}/repodata/repomd.xml",
-        repo.baseurl.trim_end_matches('/')
+        baseurl.trim_end_matches('/')
     );
     let repomd_body = client
         .get(&repomd_url)
@@ -206,7 +221,7 @@ fn check_repo(
     // 2. Fetch and decompress primary.xml.gz
     let primary_url = format!(
         "{}/{}",
-        repo.baseurl.trim_end_matches('/'),
+        baseurl.trim_end_matches('/'),
         primary_href
     );
     eprintln!("  fetching {primary_url}");
