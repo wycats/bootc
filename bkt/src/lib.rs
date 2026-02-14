@@ -22,6 +22,7 @@
 //! - `--pr-only`: Create PR only, skip local execution
 
 pub mod cli;
+pub mod command_runner;
 pub mod commands;
 pub mod containerfile;
 pub mod context;
