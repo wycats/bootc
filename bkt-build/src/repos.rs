@@ -62,12 +62,21 @@ pub fn download_rpms(repo_name: &str, manifest_path: &Path) -> Result<()> {
 
     std::fs::create_dir_all("/rpms").context("failed to create /rpms")?;
 
+    // Detect build architecture to avoid downloading cross-arch RPMs
+    let arch = std::env::consts::ARCH;
+    let dnf_arch = match arch {
+        "x86_64" => "x86_64",
+        "aarch64" => "aarch64",
+        other => other,
+    };
+
     let mut args = vec![
         "download".to_string(),
         "--destdir".to_string(),
         "/rpms".to_string(),
         "--disablerepo=*".to_string(),
         format!("--enablerepo={}", repo.name),
+        format!("--arch={},noarch", dnf_arch),
     ];
     args.extend(repo.packages.iter().cloned());
 
