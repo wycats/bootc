@@ -95,6 +95,7 @@ COPY --from=dl-1password /rpms/ /tmp/rpms/
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
+    /tmp/rpms/*.rpm \
     curl \
     distrobox \
     fontconfig \

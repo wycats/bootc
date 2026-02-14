@@ -125,59 +125,60 @@ jobs:
   check-rpm-freshness:
     name: Check RPM freshness
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     outputs:
       rpms_changed: ${{ steps.check.outputs.rpms_changed }}
       cache_epoch: ${{ steps.check.outputs.cache_epoch }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rpmcheck -> target
+          shared-key: rpmcheck
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build rpmcheck
+        run: cargo build --release
+        working-directory: rpmcheck
+
       - name: Install skopeo
         run: |
           sudo apt-get update
           sudo apt-get install -y skopeo jq
 
-      - name: Check RPM repo revisions against last image
+      - name: Check tracked package versions
         id: check
         shell: bash
         run: |
           set -euo pipefail
 
-          # Each RPM repo publishes a repomd.xml with a <revision> timestamp
-          # that changes whenever the repo contents change. We hash these
-          # revisions — no need for dnf or rpm tooling on the Ubuntu runner.
-          REPOS=(
-            "vscode=https://packages.microsoft.com/yumrepos/vscode/repodata/repomd.xml"
-            "edge=https://packages.microsoft.com/yumrepos/edge/repodata/repomd.xml"
-            "1password=https://downloads.1password.com/linux/rpm/stable/x86_64/repodata/repomd.xml"
-          )
-
-          REVISIONS=""
-          for entry in "${REPOS[@]}"; do
-            name="${entry%%=*}"
-            url="${entry#*=}"
-            # Extract <revision> from repomd.xml (a Unix timestamp that changes on repo update)
-            rev=$(curl -sf "$url" | grep -oP '(?<=<revision>)\d+' || echo "unknown")
-            REVISIONS="${REVISIONS}${name}=${rev}\n"
-            echo "  ${name}: revision ${rev}"
-          done
-
-          REPO_HASH=$(printf '%b' "$REVISIONS" | sha256sum | cut -d' ' -f1)
-          echo "Combined repo hash: ${REPO_HASH}"
-
-          # Compare against the hash embedded in the last published image
+          # Get the RPM hash from the last published image (if available)
           LAST_HASH=""
           if skopeo inspect "docker://ghcr.io/${GITHUB_REPOSITORY}:latest" >/tmp/current.json 2>/dev/null; then
             LAST_HASH=$(jq -r '.Labels["org.wycats.bootc.rpm.hash"] // empty' </tmp/current.json)
           fi
           echo "Last image RPM hash: ${LAST_HASH:-none}"
 
-          if [[ -z "${LAST_HASH}" || "${REPO_HASH}" != "${LAST_HASH}" ]]; then
+          # Run rpmcheck to get the current hash of tracked package versions
+          CURRENT_HASH=$(./rpmcheck/target/release/rpmcheck manifests/external-repos.json)
+          echo "Current RPM hash: ${CURRENT_HASH}"
+
+          if [[ -z "${LAST_HASH}" || "${CURRENT_HASH}" != "${LAST_HASH}" ]]; then
             echo "rpms_changed=true" >> "$GITHUB_OUTPUT"
-            echo "cache_epoch=${REPO_HASH}" >> "$GITHUB_OUTPUT"
-            echo "::notice::RPM repo revision changed — will bust dnf cache layer"
+            echo "cache_epoch=${CURRENT_HASH}" >> "$GITHUB_OUTPUT"
+            echo "::notice::Tracked RPM package versions changed — will bust dnf cache layer"
           else
             echo "rpms_changed=false" >> "$GITHUB_OUTPUT"
             echo "cache_epoch=0" >> "$GITHUB_OUTPUT"
-            echo "::notice::RPM repo revisions unchanged"
+            echo "::notice::Tracked RPM package versions unchanged"
           fi
 
   validate-manifests:
