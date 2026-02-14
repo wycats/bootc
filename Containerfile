@@ -140,6 +140,8 @@ COPY systemd/user/bootc-bootstrap.service /usr/lib/systemd/user/bootc-bootstrap.
 COPY systemd/user/bootc-capture.service /usr/lib/systemd/user/bootc-capture.service
 COPY systemd/user/bootc-capture.timer /usr/lib/systemd/user/bootc-capture.timer
 COPY systemd/system/bootc-apply.service /usr/lib/systemd/system/bootc-apply.service
+# dbus-broker: raise soft fd limit to prevent session crashes under heavy container load
+COPY systemd/user/dbus-broker.service.d/override.conf /usr/lib/systemd/user/dbus-broker.service.d/override.conf
 RUN chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/bootc-repo /usr/bin/bkt && \
     mkdir -p /usr/lib/systemd/user/default.target.wants && \
     ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service && \
