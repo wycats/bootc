@@ -7,14 +7,13 @@ fn manifest_repo_urls_are_reachable() {
         return;
     }
 
-    let manifest_path =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../manifests/external-repos.json");
+    let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../manifests/external-repos.json");
 
     let content = std::fs::read_to_string(&manifest_path)
         .unwrap_or_else(|e| panic!("reading {}: {e}", manifest_path.display()));
 
-    let manifest: Manifest =
-        serde_json::from_str(&content).expect("parsing external-repos.json");
+    let manifest: Manifest = serde_json::from_str(&content).expect("parsing external-repos.json");
 
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))

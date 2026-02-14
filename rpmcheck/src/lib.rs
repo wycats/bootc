@@ -42,7 +42,10 @@ mod tests {
     fn expand_bare_basearch() {
         let url = "https://example.com/rpm/stable/$basearch";
         let expanded = expand_repo_url(url);
-        assert!(!expanded.contains('$'), "unexpanded variable in: {expanded}");
+        assert!(
+            !expanded.contains('$'),
+            "unexpanded variable in: {expanded}"
+        );
         assert!(expanded.ends_with(std::env::consts::ARCH) || expanded.ends_with("x86_64"));
     }
 
@@ -50,7 +53,10 @@ mod tests {
     fn expand_braced_basearch() {
         let url = "https://example.com/rpm/stable/${basearch}";
         let expanded = expand_repo_url(url);
-        assert!(!expanded.contains('$'), "unexpanded variable in: {expanded}");
+        assert!(
+            !expanded.contains('$'),
+            "unexpanded variable in: {expanded}"
+        );
     }
 
     #[test]

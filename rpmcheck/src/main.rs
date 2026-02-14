@@ -176,10 +176,7 @@ fn check_repo(
     let baseurl = expand_repo_url(&repo.baseurl);
 
     // 1. Fetch repomd.xml to discover primary.xml.gz location
-    let repomd_url = format!(
-        "{}/repodata/repomd.xml",
-        baseurl.trim_end_matches('/')
-    );
+    let repomd_url = format!("{}/repodata/repomd.xml", baseurl.trim_end_matches('/'));
     let repomd_body = client
         .get(&repomd_url)
         .send()
@@ -191,11 +188,7 @@ fn check_repo(
         find_primary_href(&repomd_body).context("finding primary.xml.gz in repomd.xml")?;
 
     // 2. Fetch and decompress primary.xml.gz
-    let primary_url = format!(
-        "{}/{}",
-        baseurl.trim_end_matches('/'),
-        primary_href
-    );
+    let primary_url = format!("{}/{}", baseurl.trim_end_matches('/'), primary_href);
     eprintln!("  fetching {primary_url}");
 
     let compressed = client
@@ -232,9 +225,7 @@ fn find_primary_href(repomd_xml: &str) -> Result<String> {
                 if local == "data" {
                     for attr in e.attributes() {
                         let attr = attr?;
-                        if attr.key.as_ref() == b"type"
-                            && attr.value.as_ref() == b"primary"
-                        {
+                        if attr.key.as_ref() == b"type" && attr.value.as_ref() == b"primary" {
                             in_primary = true;
                         }
                     }
@@ -290,10 +281,7 @@ fn parse_packages(xml: &str, tracked: &HashSet<&str>) -> Result<Vec<PackageVersi
             Event::Empty(ref e) => {
                 let local = tag_local(e.name());
 
-                if in_package
-                    && local == "version"
-                    && tracked.contains(current_name.as_str())
-                {
+                if in_package && local == "version" && tracked.contains(current_name.as_str()) {
                     let mut epoch = String::from("0");
                     let mut ver = String::new();
                     let mut rel = String::new();
