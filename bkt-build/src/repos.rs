@@ -76,7 +76,8 @@ pub fn download_rpms(repo_name: &str, manifest_path: &Path) -> Result<()> {
         "/rpms".to_string(),
         "--disablerepo=*".to_string(),
         format!("--enablerepo={}", repo.name),
-        format!("--arch={},noarch", dnf_arch),
+        format!("--arch={}", dnf_arch),
+        "--arch=noarch".to_string(),
     ];
     args.extend(repo.packages.iter().cloned());
 
