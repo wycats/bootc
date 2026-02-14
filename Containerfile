@@ -1,11 +1,84 @@
-FROM ghcr.io/ublue-os/bazzite-gnome:stable
+# ── Tools stage ──────────────────────────────────────────────────────────────
+# Static musl binary for build-time operations (built by CI)
+FROM scratch AS tools
+COPY scripts/bkt-build /bkt-build
 
-# bkt-build: build-time helper (musl static binary, built by CI)
-COPY scripts/bkt-build /usr/bin/bkt-build
+# ── Base stage (repos configured) ────────────────────────────────────────────
+FROM ghcr.io/ublue-os/bazzite-gnome:stable AS base
+COPY --from=tools /bkt-build /usr/bin/bkt-build
 COPY manifests/external-repos.json /tmp/external-repos.json
 RUN set -eu; \
     mkdir -p /var/opt /var/usrlocal/bin; \
     bkt-build setup-repos
+
+# ── RPM download stages (parallel, each downloads from one external repo) ────
+
+FROM base AS dl-code
+ARG DNF_CACHE_EPOCH=0
+RUN bkt-build download-rpms code
+
+FROM base AS dl-microsoft-edge
+ARG DNF_CACHE_EPOCH=0
+RUN bkt-build download-rpms microsoft-edge
+
+FROM base AS dl-1password
+ARG DNF_CACHE_EPOCH=0
+RUN bkt-build download-rpms 1password
+
+# ── Upstream fetch stages (parallel, each installs one upstream entry) ───────
+
+FROM base AS fetch-starship
+COPY upstream/manifest.json /tmp/upstream-manifest.json
+RUN bkt-build fetch starship
+
+FROM base AS fetch-lazygit
+COPY upstream/manifest.json /tmp/upstream-manifest.json
+RUN bkt-build fetch lazygit
+
+FROM base AS fetch-getnf
+COPY upstream/manifest.json /tmp/upstream-manifest.json
+RUN bkt-build fetch getnf
+
+FROM base AS fetch-bibata-cursor
+COPY upstream/manifest.json /tmp/upstream-manifest.json
+RUN bkt-build fetch bibata-cursor
+
+FROM base AS fetch-jetbrains-mono-nerd-font
+COPY upstream/manifest.json /tmp/upstream-manifest.json
+RUN bkt-build fetch jetbrains-mono-nerd-font
+
+# ── Bespoke build stages (parallel, for script-type installs) ────────────────
+
+FROM base AS build-keyd
+COPY upstream/manifest.json /tmp/upstream-manifest.json
+RUN <<'EOF'
+# keyd: build from source at pinned tag
+# FORCE_SYSTEMD=1 is needed because /run/systemd/system doesn't exist in container builds
+set -eu
+ref="$(jq -r '.upstreams[] | select(.name == "keyd") | .pinned.version' /tmp/upstream-manifest.json)"
+dnf install -y git gcc make systemd-devel
+git clone --depth 1 --branch "${ref}" https://github.com/rvaiya/keyd.git /tmp/keyd
+make -C /tmp/keyd
+make -C /tmp/keyd PREFIX=/usr FORCE_SYSTEMD=1 install
+rm -rf /tmp/keyd
+EOF
+
+FROM base AS fetch-whitesur
+COPY upstream/manifest.json /tmp/upstream-manifest.json
+RUN <<'EOF'
+# WhiteSur icon theme: clone at pinned commit and run vendor install script
+# Using commit SHA instead of tag for immutability. The install.sh script
+# is simple (copies files only, no network calls).
+set -eu
+ref="$(jq -r '.upstreams[] | select(.name == "whitesur-icons") | .pinned.commit' /tmp/upstream-manifest.json)"
+dnf install -y git
+git clone --filter=blob:none https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/whitesur-icons
+cd /tmp/whitesur-icons && git checkout "${ref}" && ./install.sh -d /usr/share/icons
+rm -rf /tmp/whitesur-icons
+EOF
+
+# ── Final image assembly ────────────────────────────────────────────────────
+FROM base AS image
 
 # === COPR_REPOS (managed by bkt) ===
 # No COPR repositories configured
@@ -15,12 +88,14 @@ RUN set -eu; \
 # No kernel arguments configured
 # === END KERNEL_ARGUMENTS ===
 
+# Collect downloaded RPMs from dl-* stages
+COPY --from=dl-code /rpms/ /tmp/rpms/
+COPY --from=dl-microsoft-edge /rpms/ /tmp/rpms/
+COPY --from=dl-1password /rpms/ /tmp/rpms/
+
 # === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
-    1password \
-    1password-cli \
-    code \
-    code-insiders \
+    /tmp/rpms/*.rpm \
     curl \
     distrobox \
     fontconfig \
@@ -31,7 +106,6 @@ RUN dnf install -y \
     google-noto-sans-meroitic-fonts \
     google-noto-sans-mongolian-fonts \
     jq \
-    microsoft-edge-stable \
     papirus-icon-theme \
     rsms-inter-fonts \
     toolbox \
@@ -62,57 +136,40 @@ RUN printf '%s\n' \
     'L+ /var/opt/microsoft - - - - /usr/lib/opt/microsoft' \
     >/usr/lib/tmpfiles.d/bootc-opt.conf
 
-# Upstream binaries and archives (managed by bkt-build, pinned in upstream/manifest.json)
-COPY upstream/manifest.json /tmp/upstream-manifest.json
-RUN bkt-build fetch starship
+# Clean up build-time artifacts (no longer needed after package install)
+RUN rm -rf /tmp/rpms /tmp/external-repos.json /usr/bin/bkt-build
 
-RUN bkt-build fetch lazygit
+# ── COPY upstream outputs into final image ───────────────────────────────────
 
-# keyd (built from source at pinned tag from upstream/manifest.json)
-# Rationale: Not available in standard Fedora repos.
-# FORCE_SYSTEMD=1 is needed because /run/systemd/system doesn't exist in container builds
-RUN set -eu; \
-    ref="$(jq -r '.upstreams[] | select(.name == "keyd") | .pinned.version' /tmp/upstream-manifest.json)"; \
-    dnf install -y git gcc make systemd-devel; \
-    git clone --depth 1 --branch "${ref}" https://github.com/rvaiya/keyd.git /tmp/keyd; \
-    make -C /tmp/keyd; \
-    make -C /tmp/keyd PREFIX=/usr FORCE_SYSTEMD=1 install; \
-    rm -rf /tmp/keyd; \
-    dnf remove -y git gcc make systemd-devel || true; \
-    dnf clean all
+COPY --from=fetch-starship /usr/bin/starship /usr/bin/starship
+COPY --from=fetch-lazygit /usr/bin/lazygit /usr/bin/lazygit
+COPY --from=fetch-getnf /usr/bin/getnf /usr/bin/getnf
+COPY --from=fetch-bibata-cursor /usr/share/icons/Bibata-Modern-Classic/ /usr/share/icons/Bibata-Modern-Classic/
+COPY --from=fetch-jetbrains-mono-nerd-font /usr/share/fonts/nerd-fonts/JetBrainsMono/ /usr/share/fonts/nerd-fonts/JetBrainsMono/
 
-RUN bkt-build fetch getnf
+# keyd outputs (built from source)
+COPY --from=build-keyd /usr/bin/keyd /usr/bin/keyd
+COPY --from=build-keyd /usr/bin/keyd-application-mapper /usr/bin/keyd-application-mapper
+COPY --from=build-keyd /usr/lib/systemd/system/keyd.service /usr/lib/systemd/system/keyd.service
+COPY --from=build-keyd /usr/share/keyd/ /usr/share/keyd/
+COPY --from=build-keyd /usr/share/man/man1/keyd.1.gz /usr/share/man/man1/keyd.1.gz
+COPY --from=build-keyd /usr/share/man/man1/keyd-application-mapper.1.gz /usr/share/man/man1/keyd-application-mapper.1.gz
+COPY --from=build-keyd /usr/share/doc/keyd/ /usr/share/doc/keyd/
 
-# Emoji rendering fix for Electron/Chromium apps.
-# Noto Color Emoji (COLRv1) renders monochrome in Chromium's Skia renderer.
-# This config hides it via <rejectfont> and aliases Twemoji as the preferred
-# emoji font using weak bindings (won't hijack text fonts like Kannada/CJK).
-# Also cleans up any stale version from the ostree /etc overlay.
+# WhiteSur icon theme
+COPY --from=fetch-whitesur /usr/share/icons/WhiteSur/ /usr/share/icons/WhiteSur/
+COPY --from=fetch-whitesur /usr/share/icons/WhiteSur-dark/ /usr/share/icons/WhiteSur-dark/
+
+# Emoji rendering fix for Electron/Chromium apps
 RUN rm -f /etc/fonts/conf.d/99-emoji-fix.conf
 COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
 
-RUN bkt-build fetch jetbrains-mono-nerd-font && fc-cache -f
+# Rebuild font cache after all font/icon COPYs
+RUN fc-cache -f
 
-RUN bkt-build fetch bibata-cursor
+# ── System configuration (spliced from Containerfile.d/90-system-config.tail) ─
 
-# WhiteSur icon theme (pinned via upstream/manifest.json, installed system-wide)
-# Rationale: Not available in standard Fedora repos.
-# Note: Using commit SHA instead of tag for immutability. The install.sh script
-# is simple (copies files only, no network calls). Full tree verification is
-# deferred to a future upstream management system.
-RUN set -eu; \
-    ref="$(jq -r '.upstreams[] | select(.name == "whitesur-icons") | .pinned.commit' /tmp/upstream-manifest.json)"; \
-    dnf install -y git; \
-    git clone --filter=blob:none https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/whitesur-icons; \
-    cd /tmp/whitesur-icons && git checkout "${ref}" && ./install.sh -d /usr/share/icons; \
-    rm -rf /tmp/whitesur-icons; \
-    dnf remove -y git || true; \
-    dnf clean all
-
-# Clean up build-time artifacts (no longer needed after this point)
-RUN rm -f /tmp/upstream-manifest.json /tmp/external-repos.json /usr/bin/bkt-build
-
-# Host-level config extracted from wycats/asahi-env (now sourced here)
+# keyd keyboard remapping config
 COPY system/keyd/default.conf /etc/keyd/default.conf
 # Enable keyd service (create symlink manually since systemctl doesn't work in containers)
 RUN mkdir -p /usr/lib/systemd/system/multi-user.target.wants && \

@@ -443,9 +443,9 @@ jobs:
           # This eliminates the race condition where the tag could move between detection and build
           UPSTREAM_DIGEST="${{ needs.check-upstream.outputs.upstream_digest }}"
           echo "Pinning Containerfile to digest: ${UPSTREAM_DIGEST}"
-          sed -i "s|FROM ${BASE_IMAGE}|FROM ${BASE_IMAGE}@${UPSTREAM_DIGEST}|" Containerfile
+          sed -i "s|FROM ${BASE_IMAGE} AS base|FROM ${BASE_IMAGE}@${UPSTREAM_DIGEST} AS base|" Containerfile
           echo "Updated FROM line:"
-          head -1 Containerfile
+          grep "AS base" Containerfile | head -1
 
       - name: Docker metadata
         id: meta

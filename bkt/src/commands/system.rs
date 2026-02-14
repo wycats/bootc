@@ -592,9 +592,22 @@ fn sync_all_containerfile_sections(manifest: &SystemPackagesManifest) -> Result<
     let mut editor = ContainerfileEditor::load(containerfile_path)?;
     let mut updated_any = false;
 
+    // Check whether external RPM repos are configured
+    let has_external_rpms = {
+        let repo_path = crate::repo::find_repo_path()?;
+        let manifest_path = repo_path.join("manifests").join("external-repos.json");
+        if manifest_path.exists() {
+            let content = std::fs::read_to_string(&manifest_path)?;
+            let ext: crate::manifest::ExternalReposManifest = serde_json::from_str(&content)?;
+            !ext.repos.is_empty()
+        } else {
+            false
+        }
+    };
+
     // SYSTEM_PACKAGES
     if editor.has_section(Section::SystemPackages) {
-        let new_content = generate_system_packages(&manifest.packages);
+        let new_content = generate_system_packages(&manifest.packages, has_external_rpms);
         editor.update_section(Section::SystemPackages, new_content);
         Output::success("Synced Containerfile SYSTEM_PACKAGES section");
         updated_any = true;

@@ -277,9 +277,13 @@ impl ContainerfileEditor {
     }
 }
 
-/// Generate the SYSTEM_PACKAGES section content from a manifest
-pub fn generate_system_packages(packages: &[String]) -> Vec<String> {
-    if packages.is_empty() {
+/// Generate the SYSTEM_PACKAGES section content from a manifest.
+///
+/// When `has_external_rpms` is true, the install line starts with
+/// `/tmp/rpms/*.rpm` to install pre-downloaded RPMs from dl-* stages
+/// before the Fedora-native packages.
+pub fn generate_system_packages(packages: &[String], has_external_rpms: bool) -> Vec<String> {
+    if packages.is_empty() && !has_external_rpms {
         return vec!["# No packages configured".to_string()];
     }
 
@@ -288,6 +292,10 @@ pub fn generate_system_packages(packages: &[String]) -> Vec<String> {
 
     let mut lines = Vec::new();
     lines.push("RUN dnf install -y \\".to_string());
+
+    if has_external_rpms {
+        lines.push("    /tmp/rpms/*.rpm \\".to_string());
+    }
 
     for pkg in sorted_packages.iter() {
         lines.push(format!("    {} \\", pkg));
@@ -448,7 +456,7 @@ COPY . /app
 
         let mut editor = ContainerfileEditor::parse(PathBuf::from("test"), content).unwrap();
 
-        let new_content = generate_system_packages(&["htop".to_string(), "vim".to_string()]);
+        let new_content = generate_system_packages(&["htop".to_string(), "vim".to_string()], false);
         editor.update_section(Section::SystemPackages, new_content);
 
         let rendered = editor.render();
@@ -459,7 +467,7 @@ COPY . /app
     #[test]
     fn test_generate_system_packages() {
         let packages = vec!["vim".to_string(), "htop".to_string(), "curl".to_string()];
-        let lines = generate_system_packages(&packages);
+        let lines = generate_system_packages(&packages, false);
 
         assert!(lines[0].contains("dnf install"));
         // Should be sorted alphabetically
@@ -506,7 +514,7 @@ COPY . /app
     #[test]
     fn test_generate_system_packages_empty() {
         let packages: Vec<String> = vec![];
-        let lines = generate_system_packages(&packages);
+        let lines = generate_system_packages(&packages, false);
 
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0], "# No packages configured");
@@ -516,13 +524,37 @@ COPY . /app
     fn test_generate_system_packages_format() {
         // Verify exact output format including trailing backslashes
         let packages = vec!["pkg1".to_string(), "pkg2".to_string()];
-        let lines = generate_system_packages(&packages);
+        let lines = generate_system_packages(&packages, false);
 
         assert_eq!(lines.len(), 4);
         assert_eq!(lines[0], "RUN dnf install -y \\");
         assert_eq!(lines[1], "    pkg1 \\");
         assert_eq!(lines[2], "    pkg2 \\");
         assert_eq!(lines[3], "    && dnf clean all");
+    }
+
+    #[test]
+    fn test_generate_system_packages_with_external_rpms() {
+        let packages = vec!["pkg1".to_string(), "pkg2".to_string()];
+        let lines = generate_system_packages(&packages, true);
+
+        assert_eq!(lines.len(), 5);
+        assert_eq!(lines[0], "RUN dnf install -y \\");
+        assert_eq!(lines[1], "    /tmp/rpms/*.rpm \\");
+        assert_eq!(lines[2], "    pkg1 \\");
+        assert_eq!(lines[3], "    pkg2 \\");
+        assert_eq!(lines[4], "    && dnf clean all");
+    }
+
+    #[test]
+    fn test_generate_system_packages_external_rpms_only() {
+        let packages: Vec<String> = vec![];
+        let lines = generate_system_packages(&packages, true);
+
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0], "RUN dnf install -y \\");
+        assert_eq!(lines[1], "    /tmp/rpms/*.rpm \\");
+        assert_eq!(lines[2], "    && dnf clean all");
     }
 
     #[test]
