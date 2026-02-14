@@ -3,6 +3,7 @@
 //! This module provides commands for managing AppImages through GearLever.
 //! The manifest format is simplified and backend-agnostic.
 
+use crate::command_runner::CommandRunner;
 use crate::context::PrMode;
 use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{AppImageApp, AppImageAppsManifest, GearLeverNativeManifest};
@@ -98,8 +99,8 @@ fn infer_name_from_repo(repo: &str) -> String {
 }
 
 /// Get the manifest path from the repo.
-fn get_manifest_path() -> Result<std::path::PathBuf> {
-    let repo_path = ensure_repo()?;
+fn get_manifest_path(runner: &dyn CommandRunner) -> Result<std::path::PathBuf> {
+    let repo_path = ensure_repo(runner)?;
     Ok(repo_path.join("manifests"))
 }
 
@@ -113,7 +114,7 @@ pub fn run(args: AppImageArgs, plan: &ExecutionPlan) -> Result<()> {
         } => {
             let repo = parse_github_repo(&repo)?;
             let name = name.unwrap_or_else(|| infer_name_from_repo(&repo));
-            let manifests_dir = get_manifest_path()?;
+            let manifests_dir = get_manifest_path(plan.runner())?;
 
             let mut manifest = AppImageAppsManifest::load_from_dir(&manifests_dir)?;
 
@@ -158,7 +159,7 @@ pub fn run(args: AppImageArgs, plan: &ExecutionPlan) -> Result<()> {
             }
         }
         AppImageAction::Remove { name } => {
-            let manifests_dir = get_manifest_path()?;
+            let manifests_dir = get_manifest_path(plan.runner())?;
             let mut manifest = AppImageAppsManifest::load_from_dir(&manifests_dir)?;
 
             if manifest.find(&name).is_none() {
@@ -195,7 +196,7 @@ pub fn run(args: AppImageArgs, plan: &ExecutionPlan) -> Result<()> {
             }
         }
         AppImageAction::Disable { name } => {
-            let manifests_dir = get_manifest_path()?;
+            let manifests_dir = get_manifest_path(plan.runner())?;
             let mut manifest = AppImageAppsManifest::load_from_dir(&manifests_dir)?;
 
             if let Some(app) = manifest.find_mut(&name) {
@@ -215,7 +216,7 @@ pub fn run(args: AppImageArgs, plan: &ExecutionPlan) -> Result<()> {
             }
         }
         AppImageAction::Enable { name } => {
-            let manifests_dir = get_manifest_path()?;
+            let manifests_dir = get_manifest_path(plan.runner())?;
             let mut manifest = AppImageAppsManifest::load_from_dir(&manifests_dir)?;
 
             if let Some(app) = manifest.find_mut(&name) {
@@ -235,7 +236,7 @@ pub fn run(args: AppImageArgs, plan: &ExecutionPlan) -> Result<()> {
             }
         }
         AppImageAction::List { format } => {
-            let manifests_dir = get_manifest_path()?;
+            let manifests_dir = get_manifest_path(plan.runner())?;
             let manifest = AppImageAppsManifest::load_from_dir(&manifests_dir)?;
 
             if manifest.apps.is_empty() {
@@ -355,9 +356,9 @@ pub struct AppImageSyncPlan {
 impl Plannable for AppImageSyncCommand {
     type Plan = AppImageSyncPlan;
 
-    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+    fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
         // Load our manifest from the repo
-        let manifests_dir = get_manifest_path()?;
+        let manifests_dir = get_manifest_path(ctx.execution_plan().runner())?;
         let manifest = AppImageAppsManifest::load_from_dir(&manifests_dir)?;
 
         // Load GearLever's current state
@@ -506,12 +507,12 @@ pub struct AppImageCapturePlan {
 impl Plannable for AppImageCaptureCommand {
     type Plan = AppImageCapturePlan;
 
-    fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
+    fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
         // Load GearLever's current state
         let gearlever = GearLeverNativeManifest::load()?;
 
         // Load our manifest from the repo
-        let manifests_dir = get_manifest_path()?;
+        let manifests_dir = get_manifest_path(ctx.execution_plan().runner())?;
         let manifest = AppImageAppsManifest::load_from_dir(&manifests_dir)?;
 
         let mut to_capture = Vec::new();
@@ -558,7 +559,7 @@ impl Plan for AppImageCapturePlan {
         let mut report = ExecutionReport::new();
 
         // Load manifest from the repo
-        let manifests_dir = get_manifest_path()?;
+        let manifests_dir = get_manifest_path(ctx.execution_plan().runner())?;
         let mut manifest = AppImageAppsManifest::load_from_dir(&manifests_dir)?;
 
         for item in self.to_capture {

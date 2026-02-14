@@ -8,6 +8,7 @@
 //! Files can only be copied from within $HOME, and paths containing ".."
 //! are rejected.
 
+use crate::command_runner::{CommandOptions, CommandRunner};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::repo::find_repo_path;
@@ -16,7 +17,6 @@ use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 #[derive(Debug, Args)]
 pub struct SkelArgs {
@@ -108,7 +108,11 @@ enum DiffResult {
 }
 
 /// Compare two files and return diff result.
-fn diff_files(skel_file: &Path, home_file: &Path) -> Result<DiffResult> {
+fn diff_files(
+    skel_file: &Path,
+    home_file: &Path,
+    runner: &dyn CommandRunner,
+) -> Result<DiffResult> {
     if !home_file.exists() {
         return Ok(DiffResult::MissingInHome);
     }
@@ -117,11 +121,15 @@ fn diff_files(skel_file: &Path, home_file: &Path) -> Result<DiffResult> {
         return Ok(DiffResult::MissingInSkel);
     }
 
-    let output = Command::new("diff")
-        .args(["-u", "--"])
-        .arg(skel_file)
-        .arg(home_file)
-        .output()
+    let skel_arg = skel_file.to_str().unwrap_or_default();
+    let home_arg = home_file.to_str().unwrap_or_default();
+
+    let output = runner
+        .run_output(
+            "diff",
+            &["-u", "--", skel_arg, home_arg],
+            &CommandOptions::default(),
+        )
         .context("Failed to run diff")?;
 
     if output.status.success() {
@@ -156,6 +164,8 @@ fn print_colored_diff(diff: &str) {
 }
 
 pub fn run(args: SkelArgs, plan: &ExecutionPlan) -> Result<()> {
+    let runner = plan.runner();
+
     match args.action {
         SkelAction::Add { file } => {
             let home = home_dir()?;
@@ -237,7 +247,7 @@ pub fn run(args: SkelArgs, plan: &ExecutionPlan) -> Result<()> {
                 let home_file = home.join(&file);
 
                 println!("\n{}", format!("━━━ {} ━━━", file).bold());
-                match diff_files(&skel_file, &home_file)? {
+                match diff_files(&skel_file, &home_file, runner)? {
                     DiffResult::Identical => Output::success("Files are identical"),
                     DiffResult::Different(diff) => print_colored_diff(&diff),
                     DiffResult::MissingInHome => {
@@ -266,7 +276,7 @@ pub fn run(args: SkelArgs, plan: &ExecutionPlan) -> Result<()> {
                     let skel_file = skel.join(file);
                     let home_file = home.join(file);
 
-                    match diff_files(&skel_file, &home_file)? {
+                    match diff_files(&skel_file, &home_file, runner)? {
                         DiffResult::Identical => identical_files.push(file.clone()),
                         DiffResult::Different(_) => different_files.push(file.clone()),
                         DiffResult::MissingInHome => missing_files.push(file.clone()),
@@ -301,7 +311,9 @@ pub fn run(args: SkelArgs, plan: &ExecutionPlan) -> Result<()> {
                         println!("  {} $HOME/{}", "→".green(), file.display());
                         println!();
 
-                        if let DiffResult::Different(diff) = diff_files(&skel_file, &home_file)? {
+                        if let DiffResult::Different(diff) =
+                            diff_files(&skel_file, &home_file, runner)?
+                        {
                             print_colored_diff(&diff);
                         }
                         println!();

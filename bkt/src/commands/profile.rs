@@ -2,6 +2,7 @@
 //!
 //! Captures current system state and compares against manifests.
 
+use crate::command_runner::{CommandOptions, CommandRunner};
 use crate::manifest::{FlatpakAppsManifest, GSettingsManifest, GnomeExtensionsManifest};
 use crate::output::Output;
 use anyhow::{Context, Result};
@@ -10,7 +11,6 @@ use owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::process::Command;
 
 #[derive(Debug, Args)]
 pub struct ProfileArgs {
@@ -70,10 +70,13 @@ pub struct SystemProfile {
 }
 
 /// Get list of installed flatpaks.
-fn get_installed_flatpaks() -> Result<Vec<InstalledFlatpak>> {
-    let output = Command::new("flatpak")
-        .args(["list", "--app", "--columns=installation,application,origin"])
-        .output()
+fn get_installed_flatpaks(runner: &dyn CommandRunner) -> Result<Vec<InstalledFlatpak>> {
+    let output = runner
+        .run_output(
+            "flatpak",
+            &["list", "--app", "--columns=installation,application,origin"],
+            &CommandOptions::default(),
+        )
         .context("Failed to run flatpak list")?;
 
     if !output.status.success() {
@@ -98,10 +101,9 @@ fn get_installed_flatpaks() -> Result<Vec<InstalledFlatpak>> {
 }
 
 /// Get list of installed GNOME extensions.
-fn get_installed_extensions() -> Result<Vec<String>> {
-    let output = Command::new("gnome-extensions")
-        .args(["list"])
-        .output()
+fn get_installed_extensions(runner: &dyn CommandRunner) -> Result<Vec<String>> {
+    let output = runner
+        .run_output("gnome-extensions", &["list"], &CommandOptions::default())
         .context("Failed to run gnome-extensions list")?;
 
     if !output.status.success() {
@@ -124,10 +126,13 @@ fn get_installed_extensions() -> Result<Vec<String>> {
 ///
 /// Note: This parser handles the common cases but may not handle all GVariant
 /// representations (e.g., with type annotations or nested structures).
-fn get_enabled_extensions() -> Result<Vec<String>> {
-    let output = Command::new("gsettings")
-        .args(["get", "org.gnome.shell", "enabled-extensions"])
-        .output()
+fn get_enabled_extensions(runner: &dyn CommandRunner) -> Result<Vec<String>> {
+    let output = runner
+        .run_output(
+            "gsettings",
+            &["get", "org.gnome.shell", "enabled-extensions"],
+            &CommandOptions::default(),
+        )
         .context("Failed to run gsettings get")?;
 
     if !output.status.success() {
@@ -164,12 +169,12 @@ fn get_hostname() -> String {
 }
 
 /// Capture the full system profile.
-fn capture_profile() -> Result<SystemProfile> {
+fn capture_profile(runner: &dyn CommandRunner) -> Result<SystemProfile> {
     let now = chrono::Utc::now().to_rfc3339();
 
-    let flatpaks = get_installed_flatpaks().unwrap_or_default();
-    let installed_exts = get_installed_extensions().unwrap_or_default();
-    let enabled_exts = get_enabled_extensions().unwrap_or_default();
+    let flatpaks = get_installed_flatpaks(runner).unwrap_or_default();
+    let installed_exts = get_installed_extensions(runner).unwrap_or_default();
+    let enabled_exts = get_enabled_extensions(runner).unwrap_or_default();
 
     Ok(SystemProfile {
         generated_at: now,
@@ -183,7 +188,7 @@ fn capture_profile() -> Result<SystemProfile> {
 }
 
 /// Show diff between system state and manifests.
-fn show_diff(section: Option<&str>) -> Result<()> {
+fn show_diff(section: Option<&str>, runner: &dyn CommandRunner) -> Result<()> {
     let show_all = section.is_none();
     let section = section.unwrap_or("");
 
@@ -194,7 +199,7 @@ fn show_diff(section: Option<&str>) -> Result<()> {
         let system = FlatpakAppsManifest::load_system()?;
         let user = FlatpakAppsManifest::load_user().unwrap_or_default();
         let manifest = FlatpakAppsManifest::merged(&system, &user);
-        let installed = get_installed_flatpaks()?;
+        let installed = get_installed_flatpaks(runner)?;
 
         let manifest_ids: HashSet<String> = manifest.apps.iter().map(|a| a.id.clone()).collect();
         let installed_ids: HashSet<String> = installed.iter().map(|a| a.id.clone()).collect();
@@ -230,7 +235,7 @@ fn show_diff(section: Option<&str>) -> Result<()> {
         let system = GnomeExtensionsManifest::load_system()?;
         let user = GnomeExtensionsManifest::load_user().unwrap_or_default();
         let manifest = GnomeExtensionsManifest::merged(&system, &user);
-        let installed = get_installed_extensions()?;
+        let installed = get_installed_extensions(runner)?;
 
         let manifest_set: HashSet<String> = manifest
             .extensions
@@ -277,9 +282,12 @@ fn show_diff(section: Option<&str>) -> Result<()> {
         } else {
             let mut drifted = 0;
             for setting in &manifest.settings {
-                let current = Command::new("gsettings")
-                    .args(["get", &setting.schema, &setting.key])
-                    .output()
+                let current = runner
+                    .run_output(
+                        "gsettings",
+                        &["get", &setting.schema, &setting.key],
+                        &CommandOptions::default(),
+                    )
                     .ok()
                     .filter(|o| o.status.success())
                     .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
@@ -328,7 +336,7 @@ fn show_diff(section: Option<&str>) -> Result<()> {
 }
 
 /// Show files not owned by any RPM package.
-fn show_unowned(dir: &PathBuf) -> Result<()> {
+fn show_unowned(dir: &PathBuf, runner: &dyn CommandRunner) -> Result<()> {
     use std::fs;
 
     if !dir.exists() {
@@ -348,7 +356,12 @@ fn show_unowned(dir: &PathBuf) -> Result<()> {
         }
 
         // Check if file is owned by any RPM
-        let output = Command::new("rpm").args(["-qf", "--"]).arg(&path).output();
+        let path_str = path.to_string_lossy();
+        let output = runner.run_output(
+            "rpm",
+            &["-qf", "--", path_str.as_ref()],
+            &CommandOptions::default(),
+        );
 
         match output {
             Ok(o) if !o.status.success() => {
@@ -373,10 +386,10 @@ fn show_unowned(dir: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-pub fn run(args: ProfileArgs) -> Result<()> {
+pub fn run(args: ProfileArgs, runner: &dyn CommandRunner) -> Result<()> {
     match args.action {
         ProfileAction::Capture { output } => {
-            let profile = capture_profile()?;
+            let profile = capture_profile(runner)?;
             let json = serde_json::to_string_pretty(&profile)?;
 
             if let Some(path) = output {
@@ -388,10 +401,10 @@ pub fn run(args: ProfileArgs) -> Result<()> {
             }
         }
         ProfileAction::Diff { section } => {
-            show_diff(section.as_deref())?;
+            show_diff(section.as_deref(), runner)?;
         }
         ProfileAction::Unowned { dir } => {
-            show_unowned(&dir)?;
+            show_unowned(&dir, runner)?;
         }
     }
     Ok(())

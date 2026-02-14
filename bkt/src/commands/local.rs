@@ -33,6 +33,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand, ValueEnum};
 use owo_colors::OwoColorize;
 
+use crate::command_runner::{CommandOptions, CommandRunner};
 use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{
     AppImageApp, AppImageAppsManifest, FlatpakApp, FlatpakAppsManifest, FlatpakScope, GSetting,
@@ -43,7 +44,6 @@ use crate::pipeline::ExecutionPlan;
 use crate::pr::{ensure_preflight, ensure_repo};
 use crate::repo::RepoConfig;
 use std::collections::HashMap;
-use std::process::Command;
 
 #[derive(Debug, Args)]
 pub struct LocalArgs {
@@ -261,6 +261,7 @@ fn commit_changes(
 
     // Run the actual commit workflow
     run_commit_workflow(
+        plan.runner(),
         &changes_to_commit,
         &message,
         plan.skip_preflight,
@@ -294,16 +295,17 @@ struct ManifestChange {
 
 /// Apply ephemeral changes to system manifests and create a PR.
 fn run_commit_workflow(
+    runner: &dyn CommandRunner,
     changes: &[&EphemeralChange],
     message: &str,
     skip_preflight: bool,
     _domain_filter: Option<ChangeDomain>,
 ) -> Result<()> {
     // Run preflight checks
-    ensure_preflight(skip_preflight)?;
+    ensure_preflight(runner, skip_preflight)?;
 
     // Get the repo path
-    let repo_path = ensure_repo()?;
+    let repo_path = ensure_repo(runner)?;
     let manifests_dir = repo_path.join("manifests");
 
     // Group changes by domain and apply them to manifests
@@ -347,7 +349,7 @@ fn run_commit_workflow(
     }
 
     // Create branch and commit
-    create_batch_pr(&repo_path, &manifest_changes, message)?;
+    create_batch_pr(&repo_path, &manifest_changes, message, runner)?;
 
     Ok(())
 }
@@ -600,7 +602,10 @@ fn create_batch_pr(
     repo_path: &std::path::Path,
     changes: &HashMap<String, ManifestChange>,
     message: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<()> {
+    let options = CommandOptions::with_cwd(repo_path);
+
     // Generate branch name
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -610,10 +615,8 @@ fn create_batch_pr(
 
     // Create branch
     Output::info(format!("Creating branch: {}", branch_name));
-    let status = Command::new("git")
-        .args(["checkout", "-b", &branch_name])
-        .current_dir(repo_path)
-        .status()
+    let status = runner
+        .run_status("git", &["checkout", "-b", &branch_name], &options)
         .context("Failed to create branch")?;
     if !status.success() {
         bail!("Failed to create branch {}", branch_name);
@@ -627,10 +630,12 @@ fn create_batch_pr(
             .with_context(|| format!("Failed to write {}", file_path.display()))?;
 
         // Stage the file
-        let status = Command::new("git")
-            .args(["add", &format!("manifests/{}", filename)])
-            .current_dir(repo_path)
-            .status()
+        let status = runner
+            .run_status(
+                "git",
+                &["add", &format!("manifests/{}", filename)],
+                &options,
+            )
             .context("Failed to stage manifest")?;
         if !status.success() {
             bail!("Failed to stage {}", filename);
@@ -639,10 +644,8 @@ fn create_batch_pr(
 
     // Create commit
     let commit_message = format!("feat(manifests): {}", message);
-    let status = Command::new("git")
-        .args(["commit", "-m", &commit_message])
-        .current_dir(repo_path)
-        .status()
+    let status = runner
+        .run_status("git", &["commit", "-m", &commit_message], &options)
         .context("Failed to commit")?;
     if !status.success() {
         bail!("Failed to commit changes");
@@ -650,10 +653,8 @@ fn create_batch_pr(
 
     // Push branch
     Output::info("Pushing branch...");
-    let status = Command::new("git")
-        .args(["push", "-u", "origin", &branch_name])
-        .current_dir(repo_path)
-        .status()
+    let status = runner
+        .run_status("git", &["push", "-u", "origin", &branch_name], &options)
         .context("Failed to push branch")?;
     if !status.success() {
         bail!("Failed to push branch");
@@ -662,10 +663,12 @@ fn create_batch_pr(
     // Create PR
     Output::info("Creating pull request...");
     let pr_body = generate_pr_body(changes);
-    let status = Command::new("gh")
-        .args(["pr", "create", "--title", message, "--body", &pr_body])
-        .current_dir(repo_path)
-        .status()
+    let status = runner
+        .run_status(
+            "gh",
+            &["pr", "create", "--title", message, "--body", &pr_body],
+            &options,
+        )
         .context("Failed to create PR")?;
     if !status.success() {
         bail!("Failed to create PR");
@@ -673,11 +676,7 @@ fn create_batch_pr(
 
     // Return to default branch
     let config = RepoConfig::load()?;
-    if let Err(e) = Command::new("git")
-        .args(["checkout", &config.default_branch])
-        .current_dir(repo_path)
-        .status()
-    {
+    if let Err(e) = runner.run_status("git", &["checkout", &config.default_branch], &options) {
         eprintln!(
             "Warning: failed to switch back to '{}' branch: {}",
             config.default_branch, e
