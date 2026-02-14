@@ -778,6 +778,7 @@ fn handle_info(name: &str) -> Result<()> {
             InstallConfig::Archive {
                 extract_to,
                 strip_components,
+                ..
             } => {
                 println!("  {} archive", "Type:".dimmed());
                 println!("  {} {}", "Extract To:".dimmed(), extract_to);

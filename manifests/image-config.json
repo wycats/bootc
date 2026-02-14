@@ -1,0 +1,293 @@
+{
+  "$schema": "../schemas/image-config.schema.json",
+  "modules": [
+    {
+      "name": "emoji-rendering-fix",
+      "type": "run",
+      "comment": "Emoji rendering fix for Electron/Chromium apps",
+      "commands": ["rm -f /etc/fonts/conf.d/99-emoji-fix.conf"]
+    },
+    {
+      "name": "emoji-rendering-fix-copy",
+      "type": "files",
+      "comment": "Emoji rendering fix config",
+      "files": [
+        {
+          "src": "system/fontconfig/99-emoji-fix.conf",
+          "dest": "/etc/fonts/conf.d/99-emoji-fix.conf"
+        }
+      ]
+    },
+    {
+      "name": "font-cache",
+      "type": "run",
+      "comment": "Rebuild font cache after all font/icon COPYs",
+      "commands": ["fc-cache -f"]
+    },
+    {
+      "name": "keyd-config",
+      "type": "files",
+      "comment": "keyd keyboard remapping config",
+      "files": [
+        { "src": "system/keyd/default.conf", "dest": "/etc/keyd/default.conf" }
+      ]
+    },
+    {
+      "name": "keyd-service",
+      "type": "systemd-enable",
+      "comment": "Enable keyd service (create symlink manually since systemctl doesn't work in containers)",
+      "scope": "system",
+      "unit": "keyd.service",
+      "target": "multi-user.target"
+    },
+    {
+      "name": "polkit-bkt-admin",
+      "type": "files",
+      "comment": "Polkit rules for bkt admin (passwordless bootc/rpm-ostree/flatpak for wheel group)",
+      "files": [
+        {
+          "src": "system/polkit-1/rules.d/50-bkt-admin.rules",
+          "dest": "/etc/polkit-1/rules.d/50-bkt-admin.rules"
+        }
+      ]
+    },
+    {
+      "name": "bootstrap",
+      "type": "files",
+      "comment": "First-login bootstrap (Flatpak + GNOME extensions + host shims)",
+      "pre_run": ["mkdir -p /usr/share/bootc-bootstrap /usr/share/bootc"],
+      "files": [
+        {
+          "src": "manifests/flatpak-remotes.json",
+          "dest": "/usr/share/bootc-bootstrap/flatpak-remotes.json"
+        },
+        {
+          "src": "manifests/flatpak-apps.json",
+          "dest": "/usr/share/bootc-bootstrap/flatpak-apps.json"
+        },
+        {
+          "src": "manifests/gnome-extensions.json",
+          "dest": "/usr/share/bootc-bootstrap/gnome-extensions.json"
+        },
+        {
+          "src": "manifests/gsettings.json",
+          "dest": "/usr/share/bootc-bootstrap/gsettings.json"
+        },
+        {
+          "src": "manifests/host-shims.json",
+          "dest": "/usr/share/bootc-bootstrap/host-shims.json"
+        },
+        {
+          "src": "repo.json",
+          "dest": "/usr/share/bootc/repo.json",
+          "comment": "Repository identity (for bkt --pr workflow)"
+        },
+        {
+          "src": "scripts/bootc-bootstrap",
+          "dest": "/usr/bin/bootc-bootstrap"
+        },
+        { "src": "scripts/bootc-apply", "dest": "/usr/bin/bootc-apply" },
+        { "src": "scripts/bootc-repo", "dest": "/usr/bin/bootc-repo" },
+        {
+          "src": "scripts/bkt",
+          "dest": "/usr/bin/bkt",
+          "comment": "bkt CLI (pre-built by CI, placed in scripts/ during workflow)"
+        }
+      ]
+    },
+    {
+      "name": "systemd-units",
+      "type": "files",
+      "comment": "systemd units: user-level bootstrap and system-level apply",
+      "files": [
+        {
+          "src": "systemd/user/bootc-bootstrap.service",
+          "dest": "/usr/lib/systemd/user/bootc-bootstrap.service"
+        },
+        {
+          "src": "systemd/user/bootc-capture.service",
+          "dest": "/usr/lib/systemd/user/bootc-capture.service"
+        },
+        {
+          "src": "systemd/user/bootc-capture.timer",
+          "dest": "/usr/lib/systemd/user/bootc-capture.timer"
+        },
+        {
+          "src": "systemd/system/bootc-apply.service",
+          "dest": "/usr/lib/systemd/system/bootc-apply.service"
+        },
+        {
+          "src": "systemd/user/dbus-broker.service.d/override.conf",
+          "dest": "/usr/lib/systemd/user/dbus-broker.service.d/override.conf",
+          "comment": "dbus-broker: raise soft fd limit to prevent session crashes under heavy container load"
+        }
+      ],
+      "post_run": [
+        "chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/bootc-repo /usr/bin/bkt",
+        "mkdir -p /usr/lib/systemd/user/default.target.wants",
+        "ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service",
+        "mkdir -p /usr/lib/systemd/user/timers.target.wants",
+        "ln -sf ../bootc-capture.timer /usr/lib/systemd/user/timers.target.wants/bootc-capture.timer",
+        "mkdir -p /usr/lib/systemd/system/multi-user.target.wants",
+        "ln -sf ../bootc-apply.service /usr/lib/systemd/system/multi-user.target.wants/bootc-apply.service"
+      ]
+    },
+    {
+      "name": "ujust-recipes",
+      "type": "files",
+      "comment": "Custom ujust recipes (auto-imported as /usr/share/ublue-os/just/60-custom.just)",
+      "pre_run": ["mkdir -p /usr/share/ublue-os/just"],
+      "files": [
+        {
+          "src": "ujust/60-custom.just",
+          "dest": "/usr/share/ublue-os/just/60-custom.just"
+        }
+      ]
+    },
+    {
+      "name": "distrobox-config",
+      "type": "files",
+      "comment": "Distrobox configuration (managed by bkt)",
+      "files": [
+        { "src": "distrobox.ini", "dest": "/etc/distrobox/distrobox.ini" }
+      ]
+    },
+    {
+      "name": "topgrade-config",
+      "type": "files",
+      "comment": "Integrated topgrade configuration",
+      "files": [
+        { "src": "system/etc/topgrade.toml", "dest": "/etc/topgrade.toml" }
+      ]
+    },
+    {
+      "name": "vm-tuning",
+      "type": "files",
+      "comment": "VM tuning for reduced degradation over time",
+      "files": [
+        {
+          "src": "system/etc/sysctl.d/99-bootc-vm-tuning.conf",
+          "dest": "/etc/sysctl.d/99-bootc-vm-tuning.conf"
+        }
+      ]
+    },
+    {
+      "name": "edge-policies",
+      "type": "files",
+      "comment": "Managed Edge policies to limit process bloat",
+      "pre_run": ["mkdir -p /etc/opt/edge/policies/managed"],
+      "files": [
+        {
+          "src": "system/etc/opt/edge/policies/managed/performance.json",
+          "dest": "/etc/opt/edge/policies/managed/performance.json"
+        }
+      ]
+    },
+    {
+      "name": "kargs-tuning",
+      "type": "run",
+      "comment": "Persist kernel arguments for performance tuning (zswap, THP)",
+      "commands": [
+        "mkdir -p /usr/lib/bootc/kargs.d",
+        "echo \"zswap.enabled=1 zswap.compressor=lz4 zswap.zpool=zsmalloc zswap.max_pool_percent=25 transparent_hugepage=madvise\" > /usr/lib/bootc/kargs.d/tuning.karg"
+      ]
+    },
+    {
+      "name": "remote-play",
+      "type": "files",
+      "comment": "Optional: remote play / console mode (off by default; enabled via `ujust enable-remote-play`)",
+      "pre_run": [
+        "mkdir -p /usr/share/bootc-optional/remote-play/bin /usr/share/bootc-optional/remote-play/systemd"
+      ],
+      "files": [
+        {
+          "src": "system/remote-play/bootc-remote-play-tty2",
+          "dest": "/usr/share/bootc-optional/remote-play/bin/bootc-remote-play-tty2"
+        },
+        {
+          "src": "system/remote-play/bootc-remote-play-tty2@.service",
+          "dest": "/usr/share/bootc-optional/remote-play/systemd/bootc-remote-play-tty2@.service"
+        }
+      ]
+    },
+    {
+      "name": "nm-wifi-powersave",
+      "type": "optional-feature",
+      "comment": "NetworkManager: disable Wi-Fi power save (wifi.powersave=2)",
+      "arg": "ENABLE_NM_DISABLE_WIFI_POWERSAVE",
+      "staging_pre_run": [
+        "mkdir -p /usr/share/bootc-optional/NetworkManager/conf.d"
+      ],
+      "src": "system/NetworkManager/conf.d/default-wifi-powersave-on.conf",
+      "staging": "/usr/share/bootc-optional/NetworkManager/conf.d/default-wifi-powersave-on.conf",
+      "dest": "/etc/NetworkManager/conf.d/default-wifi-powersave-on.conf"
+    },
+    {
+      "name": "nm-iwd-backend",
+      "type": "optional-feature",
+      "comment": "NetworkManager: use iwd backend (wifi.backend=iwd) (Asahi-focused; off by default)",
+      "arg": "ENABLE_NM_IWD_BACKEND",
+      "src": "system/NetworkManager/conf.d/wifi_backend.conf",
+      "staging": "/usr/share/bootc-optional/NetworkManager/conf.d/wifi_backend.conf",
+      "dest": "/etc/NetworkManager/conf.d/wifi_backend.conf"
+    },
+    {
+      "name": "asahi-titdb",
+      "type": "optional-feature",
+      "comment": "Asahi-only artifacts (off by default)\nNOTE: titdb.service.template contains a placeholder input device path; enable only after customizing it.",
+      "arg": "ENABLE_ASAHI_TITDB",
+      "src": "system/asahi/titdb.service.template",
+      "staging": "/usr/share/bootc-optional/asahi/titdb.service",
+      "dest": "/etc/systemd/system/titdb.service",
+      "post_install": ["systemctl enable titdb.service || true"]
+    },
+    {
+      "name": "asahi-brcmfmac",
+      "type": "optional-feature",
+      "arg": "ENABLE_ASAHI_BRCMFMAC",
+      "staging_pre_run": ["mkdir -p /usr/share/bootc-optional/modprobe.d"],
+      "src": "system/asahi/modprobe.d/brcmfmac.conf",
+      "staging": "/usr/share/bootc-optional/modprobe.d/brcmfmac.conf",
+      "dest": "/etc/modprobe.d/brcmfmac.conf"
+    },
+    {
+      "name": "journald-log-cap",
+      "type": "optional-feature",
+      "comment": "systemd: journald log cap (off by default)",
+      "arg": "ENABLE_JOURNALD_LOG_CAP",
+      "staging_pre_run": [
+        "mkdir -p /usr/share/bootc-optional/systemd/journald.conf.d"
+      ],
+      "src": "system/systemd/journald.conf.d/10-journal-cap.conf",
+      "staging": "/usr/share/bootc-optional/systemd/journald.conf.d/10-journal-cap.conf",
+      "dest": "/etc/systemd/journald.conf.d/10-journal-cap.conf"
+    },
+    {
+      "name": "logind-lid-policy",
+      "type": "optional-feature",
+      "comment": "systemd: logind lid policy (off by default)",
+      "arg": "ENABLE_LOGIND_LID_POLICY",
+      "staging_pre_run": [
+        "mkdir -p /usr/share/bootc-optional/systemd/logind.conf.d"
+      ],
+      "src": "system/systemd/logind.conf.d/10-lid-policy.conf",
+      "staging": "/usr/share/bootc-optional/systemd/logind.conf.d/10-lid-policy.conf",
+      "dest": "/etc/systemd/logind.conf.d/10-lid-policy.conf"
+    },
+    {
+      "name": "nushell-config",
+      "type": "files",
+      "comment": "Nushell config",
+      "files": [
+        {
+          "src": "skel/.config/nushell/config.nu",
+          "dest": "/etc/skel/.config/nushell/config.nu"
+        },
+        {
+          "src": "skel/.config/nushell/env.nu",
+          "dest": "/etc/skel/.config/nushell/env.nu"
+        }
+      ]
+    }
+  ]
+}

@@ -20,10 +20,14 @@
 //! - `COPR_REPOS`: COPR repository enablement commands
 //! - `HOST_SHIMS`: Host shim COPY and symlink commands
 
+use crate::manifest::ExternalReposManifest;
 use crate::manifest::Shim;
+use crate::manifest::image_config::{FileCopy, ImageConfigManifest, ImageModule};
 use crate::manifest::system_config::SystemConfigManifest;
 use anyhow::{Context, Result, bail};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use bkt_common::manifest::{InstallConfig, Upstream, UpstreamManifest};
+use std::cmp::Ordering;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -35,6 +39,8 @@ const SECTION_START_SUFFIX: &str = " (managed by bkt) ===";
 const SECTION_END: &str = "# === END ";
 /// Marker suffix for managed section end
 const SECTION_END_SUFFIX: &str = " ===";
+const HEADER_WIDTH: usize = 79;
+const LINE_CONT: &str = "\\";
 
 /// Types of managed sections in the Containerfile
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -274,6 +280,563 @@ impl ContainerfileEditor {
             result.push('\n');
         }
         result
+    }
+}
+
+/// Input data for full Containerfile generation.
+pub struct ContainerfileGeneratorInput {
+    pub external_repos: ExternalReposManifest,
+    pub upstreams: UpstreamManifest,
+    pub packages: Vec<String>,
+    pub copr_repos: Vec<String>,
+    pub system_config: SystemConfigManifest,
+    pub image_config: ImageConfigManifest,
+    pub shims: Vec<Shim>,
+    pub has_external_rpms: bool,
+}
+
+/// Generate the full Containerfile from manifests.
+pub fn generate_full_containerfile(input: &ContainerfileGeneratorInput) -> String {
+    let mut lines = Vec::new();
+
+    emit_tools_stage(&mut lines);
+    emit_base_stage(&mut lines);
+    emit_dl_stages(&mut lines, &input.external_repos);
+    emit_fetch_stages(&mut lines, &input.upstreams);
+    emit_script_stages(&mut lines, &input.upstreams);
+    emit_image_assembly(&mut lines, input);
+
+    let mut result = lines.join("\n");
+    if !result.is_empty() && !result.ends_with('\n') {
+        result.push('\n');
+    }
+    result
+}
+
+fn emit_managed_section(lines: &mut Vec<String>, section: Section, content: &[String]) {
+    lines.push(section.start_marker());
+    lines.extend(content.iter().cloned());
+    lines.push(section.end_marker());
+}
+
+fn section_header(title: &str) -> String {
+    let dash = '\u{2500}';
+    let mut line = String::new();
+    line.push('#');
+    line.push(' ');
+    line.push(dash);
+    line.push(dash);
+    line.push(' ');
+    line.push_str(title);
+    line.push(' ');
+
+    while line.chars().count() < HEADER_WIDTH {
+        line.push(dash);
+    }
+    line
+}
+
+fn emit_tools_stage(lines: &mut Vec<String>) {
+    lines.push(section_header("Tools stage"));
+    lines.push("# Static musl binary for build-time operations (built by CI)".to_string());
+    lines.push("FROM scratch AS tools".to_string());
+    lines.push("COPY scripts/bkt-build /bkt-build".to_string());
+}
+
+fn emit_base_stage(lines: &mut Vec<String>) {
+    lines.push("".to_string());
+    lines.push(section_header("Base stage (repos configured)"));
+    lines.push("FROM ghcr.io/ublue-os/bazzite-gnome:stable AS base".to_string());
+    lines.push("COPY --from=tools /bkt-build /usr/bin/bkt-build".to_string());
+    lines.push("COPY manifests/external-repos.json /tmp/external-repos.json".to_string());
+    lines.push(format!("RUN set -eu; {}", LINE_CONT));
+    lines.push(format!(
+        "    mkdir -p /var/opt /var/usrlocal/bin; {}",
+        LINE_CONT
+    ));
+    lines.push("    bkt-build setup-repos".to_string());
+}
+
+fn emit_dl_stages(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
+    lines.push("".to_string());
+    lines.push(section_header(
+        "RPM download stages (parallel, each downloads from one external repo)",
+    ));
+    lines.push("".to_string());
+
+    for (idx, repo) in repos.repos.iter().enumerate() {
+        if idx > 0 {
+            lines.push("".to_string());
+        }
+        lines.push(format!("FROM base AS dl-{}", repo.name));
+        lines.push("ARG DNF_CACHE_EPOCH=0".to_string());
+        lines.push(format!("RUN bkt-build download-rpms {}", repo.name));
+    }
+}
+
+fn emit_fetch_stages(lines: &mut Vec<String>, upstreams: &UpstreamManifest) {
+    lines.push("".to_string());
+    lines.push(section_header(
+        "Upstream fetch stages (parallel, each installs one upstream entry)",
+    ));
+    lines.push("".to_string());
+
+    for (idx, upstream) in ordered_upstreams(upstreams, |u| {
+        matches!(
+            u.install,
+            Some(InstallConfig::Binary { .. }) | Some(InstallConfig::Archive { .. })
+        )
+    })
+    .into_iter()
+    .enumerate()
+    {
+        if idx > 0 {
+            lines.push("".to_string());
+        }
+        lines.push(format!("FROM base AS fetch-{}", upstream.name));
+        lines.push("COPY upstream/manifest.json /tmp/upstream-manifest.json".to_string());
+        lines.push(format!("RUN bkt-build fetch {}", upstream.name));
+    }
+}
+
+fn emit_script_stages(lines: &mut Vec<String>, upstreams: &UpstreamManifest) {
+    lines.push("".to_string());
+    lines.push(section_header(
+        "Bespoke build stages (parallel, for script-type installs)",
+    ));
+    lines.push("".to_string());
+
+    for (idx, upstream) in ordered_upstreams(upstreams, |u| {
+        matches!(u.install, Some(InstallConfig::Script { .. }))
+    })
+    .into_iter()
+    .enumerate()
+    {
+        let install = match &upstream.install {
+            Some(InstallConfig::Script { .. }) => upstream.install.as_ref().unwrap(),
+            _ => continue,
+        };
+
+        if idx > 0 {
+            lines.push("".to_string());
+        }
+
+        let stage = script_stage_name(upstream, install);
+        let script_lines = script_build_script(install);
+
+        lines.push(format!("FROM base AS {}", stage));
+        lines.push("COPY upstream/manifest.json /tmp/upstream-manifest.json".to_string());
+        if let Some(script) = script_lines {
+            lines.push("RUN <<'EOF'".to_string());
+            lines.extend(script.into_iter());
+            lines.push("EOF".to_string());
+        } else {
+            lines.push(format!("RUN bkt-build fetch {}", upstream.name));
+        }
+    }
+}
+
+fn emit_image_assembly(lines: &mut Vec<String>, input: &ContainerfileGeneratorInput) {
+    lines.push("".to_string());
+    lines.push(section_header("Final image assembly"));
+    lines.push("FROM base AS image".to_string());
+    lines.push("".to_string());
+
+    let copr = generate_copr_repos(&input.copr_repos);
+    emit_managed_section(lines, Section::CoprRepos, &copr);
+    lines.push("".to_string());
+
+    let kargs = generate_kernel_arguments(&input.system_config);
+    emit_managed_section(lines, Section::KernelArguments, &kargs);
+    lines.push("".to_string());
+
+    emit_rpm_collection(lines, &input.external_repos);
+    lines.push("".to_string());
+
+    let pkgs = generate_system_packages(&input.packages, input.has_external_rpms);
+    emit_managed_section(lines, Section::SystemPackages, &pkgs);
+    lines.push("".to_string());
+
+    let units = generate_systemd_units(&input.system_config);
+    emit_managed_section(lines, Section::SystemdUnits, &units);
+    lines.push("".to_string());
+
+    emit_opt_relocation(lines);
+    lines.push("".to_string());
+
+    emit_tmpfiles(lines, &input.external_repos);
+    lines.push("".to_string());
+
+    emit_cleanup(lines);
+    lines.push("".to_string());
+
+    emit_upstream_copies(lines, &input.upstreams);
+    lines.push("".to_string());
+
+    emit_image_modules(lines, &input.image_config);
+    lines.push("".to_string());
+
+    let shims = generate_host_shims(&input.shims);
+    emit_managed_section(lines, Section::HostShims, &shims);
+    lines.push("".to_string());
+
+    emit_rpm_snapshot(lines);
+}
+
+fn emit_rpm_collection(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
+    lines.push("# Collect downloaded RPMs from dl-* stages".to_string());
+    for repo in &repos.repos {
+        lines.push(format!("COPY --from=dl-{} /rpms/ /tmp/rpms/", repo.name));
+    }
+}
+
+fn emit_opt_relocation(lines: &mut Vec<String>) {
+    lines.push("# Relocate /opt to /usr/lib/opt for ostree compatibility".to_string());
+    lines.push(
+        "# On ostree, /opt -> /var/opt which is persistent and NOT updated on upgrade.".to_string(),
+    );
+    lines.push("# Moving to /usr/lib/opt makes it part of the immutable image.".to_string());
+    lines.push(format!("RUN set -eu; {}", LINE_CONT));
+    lines.push(format!(
+        "    if [ -d /opt ] && [ \"$(ls -A /opt 2>/dev/null)\" ]; then {}",
+        LINE_CONT
+    ));
+    lines.push(format!("        mkdir -p /usr/lib/opt; {}", LINE_CONT));
+    lines.push(format!("        cp -a /opt/. /usr/lib/opt/; {}", LINE_CONT));
+    lines.push(format!("        rm -rf /opt/*; {}", LINE_CONT));
+    lines.push("    fi".to_string());
+}
+
+fn emit_tmpfiles(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
+    let opt_entries = opt_symlink_entries(repos);
+
+    lines.push(
+        "# Create systemd tmpfiles rule to symlink /var/opt contents from /usr/lib/opt".to_string(),
+    );
+    lines.push(format!("RUN printf '%s\\n' {}", LINE_CONT));
+    lines.push(format!(
+        "    '# Symlink /opt contents from immutable /usr/lib/opt' {}",
+        LINE_CONT
+    ));
+    for entry in opt_entries {
+        lines.push(format!(
+            "    'L+ /var/opt/{0} - - - - /usr/lib/opt/{0}' \\",
+            entry
+        ));
+    }
+    lines.push("    >/usr/lib/tmpfiles.d/bootc-opt.conf".to_string());
+}
+
+fn emit_cleanup(lines: &mut Vec<String>) {
+    lines.push(
+        "# Clean up build-time artifacts (no longer needed after package install)".to_string(),
+    );
+    lines.push("RUN rm -rf /tmp/rpms /tmp/external-repos.json /usr/bin/bkt-build".to_string());
+}
+
+fn emit_upstream_copies(lines: &mut Vec<String>, upstreams: &UpstreamManifest) {
+    lines.push(section_header("COPY upstream outputs into final image"));
+    lines.push("".to_string());
+
+    let fetch_upstreams = ordered_upstreams(upstreams, |u| {
+        matches!(
+            u.install,
+            Some(InstallConfig::Binary { .. }) | Some(InstallConfig::Archive { .. })
+        )
+    });
+
+    for upstream in &fetch_upstreams {
+        let install = upstream.install.as_ref();
+        let outputs = upstream_outputs(install);
+        for output in outputs {
+            lines.push(format!(
+                "COPY --from=fetch-{} {} {}",
+                upstream.name, output, output
+            ));
+        }
+    }
+
+    let script_upstreams = ordered_upstreams(upstreams, |u| {
+        matches!(u.install, Some(InstallConfig::Script { .. }))
+    });
+    if !script_upstreams.is_empty() {
+        lines.push("".to_string());
+    }
+
+    for (idx, upstream) in script_upstreams.into_iter().enumerate() {
+        if idx > 0 {
+            lines.push("".to_string());
+        }
+
+        if let Some(comment) = script_output_comment(upstream) {
+            lines.push(format!("# {}", comment));
+        }
+
+        let install = upstream.install.as_ref();
+        let outputs = upstream_outputs(install);
+        let stage = script_stage_name(upstream, install.unwrap());
+        for output in outputs {
+            lines.push(format!("COPY --from={} {} {}", stage, output, output));
+        }
+    }
+}
+
+fn emit_image_modules(lines: &mut Vec<String>, image_config: &ImageConfigManifest) {
+    let pre_header = [
+        "emoji-rendering-fix",
+        "emoji-rendering-fix-copy",
+        "font-cache",
+    ];
+
+    let mut previous: Option<&ImageModule> = None;
+    let mut section_header_emitted = false;
+    let mut optional_header_emitted = false;
+
+    for module in &image_config.modules {
+        // Emit section header when we transition from pre-header modules to config modules
+        if !section_header_emitted && !pre_header.contains(&module.name()) {
+            lines.push("".to_string());
+            lines.push(section_header(
+                "System configuration (spliced from Containerfile.d/90-system-config.tail)",
+            ));
+            lines.push("".to_string());
+            section_header_emitted = true;
+        } else if let Some(prev) = previous
+            && !is_tight_module_pair(prev, module)
+        {
+            lines.push("".to_string());
+        }
+
+        if matches!(module, ImageModule::OptionalFeature { .. }) && !optional_header_emitted {
+            lines.push("# Optional host tweaks (off by default)".to_string());
+            optional_header_emitted = true;
+        }
+
+        emit_module(lines, module);
+        previous = Some(module);
+    }
+}
+
+fn emit_module(lines: &mut Vec<String>, module: &ImageModule) {
+    if let Some(comment) = module
+        .comment()
+        .filter(|_| module.name() != "emoji-rendering-fix-copy")
+    {
+        for line in comment.split('\n') {
+            lines.push(format!("# {}", line));
+        }
+    }
+
+    match module {
+        ImageModule::Files {
+            pre_run,
+            files,
+            post_run,
+            ..
+        } => {
+            emit_run_lines(lines, pre_run);
+            emit_copy_files(lines, files);
+            emit_run_lines(lines, post_run);
+        }
+        ImageModule::SystemdEnable {
+            scope,
+            unit,
+            target,
+            ..
+        } => {
+            let wants_dir = format!("/usr/lib/systemd/{}/{}.wants", scope, target);
+            lines.push(format!("RUN mkdir -p {} && \\", wants_dir));
+            lines.push(format!("    ln -sf ../{} {}/{}", unit, wants_dir, unit));
+        }
+        ImageModule::OptionalFeature {
+            arg,
+            staging_pre_run,
+            src,
+            staging,
+            dest,
+            post_install,
+            ..
+        } => {
+            lines.push(format!("ARG {}=0", arg));
+            emit_run_lines(lines, staging_pre_run);
+            lines.push(format!("COPY {} {}", src, staging));
+            lines.push(format!("RUN if [ \"${{{}}}\" = \"1\" ]; then \\", arg));
+            lines.push(format!(
+                "            install -Dpm0644 {} {}; \\",
+                staging, dest
+            ));
+            for cmd in post_install {
+                lines.push(format!("            {}; \\", cmd));
+            }
+            lines.push("        fi".to_string());
+        }
+        ImageModule::Run { commands, .. } => {
+            emit_run_lines(lines, commands);
+        }
+    }
+}
+
+fn is_tight_module_pair(previous: &ImageModule, current: &ImageModule) -> bool {
+    matches!(
+        (previous.name(), current.name()),
+        ("emoji-rendering-fix", "emoji-rendering-fix-copy")
+            | ("keyd-config", "keyd-service")
+            | ("bootstrap", "systemd-units")
+    )
+}
+
+fn emit_copy_files(lines: &mut Vec<String>, files: &[FileCopy]) {
+    for file in files {
+        if let Some(comment) = &file.comment {
+            lines.push(format!("# {}", comment));
+        }
+        if let Some(mode) = &file.mode {
+            lines.push(format!("COPY --chmod={} {} {}", mode, file.src, file.dest));
+        } else {
+            lines.push(format!("COPY {} {}", file.src, file.dest));
+        }
+    }
+}
+
+fn emit_run_lines(lines: &mut Vec<String>, commands: &[String]) {
+    if commands.is_empty() {
+        return;
+    }
+
+    if commands.len() == 1 {
+        emit_single_run_line(lines, &commands[0]);
+        return;
+    }
+
+    lines.push(format!("RUN {} && \\", commands[0]));
+    for (idx, cmd) in commands.iter().enumerate().skip(1) {
+        let is_last = idx == commands.len() - 1;
+        emit_chained_run_line(lines, cmd, is_last);
+    }
+}
+
+fn emit_single_run_line(lines: &mut Vec<String>, command: &str) {
+    if let Some((left, right)) = split_redirect_command(command) {
+        lines.push(format!("RUN {} \\", left));
+        lines.push(format!("    > {}", right));
+    } else {
+        lines.push(format!("RUN {}", command));
+    }
+}
+
+fn emit_chained_run_line(lines: &mut Vec<String>, command: &str, is_last: bool) {
+    if let Some((left, right)) = split_redirect_command(command) {
+        lines.push(format!("    {} \\", left));
+        if is_last {
+            lines.push(format!("    > {}", right));
+        } else {
+            lines.push(format!("    > {} && \\", right));
+        }
+    } else if is_last {
+        lines.push(format!("    {}", command));
+    } else {
+        lines.push(format!("    {} && \\", command));
+    }
+}
+
+fn split_redirect_command(command: &str) -> Option<(String, String)> {
+    let (left, right) = command.split_once(" > ")?;
+    Some((left.to_string(), right.to_string()))
+}
+
+fn emit_rpm_snapshot(lines: &mut Vec<String>) {
+    lines.push("# === RPM VERSION SNAPSHOT ===".to_string());
+    lines.push(
+        "# Capture installed versions of system packages for OCI label embedding.".to_string(),
+    );
+    lines.push(
+        "# This file is read by the build workflow to create org.wycats.bootc.rpm.versions label."
+            .to_string(),
+    );
+    lines.push(
+        "RUN rpm -qa --qf '%{NAME}\\t%{EVR}\\n' | sort > /usr/share/bootc/rpm-versions.txt"
+            .to_string(),
+    );
+    lines.push("# === END RPM VERSION SNAPSHOT ===".to_string());
+}
+
+fn ordered_upstreams<F>(upstreams: &UpstreamManifest, predicate: F) -> Vec<&Upstream>
+where
+    F: Fn(&Upstream) -> bool,
+{
+    let mut entries: Vec<&Upstream> = upstreams
+        .upstreams
+        .iter()
+        .filter(|u| predicate(u))
+        .collect();
+    entries.sort_by(|a, b| {
+        let by_date = a.pinned.pinned_at.cmp(&b.pinned.pinned_at);
+        if by_date == Ordering::Equal {
+            b.name.cmp(&a.name)
+        } else {
+            by_date
+        }
+    });
+    entries
+}
+
+fn script_stage_name(upstream: &Upstream, install: &InstallConfig) -> String {
+    match install {
+        InstallConfig::Script { stage_name, .. } => stage_name
+            .clone()
+            .unwrap_or_else(|| format!("build-{}", upstream.name)),
+        _ => format!("build-{}", upstream.name),
+    }
+}
+
+fn script_build_script(install: &InstallConfig) -> Option<Vec<String>> {
+    match install {
+        InstallConfig::Script { build_script, .. } => build_script.clone(),
+        _ => None,
+    }
+}
+
+fn upstream_outputs(install: Option<&InstallConfig>) -> Vec<String> {
+    match install {
+        Some(InstallConfig::Binary { install_path }) => vec![install_path.clone()],
+        Some(InstallConfig::Archive {
+            extract_to,
+            outputs,
+            ..
+        }) => match outputs {
+            Some(list) if !list.is_empty() => list.clone(),
+            _ => vec![ensure_trailing_slash(extract_to)],
+        },
+        Some(InstallConfig::Script { outputs, .. }) => outputs.clone().unwrap_or_default(),
+        None => Vec::new(),
+    }
+}
+
+fn ensure_trailing_slash(path: &str) -> String {
+    if path.ends_with('/') {
+        path.to_string()
+    } else {
+        format!("{}/", path)
+    }
+}
+
+fn opt_symlink_entries(repos: &ExternalReposManifest) -> Vec<String> {
+    let known = [("1password", "1Password"), ("microsoft-edge", "microsoft")];
+
+    let mut entries = Vec::new();
+    for (name, dir) in known {
+        if repos.repos.iter().any(|repo| repo.name == name) {
+            entries.push(dir.to_string());
+        }
+    }
+    entries
+}
+
+fn script_output_comment(upstream: &Upstream) -> Option<&'static str> {
+    match upstream.name.as_str() {
+        "keyd" => Some("keyd outputs (built from source)"),
+        "whitesur-icons" => Some("WhiteSur icon theme"),
+        _ => None,
     }
 }
 
@@ -699,6 +1262,32 @@ COPY . /app
             "Last line should not end with backslash: {}",
             last_line
         );
+    }
+
+    #[test]
+    fn test_generate_full_containerfile_contains_sections() {
+        let input = ContainerfileGeneratorInput {
+            external_repos: ExternalReposManifest::default(),
+            upstreams: UpstreamManifest::default(),
+            packages: Vec::new(),
+            copr_repos: Vec::new(),
+            system_config: SystemConfigManifest::default(),
+            image_config: ImageConfigManifest {
+                schema: None,
+                modules: Vec::new(),
+            },
+            shims: Vec::new(),
+            has_external_rpms: false,
+        };
+
+        let output = generate_full_containerfile(&input);
+
+        assert!(output.contains(&section_header("Tools stage")));
+        assert!(output.contains("FROM base AS image"));
+        assert!(output.contains("# === SYSTEM_PACKAGES (managed by bkt) ==="));
+        assert!(output.contains("# === HOST_SHIMS (managed by bkt) ==="));
+        assert!(output.contains("# === RPM VERSION SNAPSHOT ==="));
+        assert!(output.ends_with('\n'));
     }
 }
 

@@ -9,18 +9,23 @@
 //! - Execution phase: Apply updates to the Containerfile
 
 use crate::containerfile::{
-    ContainerfileEditor, Section, generate_copr_repos, generate_host_shims,
-    generate_kernel_arguments, generate_system_packages, generate_systemd_units,
+    ContainerfileEditor, ContainerfileGeneratorInput, Section, generate_copr_repos,
+    generate_full_containerfile, generate_host_shims, generate_kernel_arguments,
+    generate_system_packages, generate_systemd_units,
 };
+use crate::manifest::image_config::ImageConfigManifest;
 use crate::manifest::system_config::SystemConfigManifest;
-use crate::manifest::{ShimsManifest, SystemPackagesManifest};
+use crate::manifest::upstream::ManifestRepo as UpstreamManifestRepo;
+use crate::manifest::{
+    ExternalReposManifest, ShimsManifest, SystemPackagesManifest, UpstreamManifest,
+};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::plan::{
     ExecuteContext, ExecutionReport, Operation, Plan, PlanContext, PlanSummary, PlanWarning,
     Plannable, Verb,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use std::path::{Path, PathBuf};
 
@@ -36,6 +41,8 @@ pub enum ContainerfileAction {
     Sync,
     /// Check for drift between manifests and Containerfile (dry-run)
     Check,
+    /// Generate the full Containerfile from manifests
+    Generate,
 }
 
 // ============================================================================
@@ -360,50 +367,42 @@ pub fn run(args: ContainerfileArgs, plan: &ExecutionPlan) -> Result<()> {
             Ok(())
         }
         ContainerfileAction::Check => {
-            // Check is just planning without execution
-            let cwd = std::env::current_dir()?;
-            let plan_ctx = PlanContext::new(cwd, plan.clone());
+            let input = load_generator_input()?;
+            let generated = generate_full_containerfile(&input);
 
-            let sync_plan = ContainerfileSyncCommand.plan(&plan_ctx)?;
+            let path = Path::new("Containerfile");
+            let current = std::fs::read_to_string(path).context("Failed to read Containerfile")?;
 
-            // Check for fatal errors
-            if sync_plan
-                .warnings
-                .iter()
-                .any(|w| w.message.contains("No Containerfile found"))
-            {
-                Output::error("No Containerfile found in current directory");
+            if generated == current {
+                Output::success("Containerfile is in sync with manifests.");
                 return Ok(());
             }
 
-            Output::header("Checking Containerfile managed sections for drift");
-            Output::blank();
+            Output::error("Containerfile has drifted from manifests.");
+            Output::info("Run `bkt containerfile generate` to regenerate.");
 
-            // Show each section status
-            for update in &sync_plan.section_updates {
-                if update.is_drift {
-                    Output::warning(format!("{}: DRIFT DETECTED", update.section.marker_name()));
-                } else {
-                    Output::success(format!("{}: up to date", update.section.marker_name()));
-                }
-            }
+            let gen_lines: Vec<&str> = generated.lines().collect();
+            let cur_lines: Vec<&str> = current.lines().collect();
+            let diff_count = gen_lines
+                .iter()
+                .zip(cur_lines.iter())
+                .filter(|(a, b)| a != b)
+                .count();
+            let len_diff = (gen_lines.len() as i64 - cur_lines.len() as i64).abs();
+            Output::info(format!(
+                "{} line(s) differ, {} line(s) length difference",
+                diff_count, len_diff
+            ));
+            std::process::exit(1);
+        }
+        ContainerfileAction::Generate => {
+            let input = load_generator_input()?;
+            let generated = generate_full_containerfile(&input);
 
-            // Show warnings for missing sections
-            for warning in &sync_plan.warnings {
-                Output::warning(format!(
-                    "{}: {}",
-                    warning.section.marker_name(),
-                    warning.message
-                ));
-            }
+            let path = Path::new("Containerfile");
+            std::fs::write(path, &generated).context("Failed to write Containerfile")?;
 
-            Output::blank();
-            if sync_plan.has_drift() {
-                Output::warning("Drift detected. Run `bkt containerfile sync` to update.");
-            } else {
-                Output::success("All managed sections are in sync with manifests.");
-            }
-
+            Output::success("Containerfile generated from manifests");
             Ok(())
         }
     }
@@ -437,4 +436,53 @@ fn load_has_external_rpms() -> Result<bool> {
     let content = std::fs::read_to_string(&manifest_path)?;
     let manifest: crate::manifest::ExternalReposManifest = serde_json::from_str(&content)?;
     Ok(!manifest.repos.is_empty())
+}
+
+fn load_generator_input() -> Result<ContainerfileGeneratorInput> {
+    let repo_path = crate::repo::find_repo_path()?;
+
+    let external_repos_path = repo_path.join("manifests").join("external-repos.json");
+    let external_repos = if external_repos_path.exists() {
+        let content = std::fs::read_to_string(&external_repos_path).with_context(|| {
+            format!(
+                "Failed to read external repos manifest from {}",
+                external_repos_path.display()
+            )
+        })?;
+        serde_json::from_str(&content).with_context(|| {
+            format!(
+                "Failed to parse external repos manifest from {}",
+                external_repos_path.display()
+            )
+        })?
+    } else {
+        ExternalReposManifest::default()
+    };
+
+    let upstreams = UpstreamManifest::load()?;
+
+    let system_packages = SystemPackagesManifest::load_repo()?;
+    let copr_repos: Vec<String> = system_packages
+        .copr_repos
+        .iter()
+        .filter(|c| c.enabled)
+        .map(|c| c.name.clone())
+        .collect();
+
+    let system_config = SystemConfigManifest::load()?;
+    let image_config = ImageConfigManifest::load()?;
+    let shims_manifest = ShimsManifest::load_repo()?;
+
+    let has_external_rpms = !external_repos.repos.is_empty();
+
+    Ok(ContainerfileGeneratorInput {
+        external_repos,
+        upstreams,
+        packages: system_packages.packages,
+        copr_repos,
+        system_config,
+        image_config,
+        shims: shims_manifest.shims,
+        has_external_rpms,
+    })
 }

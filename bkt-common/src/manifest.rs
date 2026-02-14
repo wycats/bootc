@@ -79,6 +79,9 @@ pub enum InstallConfig {
         /// Number of leading path components to strip
         #[serde(default)]
         strip_components: u32,
+        /// Output paths produced by the archive extraction
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        outputs: Option<Vec<String>>,
     },
     /// Install a binary
     Binary {
@@ -91,6 +94,14 @@ pub enum InstallConfig {
         command: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         outputs: Option<Vec<String>>,
+        /// Full build script lines (each line is a shell command).
+        /// When present, the generator emits these as a heredoc RUN block
+        /// instead of using `bkt-build fetch`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        build_script: Option<Vec<String>>,
+        /// Optional override for the stage name in the Containerfile.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stage_name: Option<String>,
     },
 }
 
