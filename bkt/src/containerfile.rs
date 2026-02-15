@@ -357,6 +357,22 @@ fn emit_base_stage(lines: &mut Vec<String>) {
     lines.push("    bkt-build setup-repos".to_string());
 }
 
+/// Convert a repo name to a Dockerfile ARG name for cache busting.
+/// e.g. "microsoft-edge" -> "CACHE_EPOCH_MICROSOFT_EDGE"
+fn cache_arg_name(repo_name: &str) -> String {
+    let sanitized: String = repo_name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("CACHE_EPOCH_{sanitized}")
+}
+
 fn emit_dl_stages(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
     lines.push("".to_string());
     lines.push(section_header(
@@ -369,7 +385,7 @@ fn emit_dl_stages(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
             lines.push("".to_string());
         }
         lines.push(format!("FROM base AS dl-{}", repo.name));
-        lines.push("ARG DNF_CACHE_EPOCH=0".to_string());
+        lines.push(format!("ARG {}=0", cache_arg_name(&repo.name)));
         lines.push(format!("RUN bkt-build download-rpms {}", repo.name));
     }
 }
@@ -1037,6 +1053,16 @@ COPY . /app
         assert!(lines[1].contains("curl"));
         assert!(lines[2].contains("htop"));
         assert!(lines[3].contains("vim"));
+    }
+
+    #[test]
+    fn cache_arg_name_sanitizes_repo_names() {
+        assert_eq!(cache_arg_name("code"), "CACHE_EPOCH_CODE");
+        assert_eq!(
+            cache_arg_name("microsoft-edge"),
+            "CACHE_EPOCH_MICROSOFT_EDGE"
+        );
+        assert_eq!(cache_arg_name("1password"), "CACHE_EPOCH_1PASSWORD");
     }
 
     #[test]
