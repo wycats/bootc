@@ -1,0 +1,8 @@
+[Slice]
+Description=Microsoft Edge Memory Budget
+
+MemoryHigh=8G
+MemoryMax=12G
+
+ManagedOOMMemoryPressure=kill
+ManagedOOMMemoryPressureLimit=50%

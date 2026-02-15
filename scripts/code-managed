@@ -1,0 +1,27 @@
+#!/bin/bash
+# Launch VS Code within the memory-managed slice.
+# All child processes (rust-analyzer, tsgo, etc.) inherit the cgroup.
+#
+# This script REPLACES /usr/bin/code (which was a symlink to
+# /usr/share/code/bin/code). It covers every entry point:
+# - Desktop launch (.desktop Exec=code %F)
+# - Terminal: code .
+# - Toolbox: flatpak-spawn --host code
+# - Scripts: any invocation of /usr/bin/code
+
+# Preserve the original VS Code remote-cli behavior
+if [ -n "$VSCODE_IPC_HOOK_CLI" ]; then
+    REMOTE_CLI="$(which -a 'code' | grep /remote-cli/)"
+    if [ -n "$REMOTE_CLI" ]; then
+        "$REMOTE_CLI" "$@"
+        exit $?
+    fi
+fi
+
+exec systemd-run --user \
+    --slice=app-vscode.slice \
+    --scope \
+    --unit="vscode-$$-$(date +%N)" \
+    --description="VS Code (managed)" \
+    --property=MemoryOOMGroup=yes \
+    -- /usr/share/code/bin/code "$@"
