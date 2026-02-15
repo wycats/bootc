@@ -26,7 +26,7 @@ struct PackageVersion {
 // ---------------------------------------------------------------------------
 
 fn print_usage() {
-    eprintln!("Usage: rpmcheck <manifest.json> [--baseline <hash>] [--json]");
+    eprintln!("Usage: rpmcheck <manifest.json> [--baseline <hash>] [--json] [--per-repo]");
     eprintln!();
     eprintln!("Check external RPM repos for package version changes.");
     eprintln!("Outputs a SHA-256 hash of tracked package versions.");
@@ -43,6 +43,7 @@ fn main() {
     let mut manifest_path = None;
     let mut baseline = None;
     let mut json = false;
+    let mut per_repo = false;
     let mut i = 1;
 
     while i < args.len() {
@@ -52,6 +53,7 @@ fn main() {
                 baseline = args.get(i).cloned();
             }
             "--json" | "-j" => json = true,
+            "--per-repo" => per_repo = true,
             "-h" | "--help" => {
                 print_usage();
                 std::process::exit(0);
@@ -76,7 +78,7 @@ fn main() {
         }
     };
 
-    if let Err(e) = run(&manifest_path, baseline.as_deref(), json) {
+    if let Err(e) = run(&manifest_path, baseline.as_deref(), json, per_repo) {
         eprintln!("error: {e:#}");
         std::process::exit(2);
     }
@@ -86,7 +88,7 @@ fn main() {
 // Core logic
 // ---------------------------------------------------------------------------
 
-fn run(manifest_path: &str, baseline: Option<&str>, json: bool) -> Result<()> {
+fn run(manifest_path: &str, baseline: Option<&str>, json: bool, per_repo: bool) -> Result<()> {
     let manifest: Manifest = serde_json::from_str(
         &std::fs::read_to_string(manifest_path)
             .with_context(|| format!("reading {manifest_path}"))?,
@@ -99,6 +101,7 @@ fn run(manifest_path: &str, baseline: Option<&str>, json: bool) -> Result<()> {
         .context("building HTTP client")?;
 
     let mut all: BTreeMap<String, Vec<PackageVersion>> = BTreeMap::new();
+    let mut repo_hashes: BTreeMap<String, String> = BTreeMap::new();
 
     for repo in &manifest.repos {
         eprintln!("repo: {} ({})", repo.name, repo.baseurl);
@@ -115,9 +118,22 @@ fn run(manifest_path: &str, baseline: Option<&str>, json: bool) -> Result<()> {
             }
         }
 
-        for pv in versions {
+        let mut sorted_versions = versions.clone();
+        sorted_versions.sort();
+
+        let mut repo_hasher = Sha256::new();
+        for pv in &sorted_versions {
+            repo_hasher.update(format!(
+                "{}\t{}\t{}\t{}\n",
+                pv.name, pv.epoch, pv.version, pv.release
+            ));
+        }
+        let repo_hash = format!("{:x}", repo_hasher.finalize());
+        repo_hashes.insert(repo.name.clone(), repo_hash);
+
+        for pv in &versions {
             eprintln!("  {} {}-{}", pv.name, pv.version, pv.release);
-            all.entry(pv.name.clone()).or_default().push(pv);
+            all.entry(pv.name.clone()).or_default().push(pv.clone());
         }
     }
 
@@ -147,9 +163,15 @@ fn run(manifest_path: &str, baseline: Option<&str>, json: bool) -> Result<()> {
                 "hash": hash,
                 "changed": changed.unwrap_or(false),
                 "packages": all,
+                "repo_hashes": repo_hashes,
             }))?
         );
     } else {
+        if per_repo {
+            for (repo_name, repo_hash) in &repo_hashes {
+                println!("{}={}", cache_arg_name(repo_name), repo_hash);
+            }
+        }
         println!("{hash}");
         match changed {
             Some(true) => {
@@ -336,4 +358,20 @@ fn tag_local(name: quick_xml::name::QName<'_>) -> String {
 /// Strip namespace prefix: "repo:data" → "data", "data" → "data"
 fn local_name(tag: &str) -> &str {
     tag.rsplit_once(':').map_or(tag, |(_, local)| local)
+}
+
+/// Convert a repo name to a Dockerfile ARG name for cache busting.
+/// e.g. "microsoft-edge" -> "CACHE_EPOCH_MICROSOFT_EDGE"
+fn cache_arg_name(repo_name: &str) -> String {
+    let sanitized: String = repo_name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("CACHE_EPOCH_{sanitized}")
 }

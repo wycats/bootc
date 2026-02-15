@@ -14,15 +14,15 @@ RUN set -eu; \
 # ── RPM download stages (parallel, each downloads from one external repo) ────
 
 FROM base AS dl-code
-ARG DNF_CACHE_EPOCH=0
+ARG CACHE_EPOCH_CODE=0
 RUN bkt-build download-rpms code
 
 FROM base AS dl-microsoft-edge
-ARG DNF_CACHE_EPOCH=0
+ARG CACHE_EPOCH_MICROSOFT_EDGE=0
 RUN bkt-build download-rpms microsoft-edge
 
 FROM base AS dl-1password
-ARG DNF_CACHE_EPOCH=0
+ARG CACHE_EPOCH_1PASSWORD=0
 RUN bkt-build download-rpms 1password
 
 # ── Upstream fetch stages (parallel, each installs one upstream entry) ───────

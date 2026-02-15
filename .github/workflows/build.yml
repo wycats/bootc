@@ -140,6 +140,7 @@ jobs:
     outputs:
       rpms_changed: ${{ steps.check.outputs.rpms_changed }}
       cache_epoch: ${{ steps.check.outputs.cache_epoch }}
+      per_repo_epochs: ${{ steps.check.outputs.per_repo_epochs }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -178,17 +179,26 @@ jobs:
           fi
           echo "Last image RPM hash: ${LAST_HASH:-none}"
 
-          # Run rpmcheck to get the current hash of tracked package versions
-          CURRENT_HASH=$(./rpmcheck/target/release/rpmcheck manifests/external-repos.json)
+          # Run rpmcheck once to get per-repo hashes and the global hash on the last line
+          PER_REPO_RAW=$(./rpmcheck/target/release/rpmcheck --per-repo manifests/external-repos.json)
+          CURRENT_HASH=$(printf '%s\n' "${PER_REPO_RAW}" | tail -n 1)
+          PER_REPO=$(printf '%s\n' "${PER_REPO_RAW}" | head -n -1)
           echo "Current RPM hash: ${CURRENT_HASH}"
+          echo "Per-repo hashes:"
+          echo "${PER_REPO}"
+
+          # Always publish the real global hash for the image label
+          echo "cache_epoch=${CURRENT_HASH}" >> "$GITHUB_OUTPUT"
 
           if [[ -z "${LAST_HASH}" || "${CURRENT_HASH}" != "${LAST_HASH}" ]]; then
             echo "rpms_changed=true" >> "$GITHUB_OUTPUT"
-            echo "cache_epoch=${CURRENT_HASH}" >> "$GITHUB_OUTPUT"
+            echo "per_repo_epochs<<EOF" >> "$GITHUB_OUTPUT"
+            echo "${PER_REPO}" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
             echo "::notice::Tracked RPM package versions changed — will bust dnf cache layer"
           else
             echo "rpms_changed=false" >> "$GITHUB_OUTPUT"
-            echo "cache_epoch=0" >> "$GITHUB_OUTPUT"
+            echo "per_repo_epochs=" >> "$GITHUB_OUTPUT"
             echo "::notice::Tracked RPM package versions unchanged"
           fi
 
@@ -480,10 +490,11 @@ jobs:
           # Push on any non-PR event; PRs just validate the build and warm the cache
           push: ${{ github.event_name != 'pull_request_target' }}
           tags: ${{ steps.meta.outputs.tags }}
-          # When RPM versions change, DNF_CACHE_EPOCH changes, busting the dnf install layer.
-          # When unchanged, the value is '0' and the cached layer is reused.
+          # Per-repo cache busting: each dl-* stage declares its own CACHE_EPOCH_<REPO> ARG.
+          # When RPM versions change, only the affected repo's dl stage is invalidated.
+          # When unchanged, per_repo_epochs is empty and all ARGs use their default '0' (cache hit).
           build-args: |
-            DNF_CACHE_EPOCH=${{ needs.check-rpm-freshness.outputs.cache_epoch }}
+            ${{ needs.check-rpm-freshness.outputs.per_repo_epochs }}
           labels: |
             ${{ steps.meta.outputs.labels }}
             org.wycats.bootc.base.image=${{ env.BASE_IMAGE }}
