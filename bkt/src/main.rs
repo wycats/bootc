@@ -152,5 +152,6 @@ fn main() -> Result<()> {
         Commands::BuildInfo(args) => commands::build_info::run(args, plan.runner()),
         Commands::Containerfile(args) => commands::containerfile::run(args, &plan),
         Commands::Local(args) => commands::local::run(args, &plan),
+        Commands::Wrap(args) => commands::wrap::execute(args),
     }
 }

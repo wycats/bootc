@@ -155,6 +155,12 @@ pub enum Commands {
     /// View, commit, or clear changes made with --local. These changes
     /// are tracked for later promotion to a PR.
     Local(commands::local::LocalArgs),
+
+    /// Generate application wrapper binaries
+    ///
+    /// Creates Rust binaries that launch applications under systemd
+    /// resource controls (slices). Replaces shell wrapper scripts.
+    Wrap(commands::wrap::WrapArgs),
 }
 
 impl Commands {
@@ -198,6 +204,7 @@ impl Commands {
             Commands::BuildInfo(_) => CommandTarget::Either,
             Commands::Containerfile(_) => CommandTarget::Either,
             Commands::Local(_) => CommandTarget::Either,
+            Commands::Wrap(_) => CommandTarget::Either,
         }
     }
 }

@@ -111,17 +111,6 @@ COPY systemd/system/bootc-apply.service /usr/lib/systemd/system/bootc-apply.serv
 # dbus-broker: raise soft fd limit to prevent session crashes under heavy container load
 COPY systemd/user/dbus-broker.service.d/override.conf /usr/lib/systemd/user/dbus-broker.service.d/override.conf
 
-# Memory resource control slices
-COPY systemd/user/app-vscode.slice /usr/lib/systemd/user/app-vscode.slice
-COPY systemd/user/app-msedge.slice /usr/lib/systemd/user/app-msedge.slice
-
-# oomd tuning for tighter memory pressure thresholds
-COPY system/etc/systemd/oomd.conf.d/10-bootc-tuning.conf /etc/systemd/oomd.conf.d/10-bootc-tuning.conf
-
-# Memory-managed application wrappers (replace symlinks)
-COPY scripts/code-managed /usr/bin/code
-COPY scripts/msedge-managed /usr/bin/microsoft-edge-stable
-
 # Custom ujust recipes (auto-imported as /usr/share/ublue-os/just/60-custom.just)
 COPY ujust/60-custom.just /usr/share/ublue-os/just/60-custom.just
 
@@ -180,6 +169,7 @@ COPY --from=dl-1password /rpms/ /tmp/rpms/
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
+    /tmp/rpms/*.rpm \
     curl \
     distrobox \
     fontconfig \
@@ -247,13 +237,16 @@ COPY --from=fetch-whitesur /usr/share/icons/WhiteSur-dark/ /usr/share/icons/Whit
 # ── Configuration overlay (from collect-config) ──────────────────────────────
 COPY --from=collect-config / /
 
+# Memory-managed application wrappers (built Rust binaries)
+COPY wrappers/bin/vscode-wrapper /usr/bin/code
+COPY wrappers/bin/msedge-wrapper /usr/bin/microsoft-edge-stable
+
 # Post-overlay setup: chmod, symlinks, mkdir, kargs, staging dirs
 RUN set -eu; \
-    rm -f /etc/fonts/conf.d/99-emoji-fix.conf; \
     mkdir -p /usr/lib/systemd/system/multi-user.target.wants; \
     ln -sf ../keyd.service /usr/lib/systemd/system/multi-user.target.wants/keyd.service; \
     mkdir -p /usr/share/bootc-bootstrap /usr/share/bootc; \
-    chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/bootc-repo /usr/bin/bkt /usr/bin/code /usr/bin/microsoft-edge-stable; \
+    chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/bootc-repo /usr/bin/bkt; \
     mkdir -p /usr/lib/systemd/user/default.target.wants; \
     ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service; \
     mkdir -p /usr/lib/systemd/user/timers.target.wants; \
