@@ -20,3 +20,4 @@ wrappers/
 # Editor/tool logs
 .log/
 .logs/
+.context/

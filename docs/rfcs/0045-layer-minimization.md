@@ -13,12 +13,12 @@ file edit near the top of the stage cascades into **50+ rebuilt layers**.
 
 Concrete examples of the cascade:
 
-| Change | First invalidated layer | Layers rebuilt |
-|--------|------------------------|----------------|
-| `system/fontconfig/99-emoji-fix.conf` | Layer 23 | 53 |
-| `manifests/flatpak-apps.json` | Layer 30 | 46 |
-| `skel/.config/nushell/config.nu` | Layer 72 | 4 |
-| Any external RPM version bump | Layer 1 (dl-* COPY) | 75 |
+| Change                                | First invalidated layer | Layers rebuilt |
+| ------------------------------------- | ----------------------- | -------------- |
+| `system/fontconfig/99-emoji-fix.conf` | Layer 23                | 53             |
+| `manifests/flatpak-apps.json`         | Layer 30                | 46             |
+| `skel/.config/nushell/config.nu`      | Layer 72                | 4              |
+| Any external RPM version bump         | Layer 1 (dl-\* COPY)    | 75             |
 
 This wastes CI build time, registry bandwidth, and `bootc upgrade`
 download size. The parallel pre-build stages (dl-\*, fetch-\*, build-\*)
@@ -196,17 +196,18 @@ RUN rpm -qa --qf '%{NAME}\t%{EVR}\n' | sort > /usr/share/bootc/rpm-versions.txt
 
 **~20 layers** in the image stage, down from 75. The critical
 improvement: config changes only rebuild **2 layers** (collect-config
-+ the consolidated RUN), not 40-53.
+
+- the consolidated RUN), not 40-53.
 
 ### Delta Analysis: Before vs. After
 
-| Change | Before (layers rebuilt) | After (layers rebuilt) |
-|--------|------------------------|----------------------|
-| VS Code RPM update | 75 | ~18 (RPM COPY cascades) |
-| Starship version bump | 53 | ~10 (from upstream COPY onward) |
-| Config file edit | 4–53 | **3** (collect-config COPY + setup RUN + fc-cache + snapshot) |
-| Nushell skel change | 4 | **3** (same — config overlay) |
-| Multiple concerns at once | 75 | 3–18 (depends on what changed) |
+| Change                    | Before (layers rebuilt) | After (layers rebuilt)                                        |
+| ------------------------- | ----------------------- | ------------------------------------------------------------- |
+| VS Code RPM update        | 75                      | ~18 (RPM COPY cascades)                                       |
+| Starship version bump     | 53                      | ~10 (from upstream COPY onward)                               |
+| Config file edit          | 4–53                    | **3** (collect-config COPY + setup RUN + fc-cache + snapshot) |
+| Nushell skel change       | 4                       | **3** (same — config overlay)                                 |
+| Multiple concerns at once | 75                      | 3–18 (depends on what changed)                                |
 
 The biggest win is config changes: from up to 53 layers down to 3.
 RPM changes still cascade through the inline section, but that's
@@ -298,7 +299,7 @@ placement since it needs the complete font set.
 The `ARG ENABLE_*` + `RUN if [...]` pattern for optional features
 requires a shell. Since `collect-config` is `FROM scratch` (no shell),
 the conditional logic stays in the consolidated RUN in the `image`
-stage. The optional feature *files* are staged to
+stage. The optional feature _files_ are staged to
 `/usr/share/bootc-optional/` by `collect-config`, and the consolidated
 RUN copies them to their final locations based on the ARG values.
 

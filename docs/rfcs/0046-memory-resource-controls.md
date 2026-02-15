@@ -23,14 +23,14 @@ production OOM crash where VS Code + rust-analyzer consumed 60+ GB, exhausted
 On a 62 GB RAM + 16 GB swap system, two VS Code workspaces with rust-analyzer
 drove memory to 60+ GB. The crash timeline:
 
-| Time     | Event                                        |
-| -------- | -------------------------------------------- |
-| 23:11:33 | **Kernel** OOM-kills VS Code process (pid 511189) |
+| Time     | Event                                                                         |
+| -------- | ----------------------------------------------------------------------------- |
+| 23:11:33 | **Kernel** OOM-kills VS Code process (pid 511189)                             |
 | 23:11:33 | VS Code scope `app-gnome-code-510847.scope` fails: **8.9 GB peak, 1 GB swap** |
-| 23:12:16 | GNOME Shell relaunches VS Code (new scope)   |
-| 23:17:56 | **Kernel** OOM-kills second VS Code (pid 1923018) |
-| 23:17:56 | Cascading: GNOME Shell OOM-killed (3.5 GB peak) |
-| 23:17:59 | Full user session collapse                   |
+| 23:12:16 | GNOME Shell relaunches VS Code (new scope)                                    |
+| 23:17:56 | **Kernel** OOM-kills second VS Code (pid 1923018)                             |
+| 23:17:56 | Cascading: GNOME Shell OOM-killed (3.5 GB peak)                               |
+| 23:17:59 | Full user session collapse                                                    |
 
 **systemd-oomd never fired.** The kernel OOM killer handled everything.
 
@@ -38,13 +38,13 @@ drove memory to 60+ GB. The crash timeline:
 
 The default oomd configuration is too lenient for workstation use:
 
-| Setting                      | Default | Problem                           |
-| ---------------------------- | ------- | --------------------------------- |
-| Memory pressure threshold    | 80%     | Too high — system was dying first |
-| Pressure duration             | 20s     | Too long — 20s of sustained death |
-| VS Code `MemoryMax`          | ∞       | No cap at all                     |
-| VS Code `ManagedOOMMemoryPressure` | auto | Inherits parent, no scope-level enforcement |
-| Swap monitoring               | 90%     | Effectively unreachable — system is dead before 90% |
+| Setting                            | Default | Problem                                             |
+| ---------------------------------- | ------- | --------------------------------------------------- |
+| Memory pressure threshold          | 80%     | Too high — system was dying first                   |
+| Pressure duration                  | 20s     | Too long — 20s of sustained death                   |
+| VS Code `MemoryMax`                | ∞       | No cap at all                                       |
+| VS Code `ManagedOOMMemoryPressure` | auto    | Inherits parent, no scope-level enforcement         |
+| Swap monitoring                    | 90%     | Effectively unreachable — system is dead before 90% |
 
 ### Current Baseline (single workspace, 2026-02-15)
 
@@ -84,12 +84,12 @@ Additionally, wrapper scripts **replace** the standard `/usr/bin/code` and
 
 ### How It Feels
 
-| Scenario                       | Before              | After                       |
-| ------------------------------ | -------------------- | --------------------------- |
-| 1 workspace, quiet             | 15 GB, no limit      | 15 GB, well under MemoryHigh |
-| 1 workspace, heavy RA load     | 20+ GB, no limit     | Pressure at 20 GB, reclaim kicks in |
+| Scenario                       | Before                | After                                         |
+| ------------------------------ | --------------------- | --------------------------------------------- |
+| 1 workspace, quiet             | 15 GB, no limit       | 15 GB, well under MemoryHigh                  |
+| 1 workspace, heavy RA load     | 20+ GB, no limit      | Pressure at 20 GB, reclaim kicks in           |
 | 2 workspaces                   | 30+ GB → system crash | MemoryMax at 24 GB → OOM kills worst offender |
-| 2 workspaces + browser + Steam | 60 GB → full crash   | VS Code + Edge capped, oomd intervenes early |
+| 2 workspaces + browser + Steam | 60 GB → full crash    | VS Code + Edge capped, oomd intervenes early  |
 
 > **Interaction with existing tuning**: The image already sets `vm.swappiness=10`
 > (via `system/etc/sysctl.d/99-bootc-vm-tuning.conf`), which keeps swap as a
@@ -97,7 +97,7 @@ Additionally, wrapper scripts **replace** the standard `/usr/bin/code` and
 > oomd triggers less responsive. The primary defense is therefore PSI-based
 > pressure monitoring, with swap monitoring as a secondary backstop.
 
-The `MemoryHigh` soft limit triggers kernel memory pressure *within the cgroup*,
+The `MemoryHigh` soft limit triggers kernel memory pressure _within the cgroup_,
 causing the kernel to aggressively reclaim pages. If there are reclaimable pages
 (file cache, inactive mappings), the impact is nearly invisible. Only when all
 memory is active anonymous pages (RA index, V8 heap) does it cause real slowdown.
@@ -107,11 +107,11 @@ If reclaim isn't enough, `MemoryMax` hard-kills the worst offender.
 
 The baseline is 15 GB for a single workspace. The question is headroom:
 
-| Value    | Headroom   | Triggers On                                      | Daily Impact          |
-| -------- | ---------- | ------------------------------------------------ | --------------------- |
-| 16 GB    | 1 GB (7%)  | Every `cargo check`, RA re-index, file save      | Constant throttling   |
+| Value     | Headroom       | Triggers On                                    | Daily Impact               |
+| --------- | -------------- | ---------------------------------------------- | -------------------------- |
+| 16 GB     | 1 GB (7%)      | Every `cargo check`, RA re-index, file save    | Constant throttling        |
 | **20 GB** | **5 GB (33%)** | **2nd workspace, stacking RA + clippy + tsgo** | **Only during heavy work** |
-| 24 GB    | = MemoryMax | Nothing — straight from "fine" to "killed"       | No soft limit at all  |
+| 24 GB     | = MemoryMax    | Nothing — straight from "fine" to "killed"     | No soft limit at all       |
 
 20 GB lets normal single-workspace operation breathe, triggers pressure only
 when usage is genuinely elevated, and preserves 4 GB of runway between "slow
@@ -250,6 +250,7 @@ exec systemd-run --user \
 ```
 
 **Key details:**
+
 - Replaces `/usr/bin/code` (originally a symlink to `/usr/share/code/bin/code`)
 - Calls the original launcher script at `/usr/share/code/bin/code` (not the
   electron binary directly) to preserve VS Code's WSL detection, path
@@ -282,6 +283,7 @@ exec systemd-run --user \
 ```
 
 **Key details:**
+
 - Replaces `/usr/bin/microsoft-edge-stable`
 - On this bootc image, `/opt` is relocated to `/usr/lib/opt` for ostree
   compatibility, so the real binary is at `/usr/lib/opt/microsoft/msedge/microsoft-edge`
@@ -294,6 +296,7 @@ The wrappers need both COPY and RUN instructions, making this a **Run**-type
 module in the `bkt` Containerfile generator:
 
 **COPYs** (in the `collect-config` stage):
+
 ```dockerfile
 COPY systemd/user/app-vscode.slice /usr/lib/systemd/user/app-vscode.slice
 COPY systemd/user/app-msedge.slice /usr/lib/systemd/user/app-msedge.slice
@@ -303,6 +306,7 @@ COPY scripts/msedge-managed /usr/bin/microsoft-edge-stable
 ```
 
 **Consolidated RUN** additions:
+
 ```bash
 chmod 0755 /usr/bin/code /usr/bin/microsoft-edge-stable;
 ```
@@ -322,20 +326,20 @@ GNOME's scope is separate. The slice aggregates all scopes:
 - With slice: All instances share a single 24 GB budget
 
 The wrapper's `--slice=app-vscode.slice` tells systemd-run to place the new
-scope *inside* the slice. All processes under that scope (and any further
+scope _inside_ the slice. All processes under that scope (and any further
 scopes in the same slice) share the slice's memory budget.
 
 ### Sizing Rationale
 
-| Parameter            | Value    | Reasoning                                              |
-| -------------------- | -------- | ------------------------------------------------------ |
-| VS Code MemoryHigh   | 20 GB    | 33% above baseline. Breathes normally, pressure on heavy work. |
-| VS Code MemoryMax    | 24 GB    | ~39% of 62 GB. Prevents multi-workspace crash.         |
-| Edge MemoryHigh      | 8 GB     | Generous for browser tabs. Pressure for heavy sessions. |
-| Edge MemoryMax       | 12 GB    | Hard stop. Tabs die before system does.                |
-| oomd global pressure | 60%/20s  | Tighter than default (60%/30s). Catches system-wide issues. |
-| oomd per-slice limit | 50%      | Stricter for known offenders (VS Code, Edge).              |
-| oomd swap limit      | 90%      | Default. With swappiness=10, swap fills slowly — PSI is primary defense. |
+| Parameter            | Value   | Reasoning                                                                |
+| -------------------- | ------- | ------------------------------------------------------------------------ |
+| VS Code MemoryHigh   | 20 GB   | 33% above baseline. Breathes normally, pressure on heavy work.           |
+| VS Code MemoryMax    | 24 GB   | ~39% of 62 GB. Prevents multi-workspace crash.                           |
+| Edge MemoryHigh      | 8 GB    | Generous for browser tabs. Pressure for heavy sessions.                  |
+| Edge MemoryMax       | 12 GB   | Hard stop. Tabs die before system does.                                  |
+| oomd global pressure | 60%/20s | Tighter than default (60%/30s). Catches system-wide issues.              |
+| oomd per-slice limit | 50%     | Stricter for known offenders (VS Code, Edge).                            |
+| oomd swap limit      | 90%     | Default. With swappiness=10, swap fills slowly — PSI is primary defense. |
 
 **Total reserved**: VS Code (24 GB) + Edge (12 GB) = 36 GB worst case.
 Remaining: 26 GB for OS, GNOME Shell (3.5 GB), Steam (4 GB), Slack, etc.
@@ -360,6 +364,7 @@ reclaims pages aggressively within the cgroup.
 ### Wrapper Fragility
 
 The wrappers hardcode paths to the underlying binaries:
+
 - VS Code: `/usr/share/code/bin/code`
 - Edge: `/usr/lib/opt/microsoft/msedge/microsoft-edge`
 
@@ -384,7 +389,7 @@ takes 2-3 seconds to fully initialize.
 ### Alternative: oomd-only (no MemoryMax)
 
 Rely purely on tighter oomd thresholds. Problem: oomd kills the
-highest-pressure process *across the session*, which might be GNOME Shell
+highest-pressure process _across the session_, which might be GNOME Shell
 rather than the actual offender. MemoryMax ensures the offender's scope
 is contained.
 
@@ -461,6 +466,7 @@ test-vscode-39397.scope: 110M ← Scope (leaf cgroup, all processes here)
 ```
 
 This means:
+
 - `MemoryOOMGroup=yes` will kill the entire process tree cleanly
 - oomd's leaf-cgroup targeting correctly identifies the scope as the kill target
 
