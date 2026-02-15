@@ -77,6 +77,91 @@ cd /tmp/whitesur-icons && git checkout "${ref}" && ./install.sh -d /usr/share/ic
 rm -rf /tmp/whitesur-icons
 EOF
 
+# ── Config collector (parallel, FROM scratch) ────────────────────────────────
+FROM scratch AS collect-config
+
+# Emoji rendering fix config
+COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
+
+# keyd keyboard remapping config
+COPY system/keyd/default.conf /etc/keyd/default.conf
+
+# Polkit rules for bkt admin (passwordless bootc/rpm-ostree/flatpak for wheel group)
+COPY system/polkit-1/rules.d/50-bkt-admin.rules /etc/polkit-1/rules.d/50-bkt-admin.rules
+
+# First-login bootstrap (Flatpak + GNOME extensions + host shims)
+COPY manifests/flatpak-remotes.json /usr/share/bootc-bootstrap/flatpak-remotes.json
+COPY manifests/flatpak-apps.json /usr/share/bootc-bootstrap/flatpak-apps.json
+COPY manifests/gnome-extensions.json /usr/share/bootc-bootstrap/gnome-extensions.json
+COPY manifests/gsettings.json /usr/share/bootc-bootstrap/gsettings.json
+COPY manifests/host-shims.json /usr/share/bootc-bootstrap/host-shims.json
+# Repository identity (for bkt --pr workflow)
+COPY repo.json /usr/share/bootc/repo.json
+COPY scripts/bootc-bootstrap /usr/bin/bootc-bootstrap
+COPY scripts/bootc-apply /usr/bin/bootc-apply
+COPY scripts/bootc-repo /usr/bin/bootc-repo
+# bkt CLI (pre-built by CI, placed in scripts/ during workflow)
+COPY scripts/bkt /usr/bin/bkt
+
+# systemd units: user-level bootstrap and system-level apply
+COPY systemd/user/bootc-bootstrap.service /usr/lib/systemd/user/bootc-bootstrap.service
+COPY systemd/user/bootc-capture.service /usr/lib/systemd/user/bootc-capture.service
+COPY systemd/user/bootc-capture.timer /usr/lib/systemd/user/bootc-capture.timer
+COPY systemd/system/bootc-apply.service /usr/lib/systemd/system/bootc-apply.service
+# dbus-broker: raise soft fd limit to prevent session crashes under heavy container load
+COPY systemd/user/dbus-broker.service.d/override.conf /usr/lib/systemd/user/dbus-broker.service.d/override.conf
+
+# Memory resource control slices
+COPY systemd/user/app-vscode.slice /usr/lib/systemd/user/app-vscode.slice
+COPY systemd/user/app-msedge.slice /usr/lib/systemd/user/app-msedge.slice
+
+# oomd tuning for tighter memory pressure thresholds
+COPY system/etc/systemd/oomd.conf.d/10-bootc-tuning.conf /etc/systemd/oomd.conf.d/10-bootc-tuning.conf
+
+# Memory-managed application wrappers (replace symlinks)
+COPY scripts/code-managed /usr/bin/code
+COPY scripts/msedge-managed /usr/bin/microsoft-edge-stable
+
+# Custom ujust recipes (auto-imported as /usr/share/ublue-os/just/60-custom.just)
+COPY ujust/60-custom.just /usr/share/ublue-os/just/60-custom.just
+
+# Distrobox configuration (managed by bkt)
+COPY distrobox.ini /etc/distrobox/distrobox.ini
+
+# Integrated topgrade configuration
+COPY system/etc/topgrade.toml /etc/topgrade.toml
+
+# VM tuning for reduced degradation over time
+COPY system/etc/sysctl.d/99-bootc-vm-tuning.conf /etc/sysctl.d/99-bootc-vm-tuning.conf
+
+# Managed Edge policies to limit process bloat
+COPY system/etc/opt/edge/policies/managed/performance.json /etc/opt/edge/policies/managed/performance.json
+
+# Optional: remote play / console mode (off by default; enabled via `ujust enable-remote-play`)
+COPY system/remote-play/bootc-remote-play-tty2 /usr/share/bootc-optional/remote-play/bin/bootc-remote-play-tty2
+COPY system/remote-play/bootc-remote-play-tty2@.service /usr/share/bootc-optional/remote-play/systemd/bootc-remote-play-tty2@.service
+
+# NetworkManager: disable Wi-Fi power save (wifi.powersave=2)
+COPY system/NetworkManager/conf.d/default-wifi-powersave-on.conf /usr/share/bootc-optional/NetworkManager/conf.d/default-wifi-powersave-on.conf
+
+# NetworkManager: use iwd backend (wifi.backend=iwd) (Asahi-focused; off by default)
+COPY system/NetworkManager/conf.d/wifi_backend.conf /usr/share/bootc-optional/NetworkManager/conf.d/wifi_backend.conf
+
+# Asahi-only artifacts (off by default)
+# NOTE: titdb.service.template contains a placeholder input device path; enable only after customizing it.
+COPY system/asahi/titdb.service.template /usr/share/bootc-optional/asahi/titdb.service
+COPY system/asahi/modprobe.d/brcmfmac.conf /usr/share/bootc-optional/modprobe.d/brcmfmac.conf
+
+# systemd: journald log cap (off by default)
+COPY system/systemd/journald.conf.d/10-journal-cap.conf /usr/share/bootc-optional/systemd/journald.conf.d/10-journal-cap.conf
+
+# systemd: logind lid policy (off by default)
+COPY system/systemd/logind.conf.d/10-lid-policy.conf /usr/share/bootc-optional/systemd/logind.conf.d/10-lid-policy.conf
+
+# Nushell config
+COPY skel/.config/nushell/config.nu /etc/skel/.config/nushell/config.nu
+COPY skel/.config/nushell/env.nu /etc/skel/.config/nushell/env.nu
+
 # ── Final image assembly ─────────────────────────────────────────────────────
 FROM base AS image
 
@@ -95,7 +180,6 @@ COPY --from=dl-1password /rpms/ /tmp/rpms/
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
-    /tmp/rpms/*.rpm \
     curl \
     distrobox \
     fontconfig \
@@ -160,92 +244,43 @@ COPY --from=build-keyd /usr/share/doc/keyd/ /usr/share/doc/keyd/
 COPY --from=fetch-whitesur /usr/share/icons/WhiteSur/ /usr/share/icons/WhiteSur/
 COPY --from=fetch-whitesur /usr/share/icons/WhiteSur-dark/ /usr/share/icons/WhiteSur-dark/
 
-# Emoji rendering fix for Electron/Chromium apps
-RUN rm -f /etc/fonts/conf.d/99-emoji-fix.conf
-COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
+# ── Configuration overlay (from collect-config) ──────────────────────────────
+COPY --from=collect-config / /
 
-# Rebuild font cache after all font/icon COPYs
-RUN fc-cache -f
-
-# ── System configuration (spliced from Containerfile.d/90-system-config.tail) 
-
-# keyd keyboard remapping config
-COPY system/keyd/default.conf /etc/keyd/default.conf
-# Enable keyd service (create symlink manually since systemctl doesn't work in containers)
-RUN mkdir -p /usr/lib/systemd/system/multi-user.target.wants && \
-    ln -sf ../keyd.service /usr/lib/systemd/system/multi-user.target.wants/keyd.service
-
-# Polkit rules for bkt admin (passwordless bootc/rpm-ostree/flatpak for wheel group)
-COPY system/polkit-1/rules.d/50-bkt-admin.rules /etc/polkit-1/rules.d/50-bkt-admin.rules
-
-# First-login bootstrap (Flatpak + GNOME extensions + host shims)
-RUN mkdir -p /usr/share/bootc-bootstrap /usr/share/bootc
-COPY manifests/flatpak-remotes.json /usr/share/bootc-bootstrap/flatpak-remotes.json
-COPY manifests/flatpak-apps.json /usr/share/bootc-bootstrap/flatpak-apps.json
-COPY manifests/gnome-extensions.json /usr/share/bootc-bootstrap/gnome-extensions.json
-COPY manifests/gsettings.json /usr/share/bootc-bootstrap/gsettings.json
-COPY manifests/host-shims.json /usr/share/bootc-bootstrap/host-shims.json
-# Repository identity (for bkt --pr workflow)
-COPY repo.json /usr/share/bootc/repo.json
-COPY scripts/bootc-bootstrap /usr/bin/bootc-bootstrap
-COPY scripts/bootc-apply /usr/bin/bootc-apply
-COPY scripts/bootc-repo /usr/bin/bootc-repo
-# bkt CLI (pre-built by CI, placed in scripts/ during workflow)
-COPY scripts/bkt /usr/bin/bkt
-# systemd units: user-level bootstrap and system-level apply
-COPY systemd/user/bootc-bootstrap.service /usr/lib/systemd/user/bootc-bootstrap.service
-COPY systemd/user/bootc-capture.service /usr/lib/systemd/user/bootc-capture.service
-COPY systemd/user/bootc-capture.timer /usr/lib/systemd/user/bootc-capture.timer
-COPY systemd/system/bootc-apply.service /usr/lib/systemd/system/bootc-apply.service
-# dbus-broker: raise soft fd limit to prevent session crashes under heavy container load
-COPY systemd/user/dbus-broker.service.d/override.conf /usr/lib/systemd/user/dbus-broker.service.d/override.conf
-RUN chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/bootc-repo /usr/bin/bkt && \
-    mkdir -p /usr/lib/systemd/user/default.target.wants && \
-    ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service && \
-    mkdir -p /usr/lib/systemd/user/timers.target.wants && \
-    ln -sf ../bootc-capture.timer /usr/lib/systemd/user/timers.target.wants/bootc-capture.timer && \
-    mkdir -p /usr/lib/systemd/system/multi-user.target.wants && \
-    ln -sf ../bootc-apply.service /usr/lib/systemd/system/multi-user.target.wants/bootc-apply.service
-
-# Custom ujust recipes (auto-imported as /usr/share/ublue-os/just/60-custom.just)
-RUN mkdir -p /usr/share/ublue-os/just
-COPY ujust/60-custom.just /usr/share/ublue-os/just/60-custom.just
-
-# Distrobox configuration (managed by bkt)
-COPY distrobox.ini /etc/distrobox/distrobox.ini
-
-# Integrated topgrade configuration
-COPY system/etc/topgrade.toml /etc/topgrade.toml
-
-# VM tuning for reduced degradation over time
-COPY system/etc/sysctl.d/99-bootc-vm-tuning.conf /etc/sysctl.d/99-bootc-vm-tuning.conf
-
-# Managed Edge policies to limit process bloat
-RUN mkdir -p /etc/opt/edge/policies/managed
-COPY system/etc/opt/edge/policies/managed/performance.json /etc/opt/edge/policies/managed/performance.json
-
-# Persist kernel arguments for performance tuning (zswap, THP)
-RUN mkdir -p /usr/lib/bootc/kargs.d && \
+# Post-overlay setup: chmod, symlinks, mkdir, kargs, staging dirs
+RUN set -eu; \
+    rm -f /etc/fonts/conf.d/99-emoji-fix.conf; \
+    mkdir -p /usr/lib/systemd/system/multi-user.target.wants; \
+    ln -sf ../keyd.service /usr/lib/systemd/system/multi-user.target.wants/keyd.service; \
+    mkdir -p /usr/share/bootc-bootstrap /usr/share/bootc; \
+    chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/bootc-repo /usr/bin/bkt /usr/bin/code /usr/bin/microsoft-edge-stable; \
+    mkdir -p /usr/lib/systemd/user/default.target.wants; \
+    ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service; \
+    mkdir -p /usr/lib/systemd/user/timers.target.wants; \
+    ln -sf ../bootc-capture.timer /usr/lib/systemd/user/timers.target.wants/bootc-capture.timer; \
+    mkdir -p /usr/lib/systemd/system/multi-user.target.wants; \
+    ln -sf ../bootc-apply.service /usr/lib/systemd/system/multi-user.target.wants/bootc-apply.service; \
+    mkdir -p /usr/share/ublue-os/just; \
+    mkdir -p /etc/opt/edge/policies/managed; \
+    mkdir -p /usr/lib/bootc/kargs.d; \
     echo "zswap.enabled=1 zswap.compressor=lz4 zswap.zpool=zsmalloc zswap.max_pool_percent=25 transparent_hugepage=madvise" \
-    > /usr/lib/bootc/kargs.d/tuning.karg
-
-# Optional: remote play / console mode (off by default; enabled via `ujust enable-remote-play`)
-RUN mkdir -p /usr/share/bootc-optional/remote-play/bin /usr/share/bootc-optional/remote-play/systemd
-COPY system/remote-play/bootc-remote-play-tty2 /usr/share/bootc-optional/remote-play/bin/bootc-remote-play-tty2
-COPY system/remote-play/bootc-remote-play-tty2@.service /usr/share/bootc-optional/remote-play/systemd/bootc-remote-play-tty2@.service
+    > /usr/lib/bootc/kargs.d/tuning.karg; \
+    mkdir -p /usr/share/bootc-optional/remote-play/bin /usr/share/bootc-optional/remote-play/systemd; \
+    mkdir -p /usr/share/bootc-optional/NetworkManager/conf.d; \
+    mkdir -p /usr/share/bootc-optional/modprobe.d; \
+    mkdir -p /usr/share/bootc-optional/systemd/journald.conf.d; \
+    mkdir -p /usr/share/bootc-optional/systemd/logind.conf.d
 
 # Optional host tweaks (off by default)
+
 # NetworkManager: disable Wi-Fi power save (wifi.powersave=2)
 ARG ENABLE_NM_DISABLE_WIFI_POWERSAVE=0
-RUN mkdir -p /usr/share/bootc-optional/NetworkManager/conf.d
-COPY system/NetworkManager/conf.d/default-wifi-powersave-on.conf /usr/share/bootc-optional/NetworkManager/conf.d/default-wifi-powersave-on.conf
 RUN if [ "${ENABLE_NM_DISABLE_WIFI_POWERSAVE}" = "1" ]; then \
             install -Dpm0644 /usr/share/bootc-optional/NetworkManager/conf.d/default-wifi-powersave-on.conf /etc/NetworkManager/conf.d/default-wifi-powersave-on.conf; \
         fi
 
 # NetworkManager: use iwd backend (wifi.backend=iwd) (Asahi-focused; off by default)
 ARG ENABLE_NM_IWD_BACKEND=0
-COPY system/NetworkManager/conf.d/wifi_backend.conf /usr/share/bootc-optional/NetworkManager/conf.d/wifi_backend.conf
 RUN if [ "${ENABLE_NM_IWD_BACKEND}" = "1" ]; then \
             install -Dpm0644 /usr/share/bootc-optional/NetworkManager/conf.d/wifi_backend.conf /etc/NetworkManager/conf.d/wifi_backend.conf; \
         fi
@@ -253,38 +288,29 @@ RUN if [ "${ENABLE_NM_IWD_BACKEND}" = "1" ]; then \
 # Asahi-only artifacts (off by default)
 # NOTE: titdb.service.template contains a placeholder input device path; enable only after customizing it.
 ARG ENABLE_ASAHI_TITDB=0
-COPY system/asahi/titdb.service.template /usr/share/bootc-optional/asahi/titdb.service
 RUN if [ "${ENABLE_ASAHI_TITDB}" = "1" ]; then \
             install -Dpm0644 /usr/share/bootc-optional/asahi/titdb.service /etc/systemd/system/titdb.service; \
             systemctl enable titdb.service || true; \
         fi
-
 ARG ENABLE_ASAHI_BRCMFMAC=0
-RUN mkdir -p /usr/share/bootc-optional/modprobe.d
-COPY system/asahi/modprobe.d/brcmfmac.conf /usr/share/bootc-optional/modprobe.d/brcmfmac.conf
 RUN if [ "${ENABLE_ASAHI_BRCMFMAC}" = "1" ]; then \
             install -Dpm0644 /usr/share/bootc-optional/modprobe.d/brcmfmac.conf /etc/modprobe.d/brcmfmac.conf; \
         fi
 
 # systemd: journald log cap (off by default)
 ARG ENABLE_JOURNALD_LOG_CAP=0
-RUN mkdir -p /usr/share/bootc-optional/systemd/journald.conf.d
-COPY system/systemd/journald.conf.d/10-journal-cap.conf /usr/share/bootc-optional/systemd/journald.conf.d/10-journal-cap.conf
 RUN if [ "${ENABLE_JOURNALD_LOG_CAP}" = "1" ]; then \
             install -Dpm0644 /usr/share/bootc-optional/systemd/journald.conf.d/10-journal-cap.conf /etc/systemd/journald.conf.d/10-journal-cap.conf; \
         fi
 
 # systemd: logind lid policy (off by default)
 ARG ENABLE_LOGIND_LID_POLICY=0
-RUN mkdir -p /usr/share/bootc-optional/systemd/logind.conf.d
-COPY system/systemd/logind.conf.d/10-lid-policy.conf /usr/share/bootc-optional/systemd/logind.conf.d/10-lid-policy.conf
 RUN if [ "${ENABLE_LOGIND_LID_POLICY}" = "1" ]; then \
             install -Dpm0644 /usr/share/bootc-optional/systemd/logind.conf.d/10-lid-policy.conf /etc/systemd/logind.conf.d/10-lid-policy.conf; \
         fi
 
-# Nushell config
-COPY skel/.config/nushell/config.nu /etc/skel/.config/nushell/config.nu
-COPY skel/.config/nushell/env.nu /etc/skel/.config/nushell/env.nu
+# Rebuild font cache after all font/icon COPYs and config overlay
+RUN fc-cache -f
 
 # === HOST_SHIMS (managed by bkt) ===
 RUN set -eu; \
