@@ -485,6 +485,8 @@ fn emit_collect_config(lines: &mut Vec<String>, image_config: &ImageConfigManife
             }
             // Run and SystemdEnable modules need a shell — handled in image stage
             ImageModule::Run { .. } | ImageModule::SystemdEnable { .. } => {}
+            // Wrapper modules are handled separately (built binaries copied in)
+            ImageModule::Wrapper { .. } => {}
         }
     }
 }
@@ -637,6 +639,9 @@ fn emit_image_assembly(lines: &mut Vec<String>, input: &ContainerfileGeneratorIn
     lines.push("COPY --from=collect-config / /".to_string());
     lines.push("".to_string());
 
+    // Memory-managed application wrappers (built Rust binaries)
+    emit_wrapper_copies(lines, &input.image_config);
+
     // Consolidated RUN for all post-overlay operations
     emit_consolidated_run(lines, &input.image_config);
 
@@ -786,6 +791,28 @@ fn emit_rpm_snapshot(lines: &mut Vec<String>) {
             .to_string(),
     );
     lines.push("# === END RPM VERSION SNAPSHOT ===".to_string());
+}
+
+/// Emit COPY instructions for memory-managed application wrappers.
+///
+/// These are pre-built Rust binaries that replace symlinks to applications
+/// like VS Code and Edge, wrapping them in systemd-run for memory control.
+fn emit_wrapper_copies(lines: &mut Vec<String>, image_config: &ImageConfigManifest) {
+    let wrappers = image_config.wrappers();
+    if wrappers.is_empty() {
+        return;
+    }
+
+    lines.push("# Memory-managed application wrappers (built Rust binaries)".to_string());
+    for wrapper in wrappers {
+        // The wrapper binary is built to wrappers/bin/<name> and should be
+        // copied to the output path specified in the manifest
+        lines.push(format!(
+            "COPY wrappers/bin/{} {}",
+            wrapper.name, wrapper.output
+        ));
+    }
+    lines.push("".to_string());
 }
 
 fn ordered_upstreams<F>(upstreams: &UpstreamManifest, predicate: F) -> Vec<&Upstream>
