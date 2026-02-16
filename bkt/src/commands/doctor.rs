@@ -23,6 +23,7 @@ pub fn run(args: DoctorArgs) -> Result<()> {
     // Additional environment readiness checks (not specific to PR workflows).
     results.push(check_distrobox_shims_path());
     results.push(check_distrobox_wrappers());
+    results.push(check_cargo_bin_exports());
     results.push(check_devtools_resolve_to_distrobox("cargo"));
     results.push(check_devtools_resolve_to_distrobox("node"));
     results.push(check_devtools_resolve_to_distrobox("pnpm"));
@@ -309,6 +310,99 @@ fn check_distrobox_wrappers() -> crate::pr::PreflightResult {
             "distrobox wrappers",
             &problems.join("; "),
             "Remove these files and re-export from distrobox:\n  rm ~/.local/bin/distrobox/<file>\n  bkt distrobox apply",
+        )
+    }
+}
+
+/// Check that cargo-installed binaries have corresponding distrobox shims.
+///
+/// When you run `cargo install --path <crate>` (via the distrobox cargo shim),
+/// the binary lands in ~/.cargo/bin but isn't accessible on the host until
+/// `bkt distrobox apply` creates a shim for it.
+fn check_cargo_bin_exports() -> crate::pr::PreflightResult {
+    let Some(home) = home_dir() else {
+        return fail(
+            "cargo bin exports",
+            "Cannot determine $HOME",
+            "Ensure HOME is set",
+        );
+    };
+
+    let cargo_bin = home.join(".cargo/bin");
+    let shims_dir = home.join(".local/bin/distrobox");
+
+    if !cargo_bin.exists() {
+        return pass(
+            "cargo bin exports",
+            "~/.cargo/bin does not exist (no cargo-installed binaries)",
+        );
+    }
+
+    let entries = match std::fs::read_dir(&cargo_bin) {
+        Ok(e) => e,
+        Err(e) => {
+            return fail(
+                "cargo bin exports",
+                &format!("Cannot read ~/.cargo/bin: {}", e),
+                "",
+            );
+        }
+    };
+
+    // Collect cargo binaries (excluding rustup-managed tools)
+    let rustup_managed = [
+        "cargo",
+        "rustc",
+        "rustdoc",
+        "rust-gdb",
+        "rust-lldb",
+        "rustfmt",
+        "cargo-fmt",
+        "clippy-driver",
+        "cargo-clippy",
+        "rust-analyzer",
+        "cargo-miri",
+        "rls",
+        "rustup",
+    ];
+
+    let mut missing_shims: Vec<String> = Vec::new();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+
+        // Skip rustup-managed binaries (they're proxies, not real binaries)
+        if rustup_managed.contains(&name) {
+            continue;
+        }
+
+        // Check if a shim exists
+        let shim_path = shims_dir.join(name);
+        if !shim_path.exists() {
+            missing_shims.push(name.to_string());
+        }
+    }
+
+    if missing_shims.is_empty() {
+        pass(
+            "cargo bin exports",
+            "All cargo-installed binaries have distrobox shims",
+        )
+    } else {
+        fail(
+            "cargo bin exports",
+            &format!(
+                "Binaries in ~/.cargo/bin without shims: {}",
+                missing_shims.join(", ")
+            ),
+            "Run `bkt distrobox apply` to create shims for these binaries",
         )
     }
 }
