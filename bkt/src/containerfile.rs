@@ -304,6 +304,7 @@ pub fn generate_full_containerfile(input: &ContainerfileGeneratorInput) -> Strin
     emit_dl_stages(&mut lines, &input.external_repos);
     emit_fetch_stages(&mut lines, &input.upstreams);
     emit_script_stages(&mut lines, &input.upstreams);
+    emit_wrapper_build_stage(&mut lines, &input.image_config);
     emit_collect_config(&mut lines, &input.image_config);
     emit_image_assembly(&mut lines, input);
 
@@ -793,22 +794,58 @@ fn emit_rpm_snapshot(lines: &mut Vec<String>) {
     lines.push("# === END RPM VERSION SNAPSHOT ===".to_string());
 }
 
+/// Emit a build stage that compiles memory-managed application wrappers.
+///
+/// The wrapper source is fully derived from manifest data (image-config.json).
+/// Each wrapper is a small Rust program (~80 lines, no external deps) that
+/// launches an application under systemd-run for memory control.
+///
+/// This stage uses `rust:slim` as a builder and compiles each wrapper with
+/// `rustc` directly (no cargo needed — zero dependencies). The stage runs
+/// in parallel with other build stages.
+fn emit_wrapper_build_stage(lines: &mut Vec<String>, image_config: &ImageConfigManifest) {
+    let wrappers = image_config.wrappers();
+    if wrappers.is_empty() {
+        return;
+    }
+
+    lines.push("".to_string());
+    lines.push(section_header(
+        "Wrapper build stage (parallel, from manifest)",
+    ));
+    lines.push("".to_string());
+    lines.push("FROM rust:slim AS build-wrappers".to_string());
+    lines.push("RUN mkdir -p /out".to_string());
+
+    for wrapper in &wrappers {
+        let source = wrapper.generate_source();
+        // Encode source as base64 to avoid nested heredoc issues (hadolint can't parse them).
+        // Single RUN with pipe: decode base64 → write .rs file → compile.
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(source.as_bytes());
+        lines.push(format!(
+            "RUN echo '{}' | base64 -d > /tmp/{}.rs && rustc --edition 2021 -O -o /out/{name} /tmp/{name}.rs",
+            encoded,
+            wrapper.name,
+            name = wrapper.name
+        ));
+    }
+}
+
 /// Emit COPY instructions for memory-managed application wrappers.
 ///
-/// These are pre-built Rust binaries that replace symlinks to applications
-/// like VS Code and Edge, wrapping them in systemd-run for memory control.
+/// Copies the compiled wrapper binaries from the build-wrappers stage
+/// into their final locations in the image.
 fn emit_wrapper_copies(lines: &mut Vec<String>, image_config: &ImageConfigManifest) {
     let wrappers = image_config.wrappers();
     if wrappers.is_empty() {
         return;
     }
 
-    lines.push("# Memory-managed application wrappers (built Rust binaries)".to_string());
+    lines.push("# Memory-managed application wrappers (from build-wrappers stage)".to_string());
     for wrapper in wrappers {
-        // The wrapper binary is built to wrappers/bin/<name> and should be
-        // copied to the output path specified in the manifest
         lines.push(format!(
-            "COPY wrappers/bin/{} {}",
+            "COPY --from=build-wrappers /out/{} {}",
             wrapper.name, wrapper.output
         ));
     }
