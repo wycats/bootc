@@ -1,8 +1,10 @@
 # RFC 0048: Subsystem and Containerfile Unification
 
-## Status
-
-Draft
+- Feature Name: `subsystem_containerfile_unification`
+- Start Date: 2026-02-15
+- RFC PR: (leave this empty)
+- Tracking Issue: (leave this empty)
+- Status: Draft
 
 ## Problem
 
@@ -32,11 +34,11 @@ abstractions were never adopted.
 The codebase has three separate subsystem enumerations that don't agree
 on membership:
 
-| Location | Enum | Members |
-|---|---|---|
+| Location       | Enum                                    | Members                                                            |
+| -------------- | --------------------------------------- | ------------------------------------------------------------------ |
 | `subsystem.rs` | `Subsystem` trait + `SubsystemRegistry` | Extension, Flatpak, GSettings, Shim, Distrobox, AppImage, Homebrew |
-| `apply.rs` | `Subsystem` (local enum) | Shim, Distrobox, Gsetting, Extension, Flatpak, AppImage |
-| `capture.rs` | `CaptureSubsystem` (local enum) | Extension, Distrobox, Flatpak, System, AppImage, Homebrew |
+| `apply.rs`     | `Subsystem` (local enum)                | Shim, Distrobox, Gsetting, Extension, Flatpak, AppImage            |
+| `capture.rs`   | `CaptureSubsystem` (local enum)         | Extension, Distrobox, Flatpak, System, AppImage, Homebrew          |
 
 Apply has Shim but not System/Homebrew. Capture has System/Homebrew but
 not Shim. Neither uses the registry.
@@ -46,15 +48,15 @@ not Shim. Neither uses the registry.
 The generator (`containerfile.rs`) contains hard-coded knowledge that
 should trace to manifests:
 
-| Hard-coded content | Should come from |
-|---|---|
-| Base image (`ghcr.io/ublue-os/bazzite-gnome:stable`) | A manifest field (e.g., `repo.json` or new `image-base.json`) |
-| `/opt` relocation mappings (1password, microsoft-edge) | External repos manifest (new `opt_path` field) |
-| `fc-cache -f` special case | The existing `font-cache` module in `image-config.json` |
-| tmpfiles entries for `/var/opt/*` | Derived from `/opt` relocation data |
-| Host shim template (`/bin/bash`, `flatpak-spawn --host`) | Shim manifest or fragment |
-| RPM cleanup/snapshot paths | Build policy manifest or fragment |
-| `bkt-build` tool paths in every stage | Tools manifest |
+| Hard-coded content                                       | Should come from                                              |
+| -------------------------------------------------------- | ------------------------------------------------------------- |
+| Base image (`ghcr.io/ublue-os/bazzite-gnome:stable`)     | A manifest field (e.g., `repo.json` or new `image-base.json`) |
+| `/opt` relocation mappings (1password, microsoft-edge)   | External repos manifest (new `opt_path` field)                |
+| `fc-cache -f` special case                               | The existing `font-cache` module in `image-config.json`       |
+| tmpfiles entries for `/var/opt/*`                        | Derived from `/opt` relocation data                           |
+| Host shim template (`/bin/bash`, `flatpak-spawn --host`) | Shim manifest or fragment                                     |
+| RPM cleanup/snapshot paths                               | Build policy manifest or fragment                             |
+| `bkt-build` tool paths in every stage                    | Tools manifest                                                |
 
 ### Missing RFC
 
@@ -106,6 +108,7 @@ local enums.
 **Goal:** Extract hard-coded generator knowledge into manifest fields.
 
 For each violation identified above, either:
+
 - Add a field to an existing manifest (preferred), or
 - Create a new manifest file, or
 - Move the content to a fragment (for truly bespoke logic)
