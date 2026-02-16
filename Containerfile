@@ -77,6 +77,129 @@ cd /tmp/whitesur-icons && git checkout "${ref}" && ./install.sh -d /usr/share/ic
 rm -rf /tmp/whitesur-icons
 EOF
 
+# ── Wrapper build stage (parallel, from manifest) ────────────────────────────
+
+FROM rust:slim AS build-wrappers
+RUN mkdir -p /out
+RUN <<'WRAPPER_VSCODE_WRAPPER'
+cat > /tmp/vscode-wrapper.rs << 'RUSTSRC'
+//! Auto-generated wrapper by bkt wrap
+//! Target: /usr/share/code/bin/code
+//! Slice: app-vscode.slice
+
+use std::os::unix::process::CommandExt;
+
+fn main() {
+
+    // VS Code remote-cli passthrough
+    if std::env::var("VSCODE_IPC_HOOK_CLI").is_ok() {
+        if let Some(remote_cli) = find_remote_cli() {
+            let err = std::process::Command::new(&remote_cli)
+                .args(std::env::args().skip(1))
+                .exec();
+            eprintln!("Failed to exec remote-cli: {}", err);
+            std::process::exit(1);
+        }
+    }
+
+    // Validate target exists
+    let target = "/usr/share/code/bin/code";
+    if !std::path::Path::new(target).exists() {
+        eprintln!("Error: {} not found", target);
+        std::process::exit(127);
+    }
+
+    // Generate unique unit name
+    let unit_name = format!("vscode-wrapper-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0)
+    );
+
+    // Launch via systemd-run
+    let err = std::process::Command::new("systemd-run")
+        .args([
+            "--user",
+            "--slice=app-vscode.slice",
+            "--scope",
+            &format!("--unit={}", unit_name),
+            "--description=VS Code (managed)",
+            "--property=MemoryOOMGroup=yes",
+            "--",
+            target,
+        ])
+        .args(std::env::args().skip(1))
+        .exec();
+
+    eprintln!("Failed to exec systemd-run: {}", err);
+    std::process::exit(1);
+}
+
+fn find_remote_cli() -> Option<String> {
+    let path = std::env::var("PATH").ok()?;
+    for dir in path.split(':') {
+        let candidate = format!("{}/code", dir);
+        if candidate.contains("/remote-cli/") && std::path::Path::new(&candidate).exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+RUSTSRC
+rustc --edition 2021 -O -o /out/vscode-wrapper /tmp/vscode-wrapper.rs
+WRAPPER_VSCODE_WRAPPER
+RUN <<'WRAPPER_MSEDGE_WRAPPER'
+cat > /tmp/msedge-wrapper.rs << 'RUSTSRC'
+//! Auto-generated wrapper by bkt wrap
+//! Target: /usr/lib/opt/microsoft/msedge/microsoft-edge
+//! Slice: app-msedge.slice
+
+use std::os::unix::process::CommandExt;
+
+fn main() {
+
+    // Validate target exists
+    let target = "/usr/lib/opt/microsoft/msedge/microsoft-edge";
+    if !std::path::Path::new(target).exists() {
+        eprintln!("Error: {} not found", target);
+        std::process::exit(127);
+    }
+
+    // Generate unique unit name
+    let unit_name = format!("msedge-wrapper-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0)
+    );
+
+    // Launch via systemd-run
+    let err = std::process::Command::new("systemd-run")
+        .args([
+            "--user",
+            "--slice=app-msedge.slice",
+            "--scope",
+            &format!("--unit={}", unit_name),
+            "--description=Microsoft Edge (managed)",
+            "--property=MemoryOOMGroup=yes",
+            "--",
+            target,
+        ])
+        .args(std::env::args().skip(1))
+        .exec();
+
+    eprintln!("Failed to exec systemd-run: {}", err);
+    std::process::exit(1);
+}
+
+RUSTSRC
+rustc --edition 2021 -O -o /out/msedge-wrapper /tmp/msedge-wrapper.rs
+WRAPPER_MSEDGE_WRAPPER
+
 # ── Config collector (parallel, FROM scratch) ────────────────────────────────
 FROM scratch AS collect-config
 
@@ -237,9 +360,9 @@ COPY --from=fetch-whitesur /usr/share/icons/WhiteSur-dark/ /usr/share/icons/Whit
 # ── Configuration overlay (from collect-config) ──────────────────────────────
 COPY --from=collect-config / /
 
-# Memory-managed application wrappers (built Rust binaries)
-COPY wrappers/bin/vscode-wrapper /usr/bin/code
-COPY wrappers/bin/msedge-wrapper /usr/bin/microsoft-edge-stable
+# Memory-managed application wrappers (from build-wrappers stage)
+COPY --from=build-wrappers /out/vscode-wrapper /usr/bin/code
+COPY --from=build-wrappers /out/msedge-wrapper /usr/bin/microsoft-edge-stable
 
 # Post-overlay setup: chmod, symlinks, mkdir, kargs, staging dirs
 RUN set -eu; \
