@@ -819,19 +819,16 @@ fn emit_wrapper_build_stage(lines: &mut Vec<String>, image_config: &ImageConfigM
 
     for wrapper in &wrappers {
         let source = wrapper.generate_source();
-        // Escape the source for a heredoc — we use a unique delimiter per wrapper
-        let delimiter = format!("WRAPPER_{}", wrapper.name.to_uppercase().replace('-', "_"));
-        lines.push(format!("RUN <<'{delimiter}'"));
-        lines.push(format!("cat > /tmp/{}.rs << 'RUSTSRC'", wrapper.name));
-        for line in source.lines() {
-            lines.push(line.to_string());
-        }
-        lines.push("RUSTSRC".to_string());
+        // Encode source as base64 to avoid nested heredoc issues (hadolint can't parse them).
+        // Single RUN with pipe: decode base64 → write .rs file → compile.
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(source.as_bytes());
         lines.push(format!(
-            "rustc --edition 2021 -O -o /out/{name} /tmp/{name}.rs",
+            "RUN echo '{}' | base64 -d > /tmp/{}.rs && rustc --edition 2021 -O -o /out/{name} /tmp/{name}.rs",
+            encoded,
+            wrapper.name,
             name = wrapper.name
         ));
-        lines.push(delimiter);
     }
 }
 
