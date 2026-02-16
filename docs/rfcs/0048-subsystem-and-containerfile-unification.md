@@ -1,6 +1,6 @@
-# RFC 0048: Subsystem and Containerfile Unification
+# RFC 0048: Subsystem Architecture Unification
 
-- Feature Name: `subsystem_containerfile_unification`
+- Feature Name: `subsystem_unification`
 - Start Date: 2026-02-15
 - RFC PR: (leave this empty)
 - Tracking Issue: (leave this empty)
@@ -8,31 +8,89 @@
 
 ## Problem
 
-Two core architectural promises are currently broken:
+The subsystem architecture has three interconnected problems:
 
-1. **The Subsystem Registry is dead code.** `subsystem.rs` implements
-   RFC-0026's vision — a trait-based registry with execution phases,
-   unified capture/sync, and filtering. But `apply.rs` and `capture.rs`
-   each define their own local `Subsystem` enums and hard-code their
-   subsystem lists. The registry has zero callers outside its own tests.
+1. **The Subsystem Registry is dead code.** `subsystem.rs` implements a
+   trait-based registry with execution phases, unified capture/sync, and
+   filtering. But `apply.rs` and `capture.rs` each define their own local
+   `Subsystem` enums and hard-code their subsystem lists. The registry has
+   zero callers outside its own tests.
 
 2. **The Containerfile generator violates its own axiom.** RFC 0042
-   established: "Every piece of information in the Containerfile must
-   trace back to a manifest file." In practice, the generator contains
-   hard-coded paths, special-case logic, and knowledge that should live
-   in manifests.
+   established: "Every piece of information in the Containerfile must trace
+   back to a manifest file." In practice, the generator contains hard-coded
+   paths, special-case logic, and knowledge that should live in manifests.
 
-These are two symptoms of the same problem: the architecture was
-designed correctly but the implementation drifted. Each feature was
-wired in with "just this one special case" and the principled
-abstractions were never adopted.
+3. **The tier distinction is implicit.** Subsystems fall into two
+   fundamentally different lifecycle models — image-bound (Atomic) vs
+   runtime-applied (Convergent) — but this isn't reflected in the trait
+   design. This makes it impossible to implement features like `staged`
+   diffing polymorphically.
 
-## Evidence
+## Subsystem Tiers
+
+The most important architectural insight is that subsystems have two
+fundamentally different lifecycle models:
+
+### Tier 1: Atomic (Image-bound)
+
+- **State lives in the image** — changes require image rebuild + reboot
+- **No local drift possible** — the image is the source of truth
+- **"Desired state" = "what's in the image"**
+- **Examples:** `system` (RPMs), `upstream` (binaries), `wrappers`, config files
+
+Atomic subsystems support:
+- `staged()` — diff between staged deployment and booted deployment
+- `capture()` — capture layered packages to manifest (for `system` only)
+- No `sync()` — changes are deferred to image rebuild
+
+### Tier 2: Convergent (Runtime-applied)
+
+- **State lives outside the image** — user space, flatpak DB, gsettings, etc.
+- **Changes can be applied immediately OR deferred**
+- **Local drift is possible** — runtime state may differ from manifest
+- **Three-way state model:** manifest intent, current runtime, staged baseline
+- **Examples:** `flatpak`, `extension`, `gsetting`, `distrobox`, `shim`,
+  `appimage`, `homebrew`
+
+Convergent subsystems support:
+- `sync()` — converge runtime state to manifest
+- `capture()` — capture runtime state to manifest
+- `drift()` — compare manifest to runtime state
+- `baseline()` — snapshot of "last applied" state for three-way diffs
+
+### Why This Matters
+
+The tier distinction affects every subsystem operation:
+
+| Operation | Atomic | Convergent |
+|-----------|--------|------------|
+| `add`/`remove` | Deferred (PR → rebuild) | Immediate or deferred |
+| `sync` | N/A | Converge runtime to manifest |
+| `capture` | Capture layered RPMs | Capture runtime state |
+| `status` | Manifest vs image | Manifest vs runtime vs baseline |
+| `staged` | Diff staged vs booted | Diff (manifest + staged baseline) vs (manifest + runtime) |
+
+## Execution Phases
+
+Within each tier, subsystems execute in a deterministic phase order:
+
+1. **Infrastructure**: remotes, repositories, registries
+2. **Packages**: installable units (flatpak apps, system packages)
+3. **Configuration**: extensions, gsettings, shims
+
+The registry orders subsystems by phase. Within a phase, ordering is stable
+based on registration order. Capture ordering is the reverse of sync ordering
+(configuration → packages → infrastructure).
+
+This absorbs RFC-0029 (Subsystem Dependencies) — phase ordering is part of
+the registry design, not a separate concern.
+
+## Evidence of Current Problems
 
 ### Three Subsystem Enums
 
-The codebase has three separate subsystem enumerations that don't agree
-on membership:
+The codebase has three separate subsystem enumerations that don't agree:
 
 | Location       | Enum                                    | Members                                                            |
 | -------------- | --------------------------------------- | ------------------------------------------------------------------ |
@@ -40,144 +98,165 @@ on membership:
 | `apply.rs`     | `Subsystem` (local enum)                | Shim, Distrobox, Gsetting, Extension, Flatpak, AppImage            |
 | `capture.rs`   | `CaptureSubsystem` (local enum)         | Extension, Distrobox, Flatpak, System, AppImage, Homebrew          |
 
-Apply has Shim but not System/Homebrew. Capture has System/Homebrew but
-not Shim. Neither uses the registry.
+Apply has Shim but not System/Homebrew. Capture has System/Homebrew but not
+Shim. Neither uses the registry.
+
+### Missing Atomic Subsystems
+
+Several image-bound subsystems aren't in the registry at all:
+
+- `upstream` — binaries fetched from GitHub releases
+- `external-repos` — third-party RPM repositories
+- `image-config` — base image settings
+- `wrappers` — Rust wrapper binaries for systemd integration
+
+These should be Tier 1 subsystems with `staged()` support.
 
 ### Containerfile Axiom Violations
 
-The generator (`containerfile.rs`) contains hard-coded knowledge that
-should trace to manifests:
+The generator contains hard-coded knowledge that should trace to manifests:
 
-| Hard-coded content                                       | Should come from                                              |
-| -------------------------------------------------------- | ------------------------------------------------------------- |
-| Base image (`ghcr.io/ublue-os/bazzite-gnome:stable`)     | A manifest field (e.g., `repo.json` or new `image-base.json`) |
-| `/opt` relocation mappings (1password, microsoft-edge)   | External repos manifest (new `opt_path` field)                |
-| `fc-cache -f` special case                               | The existing `font-cache` module in `image-config.json`       |
-| tmpfiles entries for `/var/opt/*`                        | Derived from `/opt` relocation data                           |
-| Host shim template (`/bin/bash`, `flatpak-spawn --host`) | Shim manifest or fragment                                     |
-| RPM cleanup/snapshot paths                               | Build policy manifest or fragment                             |
-| `bkt-build` tool paths in every stage                    | Tools manifest                                                |
+| Hard-coded content                                   | Should come from                          |
+| ---------------------------------------------------- | ----------------------------------------- |
+| Base image (`ghcr.io/ublue-os/bazzite-gnome:stable`) | `repo.json` or `image-base.json`          |
+| `/opt` relocation mappings                           | External repos manifest (`opt_path` field)|
+| `fc-cache -f` special case                           | Font-cache module in `image-config.json`  |
+| Host shim template                                   | Shim manifest or fragment                 |
 
-### Missing RFC
+## Proposed Trait Design
 
-`subsystem.rs` references "RFC-0026" but no such RFC file exists in
-`docs/rfcs/`. The subsystem trait was implemented without a written
-design document, which may explain why adoption stalled.
+```rust
+/// Lifecycle tier for a subsystem.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubsystemTier {
+    /// Image-bound: state lives in the bootc image.
+    /// Changes require image rebuild + reboot.
+    Atomic,
+    /// Runtime-applied: state lives outside the image.
+    /// Changes can be applied immediately or deferred.
+    Convergent,
+}
 
-## Design Goals
+/// Execution phase within a tier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ExecutionPhase {
+    Infrastructure,
+    Packages,
+    Configuration,
+}
 
-The end state should look like it was built from scratch — no residue
-from the incremental journey. Specifically:
+pub trait Subsystem: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn id(&self) -> &'static str;
+    
+    /// The lifecycle tier for this subsystem.
+    fn tier(&self) -> SubsystemTier;
+    
+    /// Execution phase within the tier.
+    fn phase(&self) -> ExecutionPhase {
+        ExecutionPhase::Configuration
+    }
 
-1. **One subsystem registry.** `apply` and `capture` iterate the
-   registry, filtered by capability (`supports_capture`,
-   `supports_sync`). The local enums are deleted.
+    fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>>;
 
-2. **Phase ordering is authoritative.** The `ExecutionPhase` enum in
-   the registry determines execution order for both apply and capture.
-   No hard-coded ordering in commands.
+    // === Convergent operations (Tier 2) ===
+    
+    fn capture(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>>;
+    fn sync(&self, ctx: &PlanContext, config: &SubsystemConfig) -> Result<Option<Box<dyn DynPlan>>>;
+    fn drift(&self, ctx: &SubsystemContext) -> Result<Option<DriftReport>> { Ok(None) }
+    
+    /// Baseline snapshot for three-way diffs (Tier 2 only).
+    fn baseline(&self, ctx: &SubsystemContext) -> Result<Option<Box<dyn Manifest>>> { Ok(None) }
 
-3. **Every Containerfile line traces to data.** The generator reads
-   manifests and fragments. It contains no domain-specific knowledge
-   about specific packages, paths, or applications.
+    // === Atomic operations (Tier 1) ===
+    
+    /// Diff between staged deployment and booted deployment.
+    fn staged(&self, ctx: &StagedContext) -> Result<Option<StagedReport>> { Ok(None) }
 
-4. **New subsystems are additive.** Adding a subsystem means:
-   implementing the `Subsystem` trait, adding a manifest file, and
-   registering it. No changes to `apply.rs`, `capture.rs`, or
-   `containerfile.rs` scaffolding.
+    // === Build-time operations ===
+    
+    /// Emit Containerfile build stages for this subsystem.
+    fn containerfile_stages(&self, ctx: &BuildContext) -> Result<Option<Vec<ContainerfileStage>>> { Ok(None) }
+    
+    /// Emit Containerfile image-stage lines for this subsystem.
+    fn containerfile_image_lines(&self, ctx: &BuildContext) -> Result<Option<Vec<String>>> { Ok(None) }
 
-## Plan
+    // === Capability flags ===
+    
+    fn supports_capture(&self) -> bool { true }
+    fn supports_sync(&self) -> bool { self.tier() == SubsystemTier::Convergent }
+    fn supports_drift(&self) -> bool { self.tier() == SubsystemTier::Convergent }
+    fn supports_staged(&self) -> bool { self.tier() == SubsystemTier::Atomic }
+}
+```
 
-### Phase 1: Wire the Registry
+## Implementation Plan
 
-**Goal:** `apply` and `capture` use `SubsystemRegistry` instead of
-local enums.
+### Phase 1: Add Tier to Existing Subsystems
 
-1. Audit each subsystem implementation in the registry against what
-   `apply.rs` and `capture.rs` actually do. Fill gaps.
-2. Replace the local `Subsystem` / `CaptureSubsystem` enums with
-   registry iteration filtered by `supports_sync()` /
-   `supports_capture()`.
-3. Preserve the `--only` / `--exclude` CLI flags, backed by
-   `registry.filtered()`.
-4. Delete the local enums.
-5. Verify: `bkt apply` and `bkt capture` produce identical behavior.
+1. Add `SubsystemTier` enum and `tier()` method to the trait.
+2. Classify existing subsystems:
+   - **Atomic:** `system`
+   - **Convergent:** `flatpak`, `extension`, `gsetting`, `distrobox`, `shim`,
+     `appimage`, `homebrew`, `fetchbin`
+3. Add `supports_staged()` capability flag.
+4. Wire `bkt system staged` through the trait (move logic from `system.rs`
+   command to `SystemSubsystem::staged()`).
 
-### Phase 2: Containerfile Manifest Extraction
+### Phase 2: Add Missing Atomic Subsystems
 
-**Goal:** Extract hard-coded generator knowledge into manifest fields.
+1. Create `UpstreamSubsystem` (Tier 1) with `staged()` support.
+2. Create `WrapperSubsystem` (Tier 1) with `staged()` support.
+3. Register them in `SubsystemRegistry`.
+4. Implement `staged()` for each — compare binaries in staged vs booted
+   deployment paths.
 
-For each violation identified above, either:
+### Phase 3: Wire the Registry
 
-- Add a field to an existing manifest (preferred), or
-- Create a new manifest file, or
-- Move the content to a fragment (for truly bespoke logic)
+1. Replace local `Subsystem` / `CaptureSubsystem` enums in `apply.rs` and
+   `capture.rs` with registry iteration.
+2. Filter by `supports_sync()` / `supports_capture()` and tier.
+3. Delete the local enums.
+4. Verify: `bkt apply` and `bkt capture` produce identical behavior.
 
-Priority order (by impact):
+### Phase 4: Containerfile Manifest Extraction
+
+Extract hard-coded generator knowledge into manifest fields:
 
 1. **Base image** → add `base_image` field to `repo.json`
 2. **`/opt` relocation** → add `opt_path` field to external repos entries
 3. **tmpfiles** → derive from `/opt` relocation data
-4. **`fc-cache`** → honor the existing `font-cache` module instead of
-   special-casing
-5. **Host shim template** → add template fields to shim schema
-6. **RPM cleanup/snapshot** → build policy fragment or manifest
-7. **Tool paths** → tools manifest
+4. **Host shim template** → add template fields to shim schema
 
-### Phase 3: Subsystem ↔ Containerfile Connection
+### Phase 5: Subsystem ↔ Containerfile Connection
 
-**Goal:** Subsystems that contribute to the Containerfile do so through
-the registry, not through ad-hoc generator functions.
+Subsystems that contribute to the Containerfile do so through the registry:
 
-This is the deeper unification: a subsystem that has both runtime
-behavior (apply/capture) and build-time behavior (Containerfile
-generation) should express both through the same trait. For example:
-
-```rust
-pub trait Subsystem {
-    // ... existing methods ...
-
-    /// Emit Containerfile build stages for this subsystem.
-    /// Returns None if this subsystem has no build-time component.
-    fn containerfile_stages(&self, ctx: &BuildContext)
-        -> Result<Option<Vec<ContainerfileStage>>>;
-
-    /// Emit Containerfile image-stage lines for this subsystem.
-    fn containerfile_image_lines(&self, ctx: &BuildContext)
-        -> Result<Option<Vec<String>>>;
-}
-```
-
-The generator becomes a loop over the registry instead of a sequence
-of `emit_*` functions.
-
-### Phase 4: Cleanup
-
-1. Remove all `emit_*` functions that are now subsumed by subsystem
-   trait methods.
-2. Verify `bkt containerfile generate` produces identical output.
-3. Verify `bkt containerfile check` passes.
-4. Update documentation to reflect the unified model.
+1. Implement `containerfile_stages()` and `containerfile_image_lines()` for
+   relevant subsystems.
+2. The generator becomes a loop over the registry instead of a sequence of
+   `emit_*` functions.
+3. Remove all `emit_*` functions that are now subsumed by trait methods.
 
 ## Relationship to Other RFCs
 
-- **RFC-0026 (Subsystem Trait)**: This RFC completes the adoption that
-  0026 started. The trait design is sound; the problem is that nothing
-  uses it.
-- **RFC 0042 (Managed Containerfile)**: This RFC enforces the axiom
-  that 0042 established but the implementation violated.
-- **RFC 0047 (bkt wrap)**: The wrapper build stage (now a Containerfile
-  stage derived from manifest data) is the first example of the Phase 3
-  pattern — a subsystem expressing build-time behavior through
-  structured data.
+- **RFC-0029 (Subsystem Dependencies)**: Absorbed into this RFC. Phase
+  ordering is part of the registry design.
+- **RFC-0007 (Drift Detection)**: Drift is a Tier 2 (Convergent) concept.
+  This RFC provides the tier model that 0007 should reference.
+- **RFC-0028 (Plugin Subsystems)**: Orthogonal. Plugins would implement the
+  `Subsystem` trait with an appropriate tier.
+- **RFC 0042 (Managed Containerfile)**: This RFC enforces the axiom that
+  0042 established but the implementation violated.
 
 ## Success Criteria
 
+- `SubsystemTier` enum exists and every subsystem declares its tier.
 - `SubsystemRegistry` is the sole source of subsystem enumeration.
 - No local `Subsystem` or `CaptureSubsystem` enums exist.
+- `bkt system staged` works through the trait, not special-case code.
+- `bkt staged` (future) can iterate all Tier 1 subsystems polymorphically.
 - `containerfile.rs` contains zero hard-coded package names, paths, or
   application-specific knowledge.
-- Adding a new subsystem requires zero changes to `apply.rs`,
-  `capture.rs`, or the Containerfile generator scaffolding.
-- `bkt containerfile check` enforces that the committed Containerfile
-  matches what the generator produces from manifests.
+- Adding a new subsystem requires zero changes to `apply.rs`, `capture.rs`,
+  or the Containerfile generator scaffolding.
