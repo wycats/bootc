@@ -55,6 +55,17 @@ pub enum ExecutionPhase {
     Configuration,
 }
 
+/// Lifecycle tier for a subsystem.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubsystemTier {
+    /// Image-bound: state lives in the bootc image.
+    /// Changes require image rebuild + reboot.
+    Atomic,
+    /// Runtime-applied: state lives outside the image.
+    /// Changes can be applied immediately or deferred.
+    Convergent,
+}
+
 /// A subsystem manages a category of declarative configuration.
 ///
 /// Each subsystem knows how to:
@@ -106,6 +117,9 @@ pub trait Subsystem: Send + Sync {
         ExecutionPhase::Configuration
     }
 
+    /// The lifecycle tier for this subsystem.
+    fn tier(&self) -> SubsystemTier;
+
     /// Load the merged manifest (system defaults + user overrides).
     ///
     /// This is THE canonical way to get the effective manifest.
@@ -150,6 +164,11 @@ pub trait Subsystem: Send + Sync {
     /// Returns true if this subsystem supports drift detection.
     fn supports_drift(&self) -> bool {
         false
+    }
+
+    /// Whether this subsystem supports staged deployment diffing.
+    fn supports_staged(&self) -> bool {
+        self.tier() == SubsystemTier::Atomic
     }
 }
 
@@ -546,6 +565,10 @@ impl Subsystem for ExtensionSubsystem {
         ExecutionPhase::Configuration
     }
 
+    fn tier(&self) -> SubsystemTier {
+        SubsystemTier::Convergent
+    }
+
     fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
         let system =
             GnomeExtensionsManifest::load(&ctx.system_manifest_path("gnome-extensions.json"))?;
@@ -671,6 +694,10 @@ impl Subsystem for FlatpakSubsystem {
         ExecutionPhase::Packages
     }
 
+    fn tier(&self) -> SubsystemTier {
+        SubsystemTier::Convergent
+    }
+
     fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
         let system = FlatpakAppsManifest::load(&ctx.system_manifest_path("flatpak-apps.json"))?;
         let user = FlatpakAppsManifest::load(&ctx.user_manifest_path("flatpak-apps.json"))?;
@@ -775,6 +802,10 @@ impl Subsystem for DistroboxSubsystem {
         ExecutionPhase::Infrastructure
     }
 
+    fn tier(&self) -> SubsystemTier {
+        SubsystemTier::Convergent
+    }
+
     fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
         // Distrobox uses a different path pattern - it loads from manifests/ dir
         let manifest = DistroboxManifest::load_from_dir(&ctx.repo_root.join("manifests"))?;
@@ -831,6 +862,10 @@ impl Subsystem for GsettingSubsystem {
 
     fn phase(&self) -> ExecutionPhase {
         ExecutionPhase::Configuration
+    }
+
+    fn tier(&self) -> SubsystemTier {
+        SubsystemTier::Convergent
     }
 
     fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
@@ -969,6 +1004,10 @@ impl Subsystem for ShimSubsystem {
         ExecutionPhase::Configuration
     }
 
+    fn tier(&self) -> SubsystemTier {
+        SubsystemTier::Convergent
+    }
+
     fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
         let system = ShimsManifest::load(&ctx.system_manifest_path("host-shims.json"))?;
         let user = ShimsManifest::load(&ctx.user_manifest_path("host-shims.json"))?;
@@ -1090,6 +1129,10 @@ impl Subsystem for AppImageSubsystem {
         ExecutionPhase::Packages
     }
 
+    fn tier(&self) -> SubsystemTier {
+        SubsystemTier::Convergent
+    }
+
     fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
         // AppImage uses a manifest in the repo's manifests/ directory
         let manifest = AppImageAppsManifest::load_from_dir(&ctx.repo_root.join("manifests"))?;
@@ -1151,6 +1194,10 @@ impl Subsystem for FetchbinSubsystem {
         ExecutionPhase::Packages
     }
 
+    fn tier(&self) -> SubsystemTier {
+        SubsystemTier::Convergent
+    }
+
     fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
         let manifest = HostBinariesManifest::load_from_dir(&ctx.repo_root.join("manifests"))?;
         Ok(Box::new(manifest))
@@ -1206,6 +1253,10 @@ impl Subsystem for HomebrewSubsystem {
 
     fn phase(&self) -> ExecutionPhase {
         ExecutionPhase::Packages
+    }
+
+    fn tier(&self) -> SubsystemTier {
+        SubsystemTier::Convergent
     }
 
     fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
@@ -1264,6 +1315,10 @@ impl Subsystem for SystemSubsystem {
 
     fn phase(&self) -> ExecutionPhase {
         ExecutionPhase::Packages
+    }
+
+    fn tier(&self) -> SubsystemTier {
+        SubsystemTier::Atomic
     }
 
     fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
@@ -1405,6 +1460,25 @@ mod tests {
                 "shim",
             ]
         );
+    }
+
+    #[test]
+    fn test_subsystem_tiers() {
+        let registry = SubsystemRegistry::builtin();
+
+        for subsystem in registry.all() {
+            let expected = match subsystem.id() {
+                "system" => SubsystemTier::Atomic,
+                _ => SubsystemTier::Convergent,
+            };
+
+            assert_eq!(
+                subsystem.tier(),
+                expected,
+                "unexpected tier for {}",
+                subsystem.id()
+            );
+        }
     }
 
     #[test]
