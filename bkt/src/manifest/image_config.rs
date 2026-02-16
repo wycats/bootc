@@ -78,6 +78,24 @@ pub enum ImageModule {
         comment: Option<String>,
         commands: Vec<String>,
     },
+    /// Application wrapper (generates a binary that launches via systemd-run)
+    Wrapper {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        comment: Option<String>,
+        /// Path to the actual binary to wrap
+        target: String,
+        /// systemd slice to run under (e.g., app-vscode.slice)
+        slice: String,
+        /// Output path for the wrapper binary
+        output: String,
+        /// Enable VS Code remote-cli passthrough detection
+        #[serde(default)]
+        remote_cli: bool,
+        /// Description for the systemd scope
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+    },
 }
 
 impl ImageModule {
@@ -87,7 +105,8 @@ impl ImageModule {
             ImageModule::Files { name, .. }
             | ImageModule::SystemdEnable { name, .. }
             | ImageModule::OptionalFeature { name, .. }
-            | ImageModule::Run { name, .. } => name,
+            | ImageModule::Run { name, .. }
+            | ImageModule::Wrapper { name, .. } => name,
         }
     }
 
@@ -97,7 +116,8 @@ impl ImageModule {
             ImageModule::Files { comment, .. }
             | ImageModule::SystemdEnable { comment, .. }
             | ImageModule::OptionalFeature { comment, .. }
-            | ImageModule::Run { comment, .. } => comment.as_deref(),
+            | ImageModule::Run { comment, .. }
+            | ImageModule::Wrapper { comment, .. } => comment.as_deref(),
         }
     }
 }
@@ -140,5 +160,37 @@ impl ImageConfigManifest {
             )
         })?;
         Ok(manifest)
+    }
+
+    /// Load the manifest from a repo root path.
+    pub fn load_from_repo(repo_root: &std::path::Path) -> Result<Self> {
+        let path = repo_root.join("manifests").join("image-config.json");
+        Self::load_from_path(&path)
+    }
+
+    /// Extract wrapper configurations from the manifest.
+    pub fn wrappers(&self) -> Vec<crate::commands::wrap::WrapperConfig> {
+        self.modules
+            .iter()
+            .filter_map(|m| match m {
+                ImageModule::Wrapper {
+                    name,
+                    target,
+                    slice,
+                    output,
+                    remote_cli,
+                    description,
+                    ..
+                } => Some(crate::commands::wrap::WrapperConfig {
+                    name: name.clone(),
+                    target: target.clone(),
+                    slice: slice.clone(),
+                    output: output.clone(),
+                    remote_cli: *remote_cli,
+                    description: description.clone(),
+                }),
+                _ => None,
+            })
+            .collect()
     }
 }

@@ -7,6 +7,12 @@ pre-commit:
         cargo run -q --manifest-path bkt/Cargo.toml -- schema generate --output schemas
         git diff --exit-code -- schemas
 
+    check-containerfile:
+      glob: "{manifests/*.json,bkt/src/**/*.rs}"
+      run: |
+        cargo run -q --manifest-path bkt/Cargo.toml -- containerfile sync
+        git add Containerfile
+
     fmt:
       glob: "bkt/**/*.rs"
       run: |
@@ -27,6 +33,10 @@ pre-push:
       run: |
         cargo run -q --manifest-path bkt/Cargo.toml -- schema generate --output schemas
         git diff --exit-code -- schemas
+
+    check-containerfile:
+      glob: "{manifests/*.json,bkt/src/**/*.rs}"
+      run: cargo run -q --manifest-path bkt/Cargo.toml -- containerfile check
 
     fmt:
       glob: "bkt/**/*.rs"

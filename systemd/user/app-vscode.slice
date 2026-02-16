@@ -1,0 +1,17 @@
+[Slice]
+Description=VS Code Memory Budget
+
+# Soft limit: triggers memory pressure reclaim within the cgroup.
+# At 20 GB, the kernel starts reclaiming pages aggressively,
+# making VS Code slower but keeping the system alive.
+# Baseline is ~15 GB (one workspace + RA + tsgo), so this
+# gives 5 GB (~33%) headroom for normal spikes.
+MemoryHigh=20G
+
+# Hard limit: processes are OOM-killed if they exceed this.
+# 24 GB = ~39% of 62 GB, leaving 38 GB for everything else.
+MemoryMax=24G
+
+# Tell oomd to monitor this slice for memory pressure.
+ManagedOOMMemoryPressure=kill
+ManagedOOMMemoryPressureLimit=50%

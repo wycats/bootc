@@ -304,6 +304,7 @@ pub fn generate_full_containerfile(input: &ContainerfileGeneratorInput) -> Strin
     emit_dl_stages(&mut lines, &input.external_repos);
     emit_fetch_stages(&mut lines, &input.upstreams);
     emit_script_stages(&mut lines, &input.upstreams);
+    emit_collect_config(&mut lines, &input.image_config);
     emit_image_assembly(&mut lines, input);
 
     let mut result = lines.join("\n");
@@ -452,6 +453,148 @@ fn emit_script_stages(lines: &mut Vec<String>, upstreams: &UpstreamManifest) {
     }
 }
 
+/// Emit the `FROM scratch AS collect-config` stage.
+///
+/// This stage assembles all static configuration files via COPY instructions
+/// only (no RUN — FROM scratch has no shell). The image stage imports the
+/// result with a single `COPY --from=collect-config / /`.
+fn emit_collect_config(lines: &mut Vec<String>, image_config: &ImageConfigManifest) {
+    lines.push("".to_string());
+    lines.push(section_header("Config collector (parallel, FROM scratch)"));
+    lines.push("FROM scratch AS collect-config".to_string());
+
+    for module in &image_config.modules {
+        match module {
+            ImageModule::Files { files, .. } => {
+                if let Some(comment) = module.comment() {
+                    lines.push("".to_string());
+                    for line in comment.split('\n') {
+                        lines.push(format!("# {}", line));
+                    }
+                }
+                emit_copy_files(lines, files);
+            }
+            ImageModule::OptionalFeature { src, staging, .. } => {
+                if let Some(comment) = module.comment() {
+                    lines.push("".to_string());
+                    for line in comment.split('\n') {
+                        lines.push(format!("# {}", line));
+                    }
+                }
+                lines.push(format!("COPY {} {}", src, staging));
+            }
+            // Run and SystemdEnable modules need a shell — handled in image stage
+            ImageModule::Run { .. } | ImageModule::SystemdEnable { .. } => {}
+            // Wrapper modules are handled separately (built binaries copied in)
+            ImageModule::Wrapper { .. } => {}
+        }
+    }
+}
+
+/// Collect all RUN-requiring operations from image modules and emit them
+/// as a single consolidated `RUN set -eu; \` block in the image stage.
+///
+/// This replaces the many individual RUN instructions that were previously
+/// emitted by `emit_image_modules()`.
+fn emit_consolidated_run(lines: &mut Vec<String>, image_config: &ImageConfigManifest) {
+    let mut commands: Vec<String> = Vec::new();
+
+    for module in &image_config.modules {
+        match module {
+            ImageModule::Run { commands: cmds, .. } if module.name() != "font-cache" => {
+                commands.extend(cmds.iter().cloned());
+            }
+            ImageModule::Files {
+                pre_run, post_run, ..
+            } => {
+                commands.extend(pre_run.iter().cloned());
+                commands.extend(post_run.iter().cloned());
+            }
+            ImageModule::SystemdEnable {
+                scope,
+                unit,
+                target,
+                ..
+            } => {
+                let wants_dir = format!("/usr/lib/systemd/{}/{}.wants", scope, target);
+                commands.push(format!("mkdir -p {}", wants_dir));
+                commands.push(format!("ln -sf ../{} {}/{}", unit, wants_dir, unit));
+            }
+            ImageModule::OptionalFeature {
+                staging_pre_run, ..
+            } => {
+                commands.extend(staging_pre_run.iter().cloned());
+            }
+            _ => {}
+        }
+    }
+
+    if commands.is_empty() {
+        return;
+    }
+
+    lines.push("# Post-overlay setup: chmod, symlinks, mkdir, kargs, staging dirs".to_string());
+    lines.push(format!("RUN set -eu; {}", LINE_CONT));
+    for (idx, cmd) in commands.iter().enumerate() {
+        let is_last = idx == commands.len() - 1;
+        if let Some((left, right)) = split_redirect_command(cmd) {
+            lines.push(format!("    {} {}", left, LINE_CONT));
+            if is_last {
+                lines.push(format!("    > {}", right));
+            } else {
+                lines.push(format!("    > {}; {}", right, LINE_CONT));
+            }
+        } else if is_last {
+            lines.push(format!("    {}", cmd));
+        } else {
+            lines.push(format!("    {}; {}", cmd, LINE_CONT));
+        }
+    }
+}
+
+/// Emit ARG-gated optional feature conditionals in the image stage.
+///
+/// Each optional feature gets its own ARG + RUN if [...] block because
+/// the ARG must precede the RUN that references it.
+fn emit_optional_features(lines: &mut Vec<String>, image_config: &ImageConfigManifest) {
+    let mut header_emitted = false;
+
+    for module in &image_config.modules {
+        if let ImageModule::OptionalFeature {
+            arg,
+            staging,
+            dest,
+            post_install,
+            ..
+        } = module
+        {
+            if !header_emitted {
+                lines.push("".to_string());
+                lines.push("# Optional host tweaks (off by default)".to_string());
+                header_emitted = true;
+            }
+
+            if let Some(comment) = module.comment() {
+                lines.push("".to_string());
+                for line in comment.split('\n') {
+                    lines.push(format!("# {}", line));
+                }
+            }
+
+            lines.push(format!("ARG {}=0", arg));
+            lines.push(format!("RUN if [ \"${{{}}}\" = \"1\" ]; then \\", arg));
+            lines.push(format!(
+                "            install -Dpm0644 {} {}; \\",
+                staging, dest
+            ));
+            for cmd in post_install {
+                lines.push(format!("            {}; \\", cmd));
+            }
+            lines.push("        fi".to_string());
+        }
+    }
+}
+
 fn emit_image_assembly(lines: &mut Vec<String>, input: &ContainerfileGeneratorInput) {
     lines.push("".to_string());
     lines.push(section_header("Final image assembly"));
@@ -489,7 +632,26 @@ fn emit_image_assembly(lines: &mut Vec<String>, input: &ContainerfileGeneratorIn
     emit_upstream_copies(lines, &input.upstreams);
     lines.push("".to_string());
 
-    emit_image_modules(lines, &input.image_config);
+    // Import all static config from the parallel collect-config stage
+    lines.push(section_header(
+        "Configuration overlay (from collect-config)",
+    ));
+    lines.push("COPY --from=collect-config / /".to_string());
+    lines.push("".to_string());
+
+    // Memory-managed application wrappers (built Rust binaries)
+    emit_wrapper_copies(lines, &input.image_config);
+
+    // Consolidated RUN for all post-overlay operations
+    emit_consolidated_run(lines, &input.image_config);
+
+    // Optional feature conditionals (each needs its own ARG)
+    emit_optional_features(lines, &input.image_config);
+    lines.push("".to_string());
+
+    // Font cache after all fonts and config are in place
+    lines.push("# Rebuild font cache after all font/icon COPYs and config overlay".to_string());
+    lines.push("RUN fc-cache -f".to_string());
     lines.push("".to_string());
 
     let shims = generate_host_shims(&input.shims);
@@ -597,110 +759,6 @@ fn emit_upstream_copies(lines: &mut Vec<String>, upstreams: &UpstreamManifest) {
     }
 }
 
-fn emit_image_modules(lines: &mut Vec<String>, image_config: &ImageConfigManifest) {
-    let pre_header = [
-        "emoji-rendering-fix",
-        "emoji-rendering-fix-copy",
-        "font-cache",
-    ];
-
-    let mut previous: Option<&ImageModule> = None;
-    let mut section_header_emitted = false;
-    let mut optional_header_emitted = false;
-
-    for module in &image_config.modules {
-        // Emit section header when we transition from pre-header modules to config modules
-        if !section_header_emitted && !pre_header.contains(&module.name()) {
-            lines.push("".to_string());
-            lines.push(section_header(
-                "System configuration (spliced from Containerfile.d/90-system-config.tail)",
-            ));
-            lines.push("".to_string());
-            section_header_emitted = true;
-        } else if let Some(prev) = previous
-            && !is_tight_module_pair(prev, module)
-        {
-            lines.push("".to_string());
-        }
-
-        if matches!(module, ImageModule::OptionalFeature { .. }) && !optional_header_emitted {
-            lines.push("# Optional host tweaks (off by default)".to_string());
-            optional_header_emitted = true;
-        }
-
-        emit_module(lines, module);
-        previous = Some(module);
-    }
-}
-
-fn emit_module(lines: &mut Vec<String>, module: &ImageModule) {
-    if let Some(comment) = module
-        .comment()
-        .filter(|_| module.name() != "emoji-rendering-fix-copy")
-    {
-        for line in comment.split('\n') {
-            lines.push(format!("# {}", line));
-        }
-    }
-
-    match module {
-        ImageModule::Files {
-            pre_run,
-            files,
-            post_run,
-            ..
-        } => {
-            emit_run_lines(lines, pre_run);
-            emit_copy_files(lines, files);
-            emit_run_lines(lines, post_run);
-        }
-        ImageModule::SystemdEnable {
-            scope,
-            unit,
-            target,
-            ..
-        } => {
-            let wants_dir = format!("/usr/lib/systemd/{}/{}.wants", scope, target);
-            lines.push(format!("RUN mkdir -p {} && \\", wants_dir));
-            lines.push(format!("    ln -sf ../{} {}/{}", unit, wants_dir, unit));
-        }
-        ImageModule::OptionalFeature {
-            arg,
-            staging_pre_run,
-            src,
-            staging,
-            dest,
-            post_install,
-            ..
-        } => {
-            lines.push(format!("ARG {}=0", arg));
-            emit_run_lines(lines, staging_pre_run);
-            lines.push(format!("COPY {} {}", src, staging));
-            lines.push(format!("RUN if [ \"${{{}}}\" = \"1\" ]; then \\", arg));
-            lines.push(format!(
-                "            install -Dpm0644 {} {}; \\",
-                staging, dest
-            ));
-            for cmd in post_install {
-                lines.push(format!("            {}; \\", cmd));
-            }
-            lines.push("        fi".to_string());
-        }
-        ImageModule::Run { commands, .. } => {
-            emit_run_lines(lines, commands);
-        }
-    }
-}
-
-fn is_tight_module_pair(previous: &ImageModule, current: &ImageModule) -> bool {
-    matches!(
-        (previous.name(), current.name()),
-        ("emoji-rendering-fix", "emoji-rendering-fix-copy")
-            | ("keyd-config", "keyd-service")
-            | ("bootstrap", "systemd-units")
-    )
-}
-
 fn emit_copy_files(lines: &mut Vec<String>, files: &[FileCopy]) {
     for file in files {
         if let Some(comment) = &file.comment {
@@ -711,47 +769,6 @@ fn emit_copy_files(lines: &mut Vec<String>, files: &[FileCopy]) {
         } else {
             lines.push(format!("COPY {} {}", file.src, file.dest));
         }
-    }
-}
-
-fn emit_run_lines(lines: &mut Vec<String>, commands: &[String]) {
-    if commands.is_empty() {
-        return;
-    }
-
-    if commands.len() == 1 {
-        emit_single_run_line(lines, &commands[0]);
-        return;
-    }
-
-    lines.push(format!("RUN {} && \\", commands[0]));
-    for (idx, cmd) in commands.iter().enumerate().skip(1) {
-        let is_last = idx == commands.len() - 1;
-        emit_chained_run_line(lines, cmd, is_last);
-    }
-}
-
-fn emit_single_run_line(lines: &mut Vec<String>, command: &str) {
-    if let Some((left, right)) = split_redirect_command(command) {
-        lines.push(format!("RUN {} \\", left));
-        lines.push(format!("    > {}", right));
-    } else {
-        lines.push(format!("RUN {}", command));
-    }
-}
-
-fn emit_chained_run_line(lines: &mut Vec<String>, command: &str, is_last: bool) {
-    if let Some((left, right)) = split_redirect_command(command) {
-        lines.push(format!("    {} \\", left));
-        if is_last {
-            lines.push(format!("    > {}", right));
-        } else {
-            lines.push(format!("    > {} && \\", right));
-        }
-    } else if is_last {
-        lines.push(format!("    {}", command));
-    } else {
-        lines.push(format!("    {} && \\", command));
     }
 }
 
@@ -774,6 +791,28 @@ fn emit_rpm_snapshot(lines: &mut Vec<String>) {
             .to_string(),
     );
     lines.push("# === END RPM VERSION SNAPSHOT ===".to_string());
+}
+
+/// Emit COPY instructions for memory-managed application wrappers.
+///
+/// These are pre-built Rust binaries that replace symlinks to applications
+/// like VS Code and Edge, wrapping them in systemd-run for memory control.
+fn emit_wrapper_copies(lines: &mut Vec<String>, image_config: &ImageConfigManifest) {
+    let wrappers = image_config.wrappers();
+    if wrappers.is_empty() {
+        return;
+    }
+
+    lines.push("# Memory-managed application wrappers (built Rust binaries)".to_string());
+    for wrapper in wrappers {
+        // The wrapper binary is built to wrappers/bin/<name> and should be
+        // copied to the output path specified in the manifest
+        lines.push(format!(
+            "COPY wrappers/bin/{} {}",
+            wrapper.name, wrapper.output
+        ));
+    }
+    lines.push("".to_string());
 }
 
 fn ordered_upstreams<F>(upstreams: &UpstreamManifest, predicate: F) -> Vec<&Upstream>

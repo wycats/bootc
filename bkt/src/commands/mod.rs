@@ -27,3 +27,4 @@ pub mod skel;
 pub mod status;
 pub mod system;
 pub mod upstream;
+pub mod wrap;

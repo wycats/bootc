@@ -2,12 +2,6 @@
   "$schema": "../schemas/image-config.schema.json",
   "modules": [
     {
-      "name": "emoji-rendering-fix",
-      "type": "run",
-      "comment": "Emoji rendering fix for Electron/Chromium apps",
-      "commands": ["rm -f /etc/fonts/conf.d/99-emoji-fix.conf"]
-    },
-    {
       "name": "emoji-rendering-fix-copy",
       "type": "files",
       "comment": "Emoji rendering fix config",
@@ -273,6 +267,25 @@
       "src": "system/systemd/logind.conf.d/10-lid-policy.conf",
       "staging": "/usr/share/bootc-optional/systemd/logind.conf.d/10-lid-policy.conf",
       "dest": "/etc/systemd/logind.conf.d/10-lid-policy.conf"
+    },
+    {
+      "name": "vscode-wrapper",
+      "type": "wrapper",
+      "comment": "VS Code memory-managed wrapper (replaces /usr/bin/code symlink)",
+      "target": "/usr/share/code/bin/code",
+      "slice": "app-vscode.slice",
+      "output": "/usr/bin/code",
+      "remote_cli": true,
+      "description": "VS Code (managed)"
+    },
+    {
+      "name": "msedge-wrapper",
+      "type": "wrapper",
+      "comment": "Microsoft Edge memory-managed wrapper (replaces /usr/bin/microsoft-edge-stable symlink)",
+      "target": "/usr/lib/opt/microsoft/msedge/microsoft-edge",
+      "slice": "app-msedge.slice",
+      "output": "/usr/bin/microsoft-edge-stable",
+      "description": "Microsoft Edge (managed)"
     },
     {
       "name": "nushell-config",

@@ -137,6 +137,43 @@ jobs:
           fi
           echo "✓ Schemas are up to date"
 
+  check-containerfile-current:
+    name: Check Containerfile is current
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: bkt
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bkt -> target
+          shared-key: rust-ci
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build bkt
+        run: cargo build --release
+
+      - name: Check Containerfile sync
+        working-directory: .
+        run: |
+          echo "Checking if Containerfile matches manifests..."
+          if ! ./bkt/target/release/bkt containerfile check; then
+            echo ""
+            echo "::error::Containerfile is out of sync with manifests!"
+            echo "Run: bkt containerfile sync"
+            exit 1
+          fi
+          echo "✓ Containerfile is up to date"
+
   validate-containerfile:
     name: Validate Containerfile syntax
     runs-on: ubuntu-latest
