@@ -115,6 +115,13 @@ COPY systemd/user/bootc-bootstrap.service /usr/lib/systemd/user/bootc-bootstrap.
 COPY systemd/user/bootc-capture.service /usr/lib/systemd/user/bootc-capture.service
 COPY systemd/user/bootc-capture.timer /usr/lib/systemd/user/bootc-capture.timer
 COPY systemd/system/bootc-apply.service /usr/lib/systemd/system/bootc-apply.service
+# Memory-managed app slices (RFC 0046): VS Code and Edge memory budgets
+COPY systemd/user/app-vscode.slice /usr/lib/systemd/user/app-vscode.slice
+COPY systemd/user/app-msedge.slice /usr/lib/systemd/user/app-msedge.slice
+
+# systemd-oomd tuning: tighter pressure duration, per-app overrides
+COPY system/etc/systemd/oomd.conf.d/10-bootc-tuning.conf /etc/systemd/oomd.conf.d/10-bootc-tuning.conf
+
 # dbus-broker: raise soft fd limit to prevent session crashes under heavy container load
 COPY systemd/user/dbus-broker.service.d/override.conf /usr/lib/systemd/user/dbus-broker.service.d/override.conf
 
