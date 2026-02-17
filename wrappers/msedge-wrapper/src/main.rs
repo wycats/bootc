@@ -4,7 +4,24 @@
 
 use std::os::unix::process::CommandExt;
 
+fn already_in_slice(slice: &str) -> bool {
+    std::fs::read_to_string("/proc/self/cgroup")
+        .map(|s| s.contains(slice))
+        .unwrap_or(false)
+}
+
 fn main() {
+
+    // Re-entry guard: if already running inside our target slice, exec directly.
+    // Without this, child processes that re-invoke the wrapper binary
+    // would each create a new systemd-run scope, causing an infinite loop.
+    if already_in_slice("app-msedge.slice") {
+        let err = std::process::Command::new("/usr/lib/opt/microsoft/msedge/microsoft-edge")
+            .args(std::env::args().skip(1))
+            .exec();
+        eprintln!("Failed to exec target: {}", err);
+        std::process::exit(1);
+    }
 
     // Validate target exists
     let target = "/usr/lib/opt/microsoft/msedge/microsoft-edge";
