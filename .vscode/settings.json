@@ -13,5 +13,12 @@
     "**/node_modules": true,
     "**/dist": true,
     "**/target": true
-  }
+  },
+  // This is a Rust workspace — disable TypeScript language services
+  // to save ~3GB RAM and significant CPU on startup.
+  "typescript.tsdk": "",
+  "typescript.disableAutomaticTypeAcquisition": true,
+  "typescript.tsserver.maxTsServerMemory": 512,
+  "[typescript]": { "editor.suggest.showWords": false },
+  "[javascript]": { "editor.suggest.showWords": false }
 }
