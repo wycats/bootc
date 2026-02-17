@@ -1,3 +1,9 @@
+[build]
+# Limit parallel rustc jobs to prevent OOM on 24-core / 64GB system.
+# Each rustc link can consume 1-2GB; 24 parallel = potential 48GB spike.
+# 8 jobs keeps peak memory well under physical RAM.
+jobs = 8
+
 [alias]
 # Run the in-repo bkt without worrying about PATH/version skew.
 # Usage: cargo bkt <subcommand> [...]
