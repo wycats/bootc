@@ -146,7 +146,7 @@ fn main() {{
             "--scope",
             &format!("--unit={{}}", unit_name),
             "--description={description}",
-            "--property=MemoryOOMGroup=yes",
+            "--property=OOMPolicy=kill",
             "--",
             target,
         ])
