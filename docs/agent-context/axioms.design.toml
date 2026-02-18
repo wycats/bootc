@@ -1,0 +1,8 @@
+# READ-ONLY: Use 'exo' CLI to modify this file.
+# Design Axioms
+
+axioms = []
+
+[meta]
+schema_version = "1.0.0"
+exo_version = "0.1.0"

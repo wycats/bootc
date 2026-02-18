@@ -1,9 +1,9 @@
-# RFC 0048: Persistent Host-Command Helper
+# RFC 0050: Persistent Host-Command Helper
 
 - **Status**: Phase 1 Complete
 - **Created**: 2026-02-17
-- **Depends on**: RFC-0010 (Transparent Delegation), RFC-0046 (Test Performance)
-- **Next**: [RFC-0049](0049-daemon-production-hardening.md) (Production Hardening)
+- **Depends on**: RFC-0010 (Transparent Delegation)
+- **Supersedes**: RFC-0049 (merged into this document)
 
 ## Summary
 
@@ -11,13 +11,13 @@ Spec out a persistent Unix socket-based daemon to replace the per-invocation D-B
 
 ### Implementation Status
 
-| Phase                   | Status      | Notes                                               |
-| ----------------------- | ----------- | --------------------------------------------------- |
-| Phase 1: Protocol & PoC | ✅ Complete | Daemon works, ~4ms overhead                         |
-| Phase 2: Integration    | 🔜 Next     | See [RFC-0049](0049-daemon-production-hardening.md) |
-| Phase 3: Robustness     | Planned     |                                                     |
-| Phase 4: Optimization   | Planned     |                                                     |
-| Phase 5: systemd        | Planned     |                                                     |
+| Phase                   | Status      | Notes                           |
+| ----------------------- | ----------- | ------------------------------- |
+| Phase 1: Protocol & PoC | ✅ Complete | Daemon works, ~4ms overhead     |
+| Phase 2: Integration    | 🔜 Next     | delegate_to_host() + shims      |
+| Phase 3: Robustness     | Planned     | Timeouts, graceful shutdown     |
+| Phase 4: Optimization   | Planned     | Benchmarks, keep-alive          |
+| Phase 5: systemd        | Planned     | Auto-start on login             |
 
 ---
 
@@ -394,22 +394,98 @@ bkt admin daemon test    # Test with `echo hello`
 
 **Goal**: Make daemon usage transparent.
 
-**Status**: Planned — see [RFC-0049](0049-daemon-production-hardening.md) for detailed plan.
+**Status**: Planned
 
-1. Add `bkt admin daemon exec -- <cmd>` for arbitrary commands
-2. Modify `delegate_to_host()` to try daemon first
-3. Update shim generation to use daemon
-4. Add fallback to host-exec when daemon unavailable
+#### Step 1: `daemon exec` Command
+
+Add a general-purpose command execution interface:
+
+```bash
+# Execute arbitrary command through daemon
+bkt admin daemon exec -- ls -la /
+bkt admin daemon exec -- bootc status
+```
+
+This is the primitive that shims will call.
+
+**Implementation**:
+
+```rust
+// In commands/admin/daemon.rs
+DaemonAction::Exec { command } => {
+    let client = DaemonClient::connect()?;
+    let status = client.execute(&command, &env::vars().collect(), &env::current_dir()?)?;
+    std::process::exit(status);
+}
+```
+
+#### Step 2: Integrate `delegate_to_host()`
+
+Modify [main.rs](../../bkt/src/main.rs) to try daemon first:
+
+```rust
+fn delegate_to_host() -> Result<()> {
+    // Try fast path: daemon socket
+    if daemon::daemon_available() {
+        output::Output::info("Delegating to host via daemon...");
+        return delegate_via_daemon();
+    }
+
+    // Fall back to slow path: distrobox-host-exec
+    output::Output::info("Delegating to host via distrobox-host-exec...");
+    delegate_via_host_exec()
+}
+
+fn delegate_via_daemon() -> Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    let client = daemon::DaemonClient::connect()?;
+
+    // Execute "bkt" with remaining args
+    let mut cmd = vec!["bkt".to_string()];
+    cmd.extend(args[1..].iter().cloned());
+
+    let status = client.execute_inherit_stdio(&cmd)?;
+    std::process::exit(status);
+}
+```
+
+#### Step 3: Daemon-Aware Shims
+
+Update [shim.rs](../../bkt/src/commands/shim.rs) `generate_shim_script()`:
+
+**Option A: Shell fallback** (simpler, more robust)
+
+```bash
+#!/bin/bash
+# Auto-generated shim - delegates to host command
+# Managed by: bkt shim
+# Host command: {host_cmd}
+
+if [[ -S "${XDG_RUNTIME_DIR}/bkt/host.sock" ]]; then
+    exec bkt admin daemon exec -- {quoted} "$@"
+else
+    exec flatpak-spawn --host {quoted} "$@"
+fi
+```
+
+**Option B: Daemon-only** (faster, requires daemon running)
+
+```bash
+#!/bin/bash
+exec bkt admin daemon exec -- {quoted} "$@"
+```
+
+**Recommendation**: Option A for robustness during transition, with a flag to generate Option B once stable.
 
 ### Phase 3: Robustness
 
 **Goal**: Production-ready daemon.
 
-1. Connection pooling (reuse connections for multiple commands)
-2. Timeout handling
-3. Graceful shutdown
-4. Logging and metrics
-5. Error recovery (daemon crash detection, auto-restart)
+1. **Stale socket detection**: Check if socket is connectable, not just exists
+2. **Connection timeout**: Don't hang forever on unresponsive daemon
+3. **Graceful shutdown**: Handle SIGTERM, clean up socket
+4. **Logging**: Structured logs for debugging (errors by default, verbose with flag)
+5. **Error recovery**: Daemon crash detection, auto-restart via systemd
 
 ### Phase 4: Optimization
 
@@ -420,18 +496,101 @@ bkt admin daemon test    # Test with `echo hello`
 3. Consider batching (multiple commands per connection)
 4. Profile and optimize hot paths
 
-### Phase 5: systemd Integration (Optional)
+### Phase 5: systemd Integration
 
 **Goal**: Zero-configuration daemon lifecycle.
 
-1. Generate socket unit file
-2. Generate service unit file
-3. Add `bkt admin daemon install` to set up units
-4. Test socket activation
+Create service files for auto-start:
+
+```ini
+# ~/.config/systemd/user/bkt-hostd.service
+[Unit]
+Description=BKT Host Command Daemon
+Documentation=man:bkt(1)
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/bkt admin daemon run
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=default.target
+```
+
+Add management commands:
+
+```bash
+bkt admin daemon install   # Install and enable systemd service
+bkt admin daemon uninstall # Disable and remove systemd service
+```
 
 ---
 
-## 6. Design Decisions
+## 6. Migration Path
+
+### Step 1: Deploy daemon infrastructure
+
+- Merge Phase 2 (exec command, delegate_to_host integration)
+- Users can manually start daemon: `bkt admin daemon run &`
+
+### Step 2: Update shims
+
+- Run `bkt shim sync` to regenerate with daemon support
+- Shims fall back to flatpak-spawn if daemon unavailable
+
+### Step 3: Enable auto-start
+
+- Run `bkt admin daemon install`
+- Daemon starts on login, serves all requests
+
+### Step 4: Remove fallback (optional)
+
+- Once stable, regenerate shims without fallback
+- Remove distrobox-host-exec dependency
+
+---
+
+## 7. Testing Strategy
+
+### Unit Tests
+
+- Protocol serialization/deserialization
+- Socket path resolution
+- Shim script generation
+
+### Integration Tests
+
+- Daemon start/stop lifecycle
+- Command execution through daemon
+- Fallback behavior when daemon unavailable
+
+### Manual Testing
+
+```bash
+# Terminal 1 (host)
+bkt admin daemon run
+
+# Terminal 2 (distrobox)
+bkt admin daemon status          # Should show "available"
+bkt admin daemon exec -- whoami  # Should return host username
+bkt status                       # Should use daemon (check logs)
+bootc status                     # Shim should use daemon
+```
+
+---
+
+## 8. Success Criteria
+
+1. **Functional**: All host commands work through daemon
+2. **Performance**: No regression from current daemon PoC (~4ms overhead)
+3. **Reliability**: Graceful fallback when daemon unavailable
+4. **Operability**: Auto-start on login, survives logout/login cycles
+5. **Observability**: Clear logging of daemon vs fallback path
+
+---
+
+## 9. Design Decisions
 
 ### Scope: Arbitrary Commands (Not Just bkt)
 
@@ -460,7 +619,7 @@ The only case where host→container delegation matters is `bkt dev` commands, w
 
 ---
 
-## 7. Open Questions
+## 10. Open Questions
 
 ### Security
 
@@ -490,7 +649,7 @@ The only case where host→container delegation matters is `bkt dev` commands, w
 
 ---
 
-## 8. Alignment with Vision
+## 11. Alignment with Vision
 
 From [VISION.md](../VISION.md):
 
@@ -519,10 +678,10 @@ The daemon itself is ephemeral (runtime state), but its configuration could be d
 
 ---
 
-## 9. References
+## 12. References
 
 - [RFC-0010: Transparent Command Delegation](canon/0010-transparent-delegation.md) - Current delegation design
-- [RFC-0046: Test Performance Investigation](0046-test-performance.md) - Problem analysis
+- [RFC-0046: Test Performance Investigation](complete/0046-test-performance.md) - Problem analysis (Complete)
 - [horizontal.c](https://git.disroot.org/Sir_Walrus/misctoys/src/branch/master/horizontal.c) - Proof of concept
 - [bkt/src/main.rs](../../bkt/src/main.rs) - Current delegation implementation
 - [bkt/src/command_runner.rs](../../bkt/src/command_runner.rs) - CommandRunner abstraction

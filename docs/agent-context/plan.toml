@@ -1,0 +1,81 @@
+[meta]
+schema_version = "1.0.0"
+exo_version = "0.1.0"
+
+[[epochs]]
+id = "01khsegrb7esbp21rxwxgxzr0w"
+title = "Foundation: Core Infrastructure"
+status = "active"
+ulid = "01KHSEGRB7ESBP21RXWXGXZR0W"
+
+[[epochs.phases]]
+id = "01khsehqfy1hw6qan97betqkmr"
+title = "Bootstrap & Core Loops"
+status = "active"
+goals = []
+kind = "regular"
+ulid = "01KHSEHQFY1HW6QAN97BETQKMR"
+
+[[epochs.phases]]
+id = "01khsehw15tncd68y8418z77qq"
+title = "Subsystem Infrastructure"
+status = "pending"
+goals = []
+kind = "regular"
+ulid = "01KHSEHW15TNCD68Y8418Z77QQ"
+
+[[epochs]]
+id = "01khsegw3d3q25s8zwhbmcnqx4"
+title = "Daemon & Delegation"
+status = "pending"
+ulid = "01KHSEGW3D3Q25S8ZWHBMCNQX4"
+
+[[epochs.phases]]
+id = "01khsej11vjjfxr3mmdejk6v1g"
+title = "Daemon PoC (RFC-0050 Phase 1)"
+status = "pending"
+goals = []
+kind = "regular"
+ulid = "01KHSEJ11VJJFXR3MMDEJK6V1G"
+
+[[epochs.phases.rfcs]]
+id = "0050"
+
+[[epochs.phases]]
+id = "01khsej4tg08xsfhsh67d8qvkj"
+title = "Daemon Integration (RFC-0050 Phase 2)"
+status = "pending"
+goals = []
+kind = "regular"
+ulid = "01KHSEJ4TG08XSFHSH67D8QVKJ"
+
+[[epochs.phases.rfcs]]
+id = "0050"
+
+[[epochs.phases]]
+id = "01khsej9cx0eymbvmme9vrq7mg"
+title = "Daemon Production (RFC-0050 Phases 3-5)"
+status = "pending"
+goals = []
+kind = "regular"
+ulid = "01KHSEJ9CX0EYMBVMME9VRQ7MG"
+
+[[epochs.phases.rfcs]]
+id = "0050"
+
+[[epochs]]
+id = "01khsegzg08en3xak79490vnsj"
+title = "Layer Optimization"
+status = "pending"
+ulid = "01KHSEGZG08EN3XAK79490VNSJ"
+
+[[epochs.phases]]
+id = "01khsejd4ms6zvj1yv6xgbhcsb"
+title = "Layer Independence (RFC-0045)"
+status = "pending"
+goals = []
+kind = "regular"
+ulid = "01KHSEJD4MS6ZVJ1YV6XGBHCSB"
+
+[[epochs.phases.rfcs]]
+id = "0045"

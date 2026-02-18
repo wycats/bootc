@@ -2,7 +2,7 @@
 
 ## Status
 
-Investigation
+**Complete** — Investigation led to [RFC-0050: Persistent Host-Command Helper](../0050-persistent-host-command-helper.md), which implements the daemon solution identified here.
 
 ## Problem Statement
 

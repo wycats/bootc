@@ -1,0 +1,8 @@
+# Use the Exosuit semantic TOML merge driver for high-value structured files.
+#
+# Install the driver locally (one-time):
+#   exo update  # or: ./scripts/dev/install-merge-driver.sh
+
+docs/agent-context/ideas.toml merge=exo-toml
+docs/agent-context/plan.toml merge=exo-toml
+docs/agent-context/current/*.toml merge=exo-toml

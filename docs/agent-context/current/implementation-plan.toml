@@ -1,0 +1,13 @@
+# READ-ONLY: Use 'exo' CLI to modify this file.
+# Implementation Plan
+
+[phase]
+id = "01khsehqfy1hw6qan97betqkmr"
+
+[plan]
+# Goals contain tasks. Use 'exo-add-task' to add tasks to goals.
+
+
+[verification]
+automated = ["Run scripts/verify-phase.sh"]
+manual = []
