@@ -11,7 +11,7 @@ ulid = "01KHSEGRB7ESBP21RXWXGXZR0W"
 [[epochs.phases]]
 id = "01khsehqfy1hw6qan97betqkmr"
 title = "Bootstrap & Core Loops"
-status = "active"
+status = "completed"
 goals = []
 kind = "regular"
 ulid = "01KHSEHQFY1HW6QAN97BETQKMR"
@@ -19,7 +19,7 @@ ulid = "01KHSEHQFY1HW6QAN97BETQKMR"
 [[epochs.phases]]
 id = "01khsehw15tncd68y8418z77qq"
 title = "Subsystem Infrastructure"
-status = "pending"
+status = "active"
 goals = []
 kind = "regular"
 ulid = "01KHSEHW15TNCD68Y8418Z77QQ"
