@@ -7,6 +7,7 @@ id = "01khsegrb7esbp21rxwxgxzr0w"
 title = "Foundation: Core Infrastructure"
 status = "completed"
 ulid = "01KHSEGRB7ESBP21RXWXGXZR0W"
+reviewed = true
 
 [[epochs.phases]]
 id = "01khsehqfy1hw6qan97betqkmr"
@@ -33,7 +34,7 @@ ulid = "01KHSEGW3D3Q25S8ZWHBMCNQX4"
 [[epochs.phases]]
 id = "01khsej11vjjfxr3mmdejk6v1g"
 title = "Daemon PoC (RFC-0050 Phase 1)"
-status = "active"
+status = "completed"
 goals = []
 kind = "regular"
 ulid = "01KHSEJ11VJJFXR3MMDEJK6V1G"
@@ -44,10 +45,23 @@ id = "0050"
 [[epochs.phases]]
 id = "01khsej4tg08xsfhsh67d8qvkj"
 title = "Daemon Integration (RFC-0050 Phase 2)"
-status = "pending"
-goals = []
+status = "active"
 kind = "regular"
 ulid = "01KHSEJ4TG08XSFHSH67D8QVKJ"
+
+[[epochs.phases.goals]]
+id = "integrate-daemon-into-delegate-to-host"
+label = "Integrate daemon into delegate_to_host()"
+status = "pending"
+ulid = "01KHSGGA7EWDXYDQ7XF5PHX9HX"
+rfc = "0050"
+
+[[epochs.phases.goals]]
+id = "update-shim-generation-for-daemon"
+label = "Update shim generation for daemon"
+status = "pending"
+ulid = "01KHSGGF2A8HSQR594QZCNNVMS"
+rfc = "0050"
 
 [[epochs.phases.rfcs]]
 id = "0050"
@@ -79,3 +93,141 @@ ulid = "01KHSEJD4MS6ZVJ1YV6XGBHCSB"
 
 [[epochs.phases.rfcs]]
 id = "0045"
+
+[[epochs]]
+id = "01khsgx7xfrxe8q3y878hy24cw"
+title = "Housekeeping & Quality"
+status = "pending"
+ulid = "01KHSGX7XFRXE8Q3Y878HY24CW"
+
+[[epochs.phases]]
+id = "01khsgxrzjfx460epj3v68q7xm"
+title = "Documentation Alignment"
+status = "pending"
+kind = "regular"
+ulid = "01KHSGXRZJFX460EPJ3V68Q7XM"
+
+[[epochs.phases.goals]]
+id = "fix-bkt-dnf-to-bkt-system-references"
+label = "Fix bkt dnf to bkt system references"
+status = "pending"
+ulid = "01KHSH5DJCH5WA6A6QFBFJ17W7"
+
+[[epochs.phases.goals]]
+id = "remove-false-delegation-claims-from-docs"
+label = "Remove false delegation claims from docs"
+status = "pending"
+ulid = "01KHSH5JN43KHJ2XQBWGARRZ0Q"
+
+[[epochs.phases.goals]]
+id = "update-export-location-in-architecture"
+label = "Update export location in ARCHITECTURE"
+status = "pending"
+ulid = "01KHSH5JQG2256AF9W9S464N56"
+
+[[epochs.phases.goals]]
+id = "mark-implemented-features-in-docs"
+label = "Mark implemented features in docs"
+status = "pending"
+ulid = "01KHSH5JSYC3PWCWC6Z3X153YC"
+
+[[epochs.phases]]
+id = "01khsgxzkw9jpryns4sp3nrmee"
+title = "Schema & Code Alignment"
+status = "pending"
+kind = "regular"
+ulid = "01KHSGXZKW9JPRYNS4SP3NRMEE"
+
+[[epochs.phases.goals]]
+id = "decide-on-rfc-0018-host-only-shims"
+label = "Decide on RFC-0018 host-only shims"
+status = "pending"
+ulid = "01KHSH62TQGAS35YVGMJTXNPS4"
+
+[[epochs.phases.goals]]
+id = "add-missing-manifests-to-bkt-schema-list"
+label = "Add missing manifests to bkt schema list"
+status = "pending"
+ulid = "01KHSH67SZXBAD0GX5NW0381NH"
+
+[[epochs.phases.goals]]
+id = "align-host-shims-schema-with-code"
+label = "Align host-shims schema with code"
+status = "pending"
+ulid = "01KHSH6CHB2TWPD7HSR5G0X8W6"
+
+[[epochs.phases.goals]]
+id = "resolve-repos-json-vs-repo-json"
+label = "Resolve repos.json vs repo.json"
+status = "pending"
+ulid = "01KHSH6HFAEEH51J2F03HDH03S"
+
+[[epochs.phases]]
+id = "01khsgy4kydv3zapn0fg5a5tmw"
+title = "Testing & Quality"
+status = "pending"
+kind = "regular"
+ulid = "01KHSGY4KYDV3ZAPN0FG5A5TMW"
+
+[[epochs.phases.goals]]
+id = "cli-integration-tests-for-all-commands"
+label = "CLI integration tests for all commands"
+status = "pending"
+ulid = "01KHSH6T31KTDVEAF9RVCW4PHR"
+
+[[epochs.phases.goals]]
+id = "pr-workflow-unit-tests"
+label = "PR workflow unit tests"
+status = "pending"
+ulid = "01KHSH6YSWF50CTEKRRD9KK2YA"
+
+[[epochs.phases.goals]]
+id = "manifest-validation-tests"
+label = "Manifest validation tests"
+status = "pending"
+ulid = "01KHSH73JZAQ46EMS1ZECDVDP3"
+
+[[epochs.phases.goals]]
+id = "doctor-health-checks-path-shims"
+label = "Doctor health checks (PATH, shims)"
+status = "pending"
+ulid = "01KHSH78P5AHQKJHZRPVJ1T7BW"
+
+[[epochs]]
+id = "01khsgy8wyr930sjfq4zddrbhn"
+title = "Subsystem Completion"
+status = "pending"
+ulid = "01KHSGY8WYR930SJFQ4ZDDRBHN"
+
+[[epochs.phases]]
+id = "01khsgym9r4ncn1nc0z96gkqz9"
+title = "GSettings Auto-Discovery (RFC-0016)"
+status = "pending"
+goals = []
+kind = "regular"
+ulid = "01KHSGYM9R4NCN1NC0Z96GKQZ9"
+
+[[epochs.phases.rfcs]]
+id = "0016"
+
+[[epochs.phases]]
+id = "01khsgyrymtrst38tt4y7y22jc"
+title = "Drift Resolution (RFC-0007)"
+status = "pending"
+goals = []
+kind = "regular"
+ulid = "01KHSGYRYMTRST38TT4Y7Y22JC"
+
+[[epochs.phases.rfcs]]
+id = "0007"
+
+[[epochs.phases]]
+id = "01khsgyzcvstjmxs5vsc5gh03w"
+title = "Upstream Dependency Tracking (RFC-0006)"
+status = "pending"
+goals = []
+kind = "regular"
+ulid = "01KHSGYZCVSTJMXS5VSC5GH03W"
+
+[[epochs.phases.rfcs]]
+id = "0006"

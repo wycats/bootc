@@ -1,4 +1,292 @@
-# READ-ONLY: Use 'exo' CLI to modify this file.
-# Ideas Backlog
+[[ideas]]
+id = "bc00284e-c4b5-48a7-9e67-cc338c1f0ae3"
+title = "bkt init - New distribution scaffolding"
+description = "Scaffold new bootc distributions from templates"
+status = "new"
+created_at = "2026-02-18T23:18:37.644Z"
+source = "user"
+tags = [
+    "dx",
+    "future",
+]
+related_tasks = []
 
-# Add ideas using: exo idea "Your idea title"
+[[ideas]]
+id = "46848654-dae5-483f-a90e-4b037dcd1de5"
+title = "Interactive TUI for capture"
+description = "Add --select flag for interactive capture selection"
+status = "new"
+created_at = "2026-02-18T23:19:03.627Z"
+source = "user"
+tags = [
+    "dx",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "be2c2413-b341-40b3-8ef2-f8ee717ac277"
+title = "Plugin subsystems (RFC-0028)"
+description = "Extensible subsystem architecture"
+status = "new"
+created_at = "2026-02-18T23:19:10.590Z"
+source = "user"
+tags = [
+    "extensibility",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "69f529ac-1be0-4ce7-bd5f-7b423c5d06be"
+title = "Changelog enforcement in CI (RFC-0005)"
+description = "CI checks for PR changelog entries"
+status = "new"
+created_at = "2026-02-18T23:19:10.660Z"
+source = "user"
+tags = [
+    "automation",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "2deaac2b-4b81-4400-92c8-a66f0fe2e72a"
+title = "MOTD integration"
+description = "First-boot What's New message"
+status = "new"
+created_at = "2026-02-18T23:19:10.717Z"
+source = "user"
+tags = [
+    "dx",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "81cd0ddb-6ecb-4ee4-8b06-0e74c22cd694"
+title = "Scheduled upstream checks (RFC-0006)"
+description = "Auto-PR for upstream updates"
+status = "new"
+created_at = "2026-02-18T23:19:10.771Z"
+source = "user"
+tags = [
+    "automation",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "53afefab-37a3-47b7-a7d5-c1baf4a77ff1"
+title = "Multi-machine sync"
+description = "Sync manifests across machines"
+status = "new"
+created_at = "2026-02-18T23:19:10.831Z"
+source = "user"
+tags = [
+    "multi-env",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "d9f80524-7ba1-4611-bd5d-d2901b659104"
+title = "VM management (RFC-0030)"
+description = "Windows VM workflow integration"
+status = "new"
+created_at = "2026-02-18T23:19:10.885Z"
+source = "user"
+tags = [
+    "multi-env",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "2f63b17e-2b0e-4075-9728-fcfb1ef534aa"
+title = "Windows VM workflow (RFC-0031)"
+description = "Steam Remote Play support"
+status = "new"
+created_at = "2026-02-18T23:19:10.934Z"
+source = "user"
+tags = [
+    "multi-env",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "082b2837-7a66-45c5-82b3-bf687b072ab8"
+title = "Changelog enforcement in CI (RFC-0005)"
+description = "CI checks for PR changelog entries"
+status = "archived"
+created_at = "2026-02-18T23:19:14.928Z"
+source = "user"
+tags = [
+    "automation",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "a3102069-eb81-49bf-9407-1f78b0d59604"
+title = "MOTD integration"
+description = "First-boot What's New message"
+status = "archived"
+created_at = "2026-02-18T23:19:19.973Z"
+source = "user"
+tags = [
+    "dx",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "89447174-fcbb-47c3-bf58-f27577a5d165"
+title = "Scheduled upstream checks (RFC-0006)"
+description = "Auto-PR for upstream updates"
+status = "archived"
+created_at = "2026-02-18T23:19:20.025Z"
+source = "user"
+tags = [
+    "automation",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "9ba27df4-775a-4932-beb7-b8f8de4927ce"
+title = "Multi-machine sync"
+description = "Sync manifests across machines"
+status = "archived"
+created_at = "2026-02-18T23:19:20.079Z"
+source = "user"
+tags = [
+    "multi-env",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "440e2bd0-b97b-48f3-bec1-8358a2cdda10"
+title = "VM management (RFC-0030)"
+description = "Windows VM workflow integration"
+status = "archived"
+created_at = "2026-02-18T23:19:20.133Z"
+source = "user"
+tags = [
+    "multi-env",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "d9c15c4c-f25a-49a1-80e2-52ce6e238d19"
+title = "Windows VM workflow (RFC-0031)"
+description = "Steam Remote Play support"
+status = "archived"
+created_at = "2026-02-18T23:19:20.183Z"
+source = "user"
+tags = [
+    "multi-env",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "d13a85cd-f87d-4d6a-91c1-00c0a5caca93"
+title = "Scheduled upstream checks (RFC-0006)"
+description = "Auto-PR for upstream updates"
+status = "archived"
+created_at = "2026-02-18T23:19:25.490Z"
+source = "user"
+tags = [
+    "automation",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "080ff418-f31f-48bb-95f9-cb516521aff4"
+title = "Multi-machine sync"
+description = "Sync manifests across machines"
+status = "archived"
+created_at = "2026-02-18T23:19:29.622Z"
+source = "user"
+tags = [
+    "multi-env",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "439fa4e5-246b-4878-82b1-d0491d42f751"
+title = "VM management (RFC-0030)"
+description = "Windows VM workflow integration"
+status = "archived"
+created_at = "2026-02-18T23:19:34.083Z"
+source = "user"
+tags = [
+    "multi-env",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "ea37014f-d951-41d1-b426-66a6e88edc66"
+title = "Windows VM workflow (RFC-0031)"
+description = "Steam Remote Play support"
+status = "archived"
+created_at = "2026-02-18T23:19:38.520Z"
+source = "user"
+tags = [
+    "multi-env",
+    "future",
+]
+related_tasks = []
+
+[[ideas]]
+id = "4196ea5f-febb-45cd-8f24-e1664bedf8f0"
+title = "Toolchain policy decision"
+description = "Image-level vs home-managed toolchain. Leaning: home-managed (current)"
+status = "new"
+created_at = "2026-02-18T23:26:39.257Z"
+source = "user"
+tags = [
+    "decision",
+    "open",
+]
+related_tasks = []
+
+[[ideas]]
+id = "36e8555b-f99f-45be-8924-ff36e8a242e9"
+title = "bkt status distrobox visibility"
+description = "Show distrobox manifest status in bkt status output"
+status = "new"
+created_at = "2026-02-18T23:26:45.338Z"
+source = "user"
+tags = [
+    "feature",
+    "open",
+]
+related_tasks = []
+
+[[ideas]]
+id = "406c832d-e369-4820-9db1-2c87c00ce1ae"
+title = "GSettings baseline decision"
+description = "Ship with image vs create on first run. Leaning: first run"
+status = "new"
+created_at = "2026-02-18T23:26:51.182Z"
+source = "user"
+tags = ["decision"]
+related_tasks = []
+
+[[ideas]]
+id = "9235ae3c-ba5d-45ba-83c2-d694468506f5"
+title = "Flatpak override format decision"
+description = "Flatpak native vs normalize to JSON. Leaning: Flatpak native"
+status = "new"
+created_at = "2026-02-18T23:26:56.923Z"
+source = "user"
+tags = ["decision"]
+related_tasks = []
