@@ -36,6 +36,9 @@ serde_yaml = "0.9.34"
 urlencoding = "2.1.3"
 base64 = "0.22"
 zbus = "5"
+nix = { version = "0.29", features = ["socket", "uio", "process", "signal"] }
+ctrlc = "3"
+libc = "0.2"
 fetchbin = { path = "../fetchbin" }
 bkt-common = { path = "../bkt-common", features = ["schema"] }
 

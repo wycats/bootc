@@ -11,7 +11,6 @@ fn already_in_slice(slice: &str) -> bool {
 }
 
 fn main() {
-
     // Re-entry guard: if already running inside our target slice, exec directly.
     // Without this, VS Code's child processes (which re-invoke /usr/bin/code)
     // would each create a new systemd-run scope, causing an infinite loop.
@@ -42,7 +41,8 @@ fn main() {
     }
 
     // Generate unique unit name
-    let unit_name = format!("vscode-wrapper-{}-{}",
+    let unit_name = format!(
+        "vscode-wrapper-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -79,4 +79,3 @@ fn find_remote_cli() -> Option<String> {
     }
     None
 }
-
