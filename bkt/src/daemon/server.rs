@@ -9,7 +9,6 @@ use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::{self, ForkResult};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -123,9 +122,46 @@ impl DaemonServer {
 
     /// Fork a child process and execute the command.
     fn fork_exec(&self, request: &Request, fds: [OwnedFd; 3]) -> Result<i32> {
+        use std::ffi::CString;
+
         if request.argv.is_empty() {
             bail!("Empty argv");
         }
+
+        // Resolve program path (do PATH lookup before fork)
+        let program_name = &request.argv[0];
+        let program_path = if program_name.contains('/') {
+            // Absolute or relative path - use as-is
+            program_name.clone()
+        } else {
+            // Search PATH
+            let path_env = request
+                .envp
+                .iter()
+                .find(|s| s.starts_with("PATH="))
+                .map(|s| &s[5..])
+                .unwrap_or("/usr/bin:/bin");
+
+            path_env
+                .split(':')
+                .map(|dir| format!("{}/{}", dir, program_name))
+                .find(|p| std::path::Path::new(p).exists())
+                .unwrap_or_else(|| program_name.clone())
+        };
+
+        // Prepare CStrings BEFORE fork to minimize child work
+        let program = CString::new(program_path.as_str()).context("Invalid program name")?;
+        let argv: Vec<CString> = request
+            .argv
+            .iter()
+            .map(|s| CString::new(s.as_str()).unwrap())
+            .collect();
+        let envp: Vec<CString> = request
+            .envp
+            .iter()
+            .map(|s| CString::new(s.as_str()).unwrap())
+            .collect();
+        let cwd = CString::new(request.cwd.to_string_lossy().as_ref()).context("Invalid cwd")?;
 
         // SAFETY: We're about to fork. The child will exec immediately.
         match unsafe { unistd::fork() }? {
@@ -146,6 +182,7 @@ impl DaemonServer {
             ForkResult::Child => {
                 // Child: set up fds and exec
                 // SAFETY: We're in the child after fork, about to exec
+                // Minimize work here - all prep was done before fork
                 unsafe {
                     // Redirect stdin/stdout/stderr to the passed fds
                     if libc::dup2(fds[0].as_raw_fd(), 0) < 0 {
@@ -162,33 +199,26 @@ impl DaemonServer {
                     drop(fds);
 
                     // Change to requested working directory
-                    if std::env::set_current_dir(&request.cwd).is_err() {
-                        eprintln!("Failed to chdir to {}", request.cwd.display());
+                    if libc::chdir(cwd.as_ptr()) < 0 {
                         libc::_exit(126);
                     }
 
-                    // Parse environment
-                    let env: Vec<(String, String)> = request
-                        .envp
+                    // Build argv and envp pointers for execve
+                    let argv_ptrs: Vec<*const libc::c_char> = argv
                         .iter()
-                        .filter_map(|s| {
-                            let mut parts = s.splitn(2, '=');
-                            Some((parts.next()?.to_string(), parts.next()?.to_string()))
-                        })
+                        .map(|s| s.as_ptr())
+                        .chain(std::iter::once(std::ptr::null()))
+                        .collect();
+                    let envp_ptrs: Vec<*const libc::c_char> = envp
+                        .iter()
+                        .map(|s| s.as_ptr())
+                        .chain(std::iter::once(std::ptr::null()))
                         .collect();
 
-                    // Build and exec the command
-                    let program = &request.argv[0];
-                    let args = &request.argv[1..];
-
-                    let err = std::process::Command::new(program)
-                        .args(args)
-                        .env_clear()
-                        .envs(env)
-                        .exec();
+                    // Execute!
+                    libc::execve(program.as_ptr(), argv_ptrs.as_ptr(), envp_ptrs.as_ptr());
 
                     // If we get here, exec failed
-                    eprintln!("exec failed: {}", err);
                     libc::_exit(127);
                 }
             }

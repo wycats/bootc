@@ -64,10 +64,7 @@ fn test_execute(command: Vec<String>) -> Result<()> {
 
     let socket_path = daemon::socket_path()?;
     let client = DaemonClient::new(&socket_path);
-
-    eprintln!("Executing via daemon: {:?}", command);
     let exit_code = client.execute_current(&command)?;
-    eprintln!("Exit code: {}", exit_code);
 
     std::process::exit(exit_code);
 }
