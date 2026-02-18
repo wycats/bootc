@@ -18,7 +18,6 @@
 //!
 //! - `SYSTEM_PACKAGES`: RPM packages from system-packages.json
 //! - `COPR_REPOS`: COPR repository enablement commands
-//! - `HOST_SHIMS`: Host shim COPY and symlink commands
 
 use crate::manifest::ExternalReposManifest;
 use crate::manifest::Shim;
@@ -49,8 +48,6 @@ pub enum Section {
     SystemPackages,
     /// COPR repository enablement
     CoprRepos,
-    /// Host shims (COPY and symlinks)
-    HostShims,
     /// Kernel arguments (rpm-ostree kargs)
     KernelArguments,
     /// Systemd unit configuration
@@ -63,7 +60,6 @@ impl Section {
         match self {
             Section::SystemPackages => "SYSTEM_PACKAGES",
             Section::CoprRepos => "COPR_REPOS",
-            Section::HostShims => "HOST_SHIMS",
             Section::KernelArguments => "KERNEL_ARGUMENTS",
             Section::SystemdUnits => "SYSTEMD_UNITS",
         }
@@ -100,7 +96,6 @@ impl Section {
         match name {
             "SYSTEM_PACKAGES" => Some(Section::SystemPackages),
             "COPR_REPOS" => Some(Section::CoprRepos),
-            "HOST_SHIMS" => Some(Section::HostShims),
             "KERNEL_ARGUMENTS" => Some(Section::KernelArguments),
             "SYSTEMD_UNITS" => Some(Section::SystemdUnits),
             _ => None,
@@ -497,7 +492,11 @@ fn emit_collect_config(lines: &mut Vec<String>, image_config: &ImageConfigManife
 ///
 /// This replaces the many individual RUN instructions that were previously
 /// emitted by `emit_image_modules()`.
-fn emit_consolidated_run(lines: &mut Vec<String>, image_config: &ImageConfigManifest) {
+fn emit_consolidated_run(
+    lines: &mut Vec<String>,
+    image_config: &ImageConfigManifest,
+    shims: &[Shim],
+) {
     let mut commands: Vec<String> = Vec::new();
 
     for module in &image_config.modules {
@@ -530,6 +529,30 @@ fn emit_consolidated_run(lines: &mut Vec<String>, image_config: &ImageConfigMani
         }
     }
 
+    commands.extend(generate_host_shim_commands(shims));
+
+    for module in &image_config.modules {
+        if let ImageModule::OptionalFeature {
+            arg,
+            staging,
+            dest,
+            post_install,
+            ..
+        } = module
+        {
+            let mut conditional = format!(
+                "if [ \"${{{}}}\" = \"1\" ]; then install -Dpm0644 {} {}",
+                arg, staging, dest
+            );
+            for cmd in post_install {
+                conditional.push_str("; ");
+                conditional.push_str(cmd);
+            }
+            conditional.push_str("; fi");
+            commands.push(conditional);
+        }
+    }
+
     if commands.is_empty() {
         return;
     }
@@ -557,45 +580,6 @@ fn emit_consolidated_run(lines: &mut Vec<String>, image_config: &ImageConfigMani
 ///
 /// Each optional feature gets its own ARG + RUN if [...] block because
 /// the ARG must precede the RUN that references it.
-fn emit_optional_features(lines: &mut Vec<String>, image_config: &ImageConfigManifest) {
-    let mut header_emitted = false;
-
-    for module in &image_config.modules {
-        if let ImageModule::OptionalFeature {
-            arg,
-            staging,
-            dest,
-            post_install,
-            ..
-        } = module
-        {
-            if !header_emitted {
-                lines.push("".to_string());
-                lines.push("# Optional host tweaks (off by default)".to_string());
-                header_emitted = true;
-            }
-
-            if let Some(comment) = module.comment() {
-                lines.push("".to_string());
-                for line in comment.split('\n') {
-                    lines.push(format!("# {}", line));
-                }
-            }
-
-            lines.push(format!("ARG {}=0", arg));
-            lines.push(format!("RUN if [ \"${{{}}}\" = \"1\" ]; then \\", arg));
-            lines.push(format!(
-                "            install -Dpm0644 {} {}; \\",
-                staging, dest
-            ));
-            for cmd in post_install {
-                lines.push(format!("            {}; \\", cmd));
-            }
-            lines.push("        fi".to_string());
-        }
-    }
-}
-
 fn emit_image_assembly(lines: &mut Vec<String>, input: &ContainerfileGeneratorInput) {
     lines.push("".to_string());
     lines.push(section_header("Final image assembly"));
@@ -637,26 +621,40 @@ fn emit_image_assembly(lines: &mut Vec<String>, input: &ContainerfileGeneratorIn
     lines.push(section_header(
         "Configuration overlay (from collect-config)",
     ));
-    lines.push("COPY --from=collect-config / /".to_string());
+    lines.push("COPY --link --from=collect-config / /".to_string());
     lines.push("".to_string());
 
     // Memory-managed application wrappers (built Rust binaries)
     emit_wrapper_copies(lines, &input.image_config);
 
-    // Consolidated RUN for all post-overlay operations
-    emit_consolidated_run(lines, &input.image_config);
+    // Optional feature ARGs must precede the consolidated RUN
+    let mut header_emitted = false;
+    for module in &input.image_config.modules {
+        if let ImageModule::OptionalFeature { arg, .. } = module {
+            if !header_emitted {
+                lines.push("".to_string());
+                lines.push("# Optional host tweaks (off by default)".to_string());
+                header_emitted = true;
+            }
 
-    // Optional feature conditionals (each needs its own ARG)
-    emit_optional_features(lines, &input.image_config);
+            if let Some(comment) = module.comment() {
+                lines.push("".to_string());
+                for line in comment.split('\n') {
+                    lines.push(format!("# {}", line));
+                }
+            }
+
+            lines.push(format!("ARG {}=0", arg));
+        }
+    }
+
+    // Consolidated RUN for all post-overlay operations
+    emit_consolidated_run(lines, &input.image_config, &input.shims);
     lines.push("".to_string());
 
     // Font cache after all fonts and config are in place
     lines.push("# Rebuild font cache after all font/icon COPYs and config overlay".to_string());
     lines.push("RUN fc-cache -f".to_string());
-    lines.push("".to_string());
-
-    let shims = generate_host_shims(&input.shims);
-    emit_managed_section(lines, Section::HostShims, &shims);
     lines.push("".to_string());
 
     emit_rpm_snapshot(lines);
@@ -729,7 +727,7 @@ fn emit_upstream_copies(lines: &mut Vec<String>, upstreams: &UpstreamManifest) {
         let outputs = upstream_outputs(install);
         for output in outputs {
             lines.push(format!(
-                "COPY --from=fetch-{} {} {}",
+                "COPY --link --from=fetch-{} {} {}",
                 upstream.name, output, output
             ));
         }
@@ -755,7 +753,10 @@ fn emit_upstream_copies(lines: &mut Vec<String>, upstreams: &UpstreamManifest) {
         let outputs = upstream_outputs(install);
         let stage = script_stage_name(upstream, install.unwrap());
         for output in outputs {
-            lines.push(format!("COPY --from={} {} {}", stage, output, output));
+            lines.push(format!(
+                "COPY --link --from={} {} {}",
+                stage, output, output
+            ));
         }
     }
 }
@@ -844,7 +845,7 @@ fn emit_wrapper_copies(lines: &mut Vec<String>, image_config: &ImageConfigManife
     lines.push("# Memory-managed application wrappers (from build-wrappers stage)".to_string());
     for wrapper in wrappers {
         lines.push(format!(
-            "COPY --from=build-wrappers /out/{} {}",
+            "COPY --link --from=build-wrappers /out/{} {}",
             wrapper.name, wrapper.output
         ));
     }
@@ -989,9 +990,9 @@ pub fn generate_copr_repos(repos: &[String]) -> Vec<String> {
 /// 2. Create each shim script using base64 encoding (avoids heredoc parsing issues)
 /// 3. Make shims executable
 /// 4. Create symlinks in PATH
-pub fn generate_host_shims(shims: &[Shim]) -> Vec<String> {
+pub fn generate_host_shim_commands(shims: &[Shim]) -> Vec<String> {
     if shims.is_empty() {
-        return vec!["# No host shims configured".to_string()];
+        return Vec::new();
     }
 
     let mut sorted_shims: Vec<_> = shims.iter().collect();
@@ -1000,11 +1001,10 @@ pub fn generate_host_shims(shims: &[Shim]) -> Vec<String> {
     let shims_dir = "/usr/etc/skel/.local/toolbox/shims";
     let bin_dir = "/usr/etc/skel/.local/bin";
 
-    let mut lines = Vec::new();
-    lines.push("RUN set -eu; \\".to_string());
-    lines.push(format!("    mkdir -p {} {}; \\", shims_dir, bin_dir));
+    let mut commands = Vec::new();
+    commands.push(format!("mkdir -p {} {}", shims_dir, bin_dir));
 
-    for (i, shim) in sorted_shims.iter().enumerate() {
+    for shim in sorted_shims.iter() {
         let host_cmd = shim.host_cmd();
         // Use shlex for proper POSIX-compliant shell quoting
         let quoted = shlex::try_quote(host_cmd).unwrap_or_else(|_| host_cmd.into());
@@ -1015,31 +1015,14 @@ pub fn generate_host_shims(shims: &[Shim]) -> Vec<String> {
         // Base64 encode to avoid heredoc parsing issues in Dockerfile
         let encoded = BASE64_STANDARD.encode(script_content.as_bytes());
 
-        let is_last = i == sorted_shims.len() - 1;
-
-        // Use base64 encoding instead of heredoc to avoid Dockerfile parsing issues
-        // All commands on same logical line with && to stay in RUN context
-        lines.push(format!(
-            "    echo '{}' | base64 -d > {}/{} && \\",
-            encoded, shims_dir, shim.name
-        ));
-        lines.push(format!("    chmod 0755 {}/{} && \\", shims_dir, shim.name));
-
-        // Last symlink doesn't need continuation backslash
-        if is_last {
-            lines.push(format!(
-                "    ln -sf ../toolbox/shims/{} {}/{}",
-                shim.name, bin_dir, shim.name
-            ));
-        } else {
-            lines.push(format!(
-                "    ln -sf ../toolbox/shims/{} {}/{}; \\",
-                shim.name, bin_dir, shim.name
-            ));
-        }
+        let shim_cmd = format!(
+            "echo '{}' | base64 -d > {}/{} && chmod 0755 {}/{} && ln -sf ../toolbox/shims/{} {}/{}",
+            encoded, shims_dir, shim.name, shims_dir, shim.name, shim.name, bin_dir, shim.name
+        );
+        commands.push(shim_cmd);
     }
 
-    lines
+    commands
 }
 
 #[cfg(test)]
@@ -1269,27 +1252,25 @@ COPY . /app
     }
 
     #[test]
-    fn test_generate_host_shims_empty() {
+    fn test_generate_host_shim_commands_empty() {
         let shims: Vec<Shim> = vec![];
-        let lines = generate_host_shims(&shims);
+        let commands = generate_host_shim_commands(&shims);
 
-        assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0], "# No host shims configured");
+        assert!(commands.is_empty());
     }
 
     #[test]
-    fn test_generate_host_shims_single() {
+    fn test_generate_host_shim_commands_single() {
         let shims = vec![sample_shim("bootc")];
-        let lines = generate_host_shims(&shims);
+        let commands = generate_host_shim_commands(&shims);
 
         // Check structure
-        assert!(lines[0].contains("set -eu"));
-        assert!(lines[1].contains("mkdir -p"));
-        assert!(lines[1].contains("/usr/etc/skel/.local/toolbox/shims"));
-        assert!(lines[1].contains("/usr/etc/skel/.local/bin"));
+        assert!(commands[0].contains("mkdir -p"));
+        assert!(commands[0].contains("/usr/etc/skel/.local/toolbox/shims"));
+        assert!(commands[0].contains("/usr/etc/skel/.local/bin"));
 
         // Check shim creation uses base64 encoding
-        let content = lines.join("\n");
+        let content = commands.join("\n");
         assert!(content.contains("base64 -d > /usr/etc/skel/.local/toolbox/shims/bootc"));
         assert!(content.contains("chmod 0755"));
         assert!(content.contains("ln -sf ../toolbox/shims/bootc /usr/etc/skel/.local/bin/bootc"));
@@ -1301,14 +1282,14 @@ COPY . /app
     }
 
     #[test]
-    fn test_generate_host_shims_multiple() {
+    fn test_generate_host_shim_commands_multiple() {
         let shims = vec![
             sample_shim("systemctl"),
             sample_shim("bootc"),
             sample_shim("podman"),
         ];
-        let lines = generate_host_shims(&shims);
-        let content = lines.join("\n");
+        let commands = generate_host_shim_commands(&shims);
+        let content = commands.join("\n");
 
         // Should be sorted alphabetically
         let bootc_pos = content.find("shims/bootc").unwrap();
@@ -1333,10 +1314,10 @@ COPY . /app
     }
 
     #[test]
-    fn test_generate_host_shims_with_host_override() {
+    fn test_generate_host_shim_commands_with_host_override() {
         let shims = vec![sample_shim_with_host("docker", "podman")];
-        let lines = generate_host_shims(&shims);
-        let content = lines.join("\n");
+        let commands = generate_host_shim_commands(&shims);
+        let content = commands.join("\n");
 
         // The shim name should be "docker" but it should call "podman" on host
         assert!(content.contains("shims/docker"));
@@ -1352,19 +1333,6 @@ COPY . /app
     }
 
     #[test]
-    fn test_generate_host_shims_no_trailing_backslash() {
-        let shims = vec![sample_shim("bootc")];
-        let lines = generate_host_shims(&shims);
-
-        // Last line should NOT end with a backslash continuation
-        let last_line = lines.last().unwrap();
-        assert!(
-            !last_line.ends_with("\\"),
-            "Last line should not end with backslash: {}",
-            last_line
-        );
-    }
-
     #[test]
     fn test_generate_full_containerfile_contains_sections() {
         let input = ContainerfileGeneratorInput {
@@ -1386,7 +1354,6 @@ COPY . /app
         assert!(output.contains(&section_header("Tools stage")));
         assert!(output.contains("FROM base AS image"));
         assert!(output.contains("# === SYSTEM_PACKAGES (managed by bkt) ==="));
-        assert!(output.contains("# === HOST_SHIMS (managed by bkt) ==="));
         assert!(output.contains("# === RPM VERSION SNAPSHOT ==="));
         assert!(output.ends_with('\n'));
     }

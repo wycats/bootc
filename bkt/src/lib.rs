@@ -26,6 +26,7 @@ pub mod command_runner;
 pub mod commands;
 pub mod containerfile;
 pub mod context;
+pub mod daemon;
 pub mod dbus;
 pub mod effects;
 pub mod manifest;

@@ -231,32 +231,51 @@ RUN rm -rf /tmp/rpms /tmp/external-repos.json /usr/bin/bkt-build
 
 # ── COPY upstream outputs into final image ───────────────────────────────────
 
-COPY --from=fetch-starship /usr/bin/starship /usr/bin/starship
-COPY --from=fetch-lazygit /usr/bin/lazygit /usr/bin/lazygit
-COPY --from=fetch-getnf /usr/bin/getnf /usr/bin/getnf
-COPY --from=fetch-bibata-cursor /usr/share/icons/Bibata-Modern-Classic/ /usr/share/icons/Bibata-Modern-Classic/
-COPY --from=fetch-jetbrains-mono-nerd-font /usr/share/fonts/nerd-fonts/JetBrainsMono/ /usr/share/fonts/nerd-fonts/JetBrainsMono/
+COPY --link --from=fetch-starship /usr/bin/starship /usr/bin/starship
+COPY --link --from=fetch-lazygit /usr/bin/lazygit /usr/bin/lazygit
+COPY --link --from=fetch-getnf /usr/bin/getnf /usr/bin/getnf
+COPY --link --from=fetch-bibata-cursor /usr/share/icons/Bibata-Modern-Classic/ /usr/share/icons/Bibata-Modern-Classic/
+COPY --link --from=fetch-jetbrains-mono-nerd-font /usr/share/fonts/nerd-fonts/JetBrainsMono/ /usr/share/fonts/nerd-fonts/JetBrainsMono/
 
 # keyd outputs (built from source)
-COPY --from=build-keyd /usr/bin/keyd /usr/bin/keyd
-COPY --from=build-keyd /usr/bin/keyd-application-mapper /usr/bin/keyd-application-mapper
-COPY --from=build-keyd /usr/lib/systemd/system/keyd.service /usr/lib/systemd/system/keyd.service
-COPY --from=build-keyd /usr/share/keyd/ /usr/share/keyd/
-COPY --from=build-keyd /usr/share/man/man1/keyd.1.gz /usr/share/man/man1/keyd.1.gz
-COPY --from=build-keyd /usr/share/man/man1/keyd-application-mapper.1.gz /usr/share/man/man1/keyd-application-mapper.1.gz
-COPY --from=build-keyd /usr/share/doc/keyd/ /usr/share/doc/keyd/
+COPY --link --from=build-keyd /usr/bin/keyd /usr/bin/keyd
+COPY --link --from=build-keyd /usr/bin/keyd-application-mapper /usr/bin/keyd-application-mapper
+COPY --link --from=build-keyd /usr/lib/systemd/system/keyd.service /usr/lib/systemd/system/keyd.service
+COPY --link --from=build-keyd /usr/share/keyd/ /usr/share/keyd/
+COPY --link --from=build-keyd /usr/share/man/man1/keyd.1.gz /usr/share/man/man1/keyd.1.gz
+COPY --link --from=build-keyd /usr/share/man/man1/keyd-application-mapper.1.gz /usr/share/man/man1/keyd-application-mapper.1.gz
+COPY --link --from=build-keyd /usr/share/doc/keyd/ /usr/share/doc/keyd/
 
 # WhiteSur icon theme
-COPY --from=fetch-whitesur /usr/share/icons/WhiteSur/ /usr/share/icons/WhiteSur/
-COPY --from=fetch-whitesur /usr/share/icons/WhiteSur-dark/ /usr/share/icons/WhiteSur-dark/
+COPY --link --from=fetch-whitesur /usr/share/icons/WhiteSur/ /usr/share/icons/WhiteSur/
+COPY --link --from=fetch-whitesur /usr/share/icons/WhiteSur-dark/ /usr/share/icons/WhiteSur-dark/
 
 # ── Configuration overlay (from collect-config) ──────────────────────────────
-COPY --from=collect-config / /
+COPY --link --from=collect-config / /
 
 # Memory-managed application wrappers (from build-wrappers stage)
-COPY --from=build-wrappers /out/vscode-wrapper /usr/bin/code
-COPY --from=build-wrappers /out/msedge-wrapper /usr/bin/microsoft-edge-stable
+COPY --link --from=build-wrappers /out/vscode-wrapper /usr/bin/code
+COPY --link --from=build-wrappers /out/msedge-wrapper /usr/bin/microsoft-edge-stable
 
+
+# Optional host tweaks (off by default)
+
+# NetworkManager: disable Wi-Fi power save (wifi.powersave=2)
+ARG ENABLE_NM_DISABLE_WIFI_POWERSAVE=0
+
+# NetworkManager: use iwd backend (wifi.backend=iwd) (Asahi-focused; off by default)
+ARG ENABLE_NM_IWD_BACKEND=0
+
+# Asahi-only artifacts (off by default)
+# NOTE: titdb.service.template contains a placeholder input device path; enable only after customizing it.
+ARG ENABLE_ASAHI_TITDB=0
+ARG ENABLE_ASAHI_BRCMFMAC=0
+
+# systemd: journald log cap (off by default)
+ARG ENABLE_JOURNALD_LOG_CAP=0
+
+# systemd: logind lid policy (off by default)
+ARG ENABLE_LOGIND_LID_POLICY=0
 # Post-overlay setup: chmod, symlinks, mkdir, kargs, staging dirs
 RUN set -eu; \
     mkdir -p /usr/lib/systemd/system/multi-user.target.wants; \
@@ -278,74 +297,31 @@ RUN set -eu; \
     mkdir -p /usr/share/bootc-optional/NetworkManager/conf.d; \
     mkdir -p /usr/share/bootc-optional/modprobe.d; \
     mkdir -p /usr/share/bootc-optional/systemd/journald.conf.d; \
-    mkdir -p /usr/share/bootc-optional/systemd/logind.conf.d
-
-# Optional host tweaks (off by default)
-
-# NetworkManager: disable Wi-Fi power save (wifi.powersave=2)
-ARG ENABLE_NM_DISABLE_WIFI_POWERSAVE=0
-RUN if [ "${ENABLE_NM_DISABLE_WIFI_POWERSAVE}" = "1" ]; then \
-            install -Dpm0644 /usr/share/bootc-optional/NetworkManager/conf.d/default-wifi-powersave-on.conf /etc/NetworkManager/conf.d/default-wifi-powersave-on.conf; \
-        fi
-
-# NetworkManager: use iwd backend (wifi.backend=iwd) (Asahi-focused; off by default)
-ARG ENABLE_NM_IWD_BACKEND=0
-RUN if [ "${ENABLE_NM_IWD_BACKEND}" = "1" ]; then \
-            install -Dpm0644 /usr/share/bootc-optional/NetworkManager/conf.d/wifi_backend.conf /etc/NetworkManager/conf.d/wifi_backend.conf; \
-        fi
-
-# Asahi-only artifacts (off by default)
-# NOTE: titdb.service.template contains a placeholder input device path; enable only after customizing it.
-ARG ENABLE_ASAHI_TITDB=0
-RUN if [ "${ENABLE_ASAHI_TITDB}" = "1" ]; then \
-            install -Dpm0644 /usr/share/bootc-optional/asahi/titdb.service /etc/systemd/system/titdb.service; \
-            systemctl enable titdb.service || true; \
-        fi
-ARG ENABLE_ASAHI_BRCMFMAC=0
-RUN if [ "${ENABLE_ASAHI_BRCMFMAC}" = "1" ]; then \
-            install -Dpm0644 /usr/share/bootc-optional/modprobe.d/brcmfmac.conf /etc/modprobe.d/brcmfmac.conf; \
-        fi
-
-# systemd: journald log cap (off by default)
-ARG ENABLE_JOURNALD_LOG_CAP=0
-RUN if [ "${ENABLE_JOURNALD_LOG_CAP}" = "1" ]; then \
-            install -Dpm0644 /usr/share/bootc-optional/systemd/journald.conf.d/10-journal-cap.conf /etc/systemd/journald.conf.d/10-journal-cap.conf; \
-        fi
-
-# systemd: logind lid policy (off by default)
-ARG ENABLE_LOGIND_LID_POLICY=0
-RUN if [ "${ENABLE_LOGIND_LID_POLICY}" = "1" ]; then \
-            install -Dpm0644 /usr/share/bootc-optional/systemd/logind.conf.d/10-lid-policy.conf /etc/systemd/logind.conf.d/10-lid-policy.conf; \
-        fi
+    mkdir -p /usr/share/bootc-optional/systemd/logind.conf.d; \
+    mkdir -p /usr/etc/skel/.local/toolbox/shims /usr/etc/skel/.local/bin; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBib290YyAiJEAiCg==' | base64 -d \
+    > /usr/etc/skel/.local/toolbox/shims/bootc && chmod 0755 /usr/etc/skel/.local/toolbox/shims/bootc && ln -sf ../toolbox/shims/bootc /usr/etc/skel/.local/bin/bootc; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBmbGF0cGFrICIkQCIK' | base64 -d \
+    > /usr/etc/skel/.local/toolbox/shims/flatpak && chmod 0755 /usr/etc/skel/.local/toolbox/shims/flatpak && ln -sf ../toolbox/shims/flatpak /usr/etc/skel/.local/bin/flatpak; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBqb3VybmFsY3RsICIkQCIK' | base64 -d \
+    > /usr/etc/skel/.local/toolbox/shims/journalctl && chmod 0755 /usr/etc/skel/.local/toolbox/shims/journalctl && ln -sf ../toolbox/shims/journalctl /usr/etc/skel/.local/bin/journalctl; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBwb2RtYW4gIiRAIgo=' | base64 -d \
+    > /usr/etc/skel/.local/toolbox/shims/podman && chmod 0755 /usr/etc/skel/.local/toolbox/shims/podman && ln -sf ../toolbox/shims/podman /usr/etc/skel/.local/bin/podman; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBycG0tb3N0cmVlICIkQCIK' | base64 -d \
+    > /usr/etc/skel/.local/toolbox/shims/rpm-ostree && chmod 0755 /usr/etc/skel/.local/toolbox/shims/rpm-ostree && ln -sf ../toolbox/shims/rpm-ostree /usr/etc/skel/.local/bin/rpm-ostree; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBzeXN0ZW1jdGwgIiRAIgo=' | base64 -d \
+    > /usr/etc/skel/.local/toolbox/shims/systemctl && chmod 0755 /usr/etc/skel/.local/toolbox/shims/systemctl && ln -sf ../toolbox/shims/systemctl /usr/etc/skel/.local/bin/systemctl; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCB1anVzdCAiJEAiCg==' | base64 -d \
+    > /usr/etc/skel/.local/toolbox/shims/ujust && chmod 0755 /usr/etc/skel/.local/toolbox/shims/ujust && ln -sf ../toolbox/shims/ujust /usr/etc/skel/.local/bin/ujust; \
+    if [ "${ENABLE_NM_DISABLE_WIFI_POWERSAVE}" = "1" ]; then install -Dpm0644 /usr/share/bootc-optional/NetworkManager/conf.d/default-wifi-powersave-on.conf /etc/NetworkManager/conf.d/default-wifi-powersave-on.conf; fi; \
+    if [ "${ENABLE_NM_IWD_BACKEND}" = "1" ]; then install -Dpm0644 /usr/share/bootc-optional/NetworkManager/conf.d/wifi_backend.conf /etc/NetworkManager/conf.d/wifi_backend.conf; fi; \
+    if [ "${ENABLE_ASAHI_TITDB}" = "1" ]; then install -Dpm0644 /usr/share/bootc-optional/asahi/titdb.service /etc/systemd/system/titdb.service; systemctl enable titdb.service || true; fi; \
+    if [ "${ENABLE_ASAHI_BRCMFMAC}" = "1" ]; then install -Dpm0644 /usr/share/bootc-optional/modprobe.d/brcmfmac.conf /etc/modprobe.d/brcmfmac.conf; fi; \
+    if [ "${ENABLE_JOURNALD_LOG_CAP}" = "1" ]; then install -Dpm0644 /usr/share/bootc-optional/systemd/journald.conf.d/10-journal-cap.conf /etc/systemd/journald.conf.d/10-journal-cap.conf; fi; \
+    if [ "${ENABLE_LOGIND_LID_POLICY}" = "1" ]; then install -Dpm0644 /usr/share/bootc-optional/systemd/logind.conf.d/10-lid-policy.conf /etc/systemd/logind.conf.d/10-lid-policy.conf; fi
 
 # Rebuild font cache after all font/icon COPYs and config overlay
 RUN fc-cache -f
-
-# === HOST_SHIMS (managed by bkt) ===
-RUN set -eu; \
-    mkdir -p /usr/etc/skel/.local/toolbox/shims /usr/etc/skel/.local/bin; \
-    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBib290YyAiJEAiCg==' | base64 -d > /usr/etc/skel/.local/toolbox/shims/bootc && \
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/bootc && \
-    ln -sf ../toolbox/shims/bootc /usr/etc/skel/.local/bin/bootc; \
-    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBmbGF0cGFrICIkQCIK' | base64 -d > /usr/etc/skel/.local/toolbox/shims/flatpak && \
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/flatpak && \
-    ln -sf ../toolbox/shims/flatpak /usr/etc/skel/.local/bin/flatpak; \
-    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBqb3VybmFsY3RsICIkQCIK' | base64 -d > /usr/etc/skel/.local/toolbox/shims/journalctl && \
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/journalctl && \
-    ln -sf ../toolbox/shims/journalctl /usr/etc/skel/.local/bin/journalctl; \
-    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBwb2RtYW4gIiRAIgo=' | base64 -d > /usr/etc/skel/.local/toolbox/shims/podman && \
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/podman && \
-    ln -sf ../toolbox/shims/podman /usr/etc/skel/.local/bin/podman; \
-    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBycG0tb3N0cmVlICIkQCIK' | base64 -d > /usr/etc/skel/.local/toolbox/shims/rpm-ostree && \
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/rpm-ostree && \
-    ln -sf ../toolbox/shims/rpm-ostree /usr/etc/skel/.local/bin/rpm-ostree; \
-    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBzeXN0ZW1jdGwgIiRAIgo=' | base64 -d > /usr/etc/skel/.local/toolbox/shims/systemctl && \
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/systemctl && \
-    ln -sf ../toolbox/shims/systemctl /usr/etc/skel/.local/bin/systemctl; \
-    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCB1anVzdCAiJEAiCg==' | base64 -d > /usr/etc/skel/.local/toolbox/shims/ujust && \
-    chmod 0755 /usr/etc/skel/.local/toolbox/shims/ujust && \
-    ln -sf ../toolbox/shims/ujust /usr/etc/skel/.local/bin/ujust
-# === END HOST_SHIMS ===
 
 # === RPM VERSION SNAPSHOT ===
 # Capture installed versions of system packages for OCI label embedding.

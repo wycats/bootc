@@ -1,360 +1,424 @@
-# RFC 0045: Aggressive Layer Minimization
+# RFC 0045: Layer Independence
 
 ## Status
 
-Draft (revised after prepare audit)
+Draft
 
-## Problem
+## Goal
 
-The image assembly stage (`FROM base AS image`) currently has **75
-RUN/COPY instructions**, each producing a Docker layer. Because Docker
-invalidates every layer after the first changed one, a single config
-file edit near the top of the stage cascades into **50+ rebuilt layers**.
+A change to one concern in the manifest should invalidate **O(1)
+layers** in the final image. This property should follow from the
+structure, not from careful ordering.
 
-Concrete examples of the cascade:
+## Background
 
-| Change                                | First invalidated layer | Layers rebuilt |
-| ------------------------------------- | ----------------------- | -------------- |
-| `system/fontconfig/99-emoji-fix.conf` | Layer 23                | 53             |
-| `manifests/flatpak-apps.json`         | Layer 30                | 46             |
-| `skel/.config/nushell/config.nu`      | Layer 72                | 4              |
-| Any external RPM version bump         | Layer 1 (dl-\* COPY)    | 75             |
+The image is built with BuildKit (`docker/build-push-action@v6` +
+`docker/setup-buildx-action@v3`) and uses multi-stage builds for
+parallel fetching and compilation. The generator (`bkt containerfile
+generate`) controls the full Containerfile.
 
-This wastes CI build time, registry bandwidth, and `bootc upgrade`
-download size. The parallel pre-build stages (dl-\*, fetch-\*, build-\*)
-are well-isolated, but their outputs are assembled into a single serial
-stage that undoes most of the benefit.
+### Current Architecture
 
-## Design Principle: Minimize Delta Layers
+The Containerfile has good **build parallelism**: dl-\*, fetch-\*,
+build-\*, and collect-config stages all run concurrently. But the
+final `FROM base AS image` stage assembles their outputs into a
+**linear layer stack**. Any change to a layer invalidates every layer
+below it.
 
-The goal is not just fewer layers — it's fewer **changed** layers for
-any given commit. The ideal is:
+The image stage currently has **34 layer-producing instructions** (20
+COPY + 14 RUN). A config file edit can cascade into 10+ rebuilt
+layers. An RPM version bump cascades into all 34.
 
-> For any single-concern change, at most **2–3 layers** in the final
-> image should differ from the previous build.
+### Why Linear Layers Are the Wrong Model
 
-## Why Not `COPY --from=collector / /`?
+The concerns in the image are largely independent:
 
-The naive approach — build everything in parallel collector stages and
-merge with `COPY --from=collector / /` — is **broken**. Each collector
-starts `FROM base`, so `COPY --from=collector / /` copies the **entire
-base image filesystem** (~2-4GB), not just the delta. The last COPY
-wins for every file, destroying the RPM database and producing a
-corrupt image.
+- External RPMs (code, edge, 1password) don't share files
+- Upstream binaries (starship, lazygit, keyd) don't interact
+- Config files don't depend on which RPMs are installed
+- Wrappers are standalone compiled binaries
 
-## Strategy: Hybrid Collector Architecture
+Forcing these into a linear stack means a starship bump rebuilds the
+keyd, whitesur, config, wrapper, and font-cache layers — none of
+which changed.
 
-### Core Idea
+### Why Multi-Stage Builds Alone Don't Solve This
 
-Use a **hybrid** approach:
+Multi-stage builds give us parallel _builds_ — the dl-\*, fetch-\*,
+and build-\* stages all run concurrently. But they don't give us
+independent _output layers_. When the stages are assembled into the
+final image via `COPY --from`, those COPYs form a linear sequence.
+Changing one still invalidates everything after it.
 
-1. **RPM work stays inline** in the `image` stage — `dnf install`
-   needs the base image's package manager and RPM database, and the
-   results can't be cleanly extracted as a delta.
+This distinction matters because it's easy to conflate "parallel
+stages" with "independent layers" and conclude the problem is solved.
+It isn't. Parallel stages reduce _build time_. Independent layers
+reduce _invalidation scope_. They require different mechanisms.
 
-2. **`collect-config`** — a parallel stage that assembles all static
-   configuration (manifests, scripts, systemd units, skel, optional
-   features, host shims, keyd config, polkit rules, etc.) into a
-   filesystem subtree at known paths. Imported via targeted
-   directory-level COPYs.
+Earthfile (from Earthly) was originally considered for this project
+because it models the output image as a DAG of independent concerns
+rather than a linear stack. BuildKit's `COPY --link` flag provides
+the same independence property within the standard Containerfile
+format, without requiring a different build tool.
 
-3. **Upstream COPYs** remain as individual `COPY --from=fetch-*`
-   instructions (already enumerated by the generator).
+## Design: `COPY --link` for Layer Independence
 
-4. **`fc-cache`** runs in the final `image` stage after all COPYs,
-   since it depends on both RPM-installed fonts and upstream fonts.
+BuildKit's `COPY --link` flag creates layers that are **independent
+of the layer stack below them**. A linked COPY is computed in
+isolation and spliced into the image without invalidating subsequent
+layers. This is the mechanism that gives us the O(1) property.
 
-### Stage Architecture
+### What `--link` Changes
+
+Without `--link`:
 
 ```
-tools ──→ base ──┬──→ dl-code          ──┐
-                 ├──→ dl-microsoft-edge ──┤
-                 ├──→ dl-1password      ──┤
-                 ├──→ fetch-starship    ──┤
-                 ├──→ fetch-lazygit     ──┤
-                 ├──→ fetch-getnf       ──┤
-                 ├──→ fetch-bibata      ──┤
-                 ├──→ fetch-jbmono      ──┤
-                 ├──→ build-keyd        ──┤
-                 ├──→ fetch-whitesur    ──┤
-                 │                        │
-                 ├──→ collect-config ─────┤  (parallel with all above)
-                 │                        │
-                 └──→ image ←─────────────┘
+Layer N:   COPY --from=fetch-starship ...    ← if this changes
+Layer N+1: COPY --from=fetch-lazygit ...     ← this rebuilds (unnecessary)
+Layer N+2: COPY --from=build-keyd ...        ← this rebuilds (unnecessary)
+```
+
+With `--link`:
+
+```
+Layer N:   COPY --link --from=fetch-starship ...   ← if this changes
+Layer N+1: COPY --link --from=fetch-lazygit ...    ← untouched
+Layer N+2: COPY --link --from=build-keyd ...       ← untouched
+```
+
+### What `--link` Cannot Do
+
+`--link` only applies to `COPY` instructions. `RUN` instructions are
+always linear — they depend on the full filesystem state of the
+previous layer. This means:
+
+- `RUN dnf install` cannot use `--link` (needs base filesystem + RPM DB)
+- `RUN fc-cache` cannot use `--link` (needs all fonts present)
+- The consolidated post-overlay `RUN` cannot use `--link`
+
+The strategy is to minimize the number of `RUN` layers and maximize
+the number of `COPY --link` layers.
+
+## Design: Per-Package RPM Install Stages
+
+The biggest remaining cascade is the RPM install. Currently, all
+external RPMs (code, edge, 1password) plus system packages are
+installed in a single `RUN dnf install` layer. Bumping Edge rebuilds
+a ~2GB layer that includes VS Code and 1Password.
+
+RPM install has distinct phases:
+
+1. **Download** — fetch `.rpm` files (already parallelized in dl-\* stages)
+2. **Extract file payloads** — unpack files to the filesystem
+3. **Run scriptlets** — `%post` scripts (`ldconfig`, icon cache, etc.)
+4. **Update RPM database** — record installation in `/var/lib/rpm/`
+
+Phases 2-4 are currently fused into a single `dnf install`. But `rpm`
+natively supports splitting them:
+
+- `rpm -i --nodb --noscripts --nodeps` — extract files only, skip DB and scriptlets
+- `rpm -i --justdb` — update DB only, skip file extraction
+
+The file payloads for external RPMs are well-separated:
+
+| RPM                   | Primary location         | Shared dirs                                             |
+| --------------------- | ------------------------ | ------------------------------------------------------- |
+| code                  | `/usr/share/code/`       | `/usr/bin/code`, `/usr/share/applications/`             |
+| microsoft-edge-stable | `/opt/microsoft/msedge/` | `/usr/bin/microsoft-edge-stable`, `/usr/share/appdata/` |
+| 1password             | `/opt/1Password/`        | `/usr/share/applications/`, `/usr/share/icons/`         |
+
+The "shared dirs" contain only a few `.desktop` files and icons — no
+conflicting files.
+
+### Per-Package Install Stages
+
+Each external RPM gets its own install stage that extracts files
+without touching the RPM database:
+
+```dockerfile
+FROM base AS install-code
+COPY --from=dl-code /rpms/ /tmp/rpms/
+RUN rpm -i --nodb --noscripts --nodeps /tmp/rpms/*.rpm && rm -rf /tmp/rpms
+
+FROM base AS install-edge
+COPY --from=dl-microsoft-edge /rpms/ /tmp/rpms/
+RUN set -eu; \
+    rpm -i --nodb --noscripts --nodeps /tmp/rpms/*.rpm; \
+    # Relocate /opt to /usr/lib/opt for ostree compatibility
+    mkdir -p /usr/lib/opt; \
+    cp -a /opt/. /usr/lib/opt/; \
+    rm -rf /opt/* /tmp/rpms
+
+FROM base AS install-1password
+COPY --from=dl-1password /rpms/ /tmp/rpms/
+RUN set -eu; \
+    rpm -i --nodb --noscripts --nodeps /tmp/rpms/*.rpm; \
+    mkdir -p /usr/lib/opt; \
+    cp -a /opt/. /usr/lib/opt/; \
+    rm -rf /opt/* /tmp/rpms
+```
+
+These stages run in parallel. Each produces a filesystem delta
+containing only that package's files.
+
+**`/opt` relocation**: On ostree, `/opt` is a symlink to `/var/opt`
+(persistent, mutable) and is NOT updated on upgrade. RPMs that
+install to `/opt` (Edge, 1Password) must have their files relocated
+to `/usr/lib/opt/` (immutable image layer) during the install stage
+itself. This is critical: `COPY --link` layers cannot see the
+filesystem below them, so a post-COPY relocation RUN would not find
+the files. Each install stage that touches `/opt` handles its own
+relocation.
+
+### Assembly with `--link`
+
+In the final image, each package's files are copied independently:
+
+```dockerfile
+COPY --link --from=install-code /usr/share/code/ /usr/share/code/
+COPY --link --from=install-code /usr/bin/code /usr/bin/code
+COPY --link --from=install-code /usr/share/applications/code*.desktop /usr/share/applications/
+
+COPY --link --from=install-edge /usr/lib/opt/microsoft/ /usr/lib/opt/microsoft/
+COPY --link --from=install-edge /usr/bin/microsoft-edge-stable /usr/bin/microsoft-edge-stable
+
+COPY --link --from=install-1password /usr/lib/opt/1Password/ /usr/lib/opt/1Password/
+COPY --link --from=install-1password /usr/share/applications/1password.desktop /usr/share/applications/
+```
+
+Note that Edge and 1Password COPYs reference `/usr/lib/opt/` — the
+relocated path from the install stage, not `/opt/`.
+
+Bumping Edge rebuilds only the `install-edge` stage and its COPY
+layers. VS Code and 1Password layers are untouched.
+
+### DB Finalization
+
+After all file payloads are in place, a single `RUN` finalizes the
+RPM database and runs necessary scriptlets:
+
+```dockerfile
+COPY --from=dl-code /rpms/ /tmp/rpms/
+COPY --from=dl-microsoft-edge /rpms/ /tmp/rpms/
+COPY --from=dl-1password /rpms/ /tmp/rpms/
+RUN rpm -i --justdb --nodeps /tmp/rpms/*.rpm && ldconfig && rm -rf /tmp/rpms
+```
+
+This layer is small (just DB writes) and rebuilds whenever any
+external RPM changes — but it's the only shared layer.
+
+## Target Architecture
+
+```
+tools ──→ base ──┬──→ dl-code ──→ install-code ────────┐
+                 ├──→ dl-edge ──→ install-edge ────────┤
+                 ├──→ dl-1pw  ──→ install-1pw  ────────┤
+                 ├──→ fetch-starship ──────────────────┤
+                 ├──→ fetch-lazygit ───────────────────┤
+                 ├──→ fetch-getnf ─────────────────────┤
+                 ├──→ fetch-bibata ────────────────────┤
+                 ├──→ fetch-jbmono ────────────────────┤
+                 ├──→ build-keyd ──────────────────────┤
+                 ├──→ fetch-whitesur ──────────────────┤
+                 ├──→ build-wrappers ──────────────────┤
+                 ├──→ collect-config ──────────────────┤
+                 │                                     │
+                 └──→ image ←──────────────────────────┘
+                       │
+                       ├─ RUN dnf install <system-pkgs>  (no external RPMs)
+                       ├─ RUN tmpfiles + cleanup
+                       ├─ COPY --link --from=install-code ...
+                       ├─ COPY --link --from=install-edge ...
+                       ├─ COPY --link --from=install-1pw ...
+                       ├─ COPY --link --from=fetch-starship ...
+                       ├─ COPY --link --from=fetch-lazygit ...
+                       ├─ COPY --link --from=fetch-getnf ...
+                       ├─ COPY --link --from=fetch-bibata ...
+                       ├─ COPY --link --from=fetch-jbmono ...
+                       ├─ COPY --link --from=build-keyd ...
+                       ├─ COPY --link --from=fetch-whitesur ...
+                       ├─ COPY --link --from=collect-config / /
+                       ├─ COPY --link --from=build-wrappers ...
+                       ├─ RUN rpm --justdb + ldconfig
+                       ├─ RUN consolidated post-overlay setup
+                       ├─ RUN fc-cache -f
+                       └─ RUN rpm -qa snapshot
 ```
 
 ### The `collect-config` Stage
 
-This is the biggest win. All static configuration — manifests, scripts,
-systemd units, skel files, polkit rules, keyd config, optional features,
-host shims, kernel args — gets assembled in a parallel stage that starts
-`FROM scratch` (not `FROM base`) to produce a clean overlay.
+All static configuration — manifests, scripts, systemd units, skel
+files, polkit rules, keyd config, optional feature staging, memory
+slices, oomd tuning, nushell config — is assembled in a parallel
+stage starting `FROM scratch`:
 
 ```dockerfile
 FROM scratch AS collect-config
-
-# System config
-COPY system/keyd/default.conf /etc/keyd/default.conf
-COPY system/polkit-1/rules.d/50-bkt-admin.rules /etc/polkit-1/rules.d/50-bkt-admin.rules
-COPY system/etc/topgrade.toml /etc/topgrade.toml
-COPY system/etc/sysctl.d/99-bootc-vm-tuning.conf /etc/sysctl.d/99-bootc-vm-tuning.conf
-COPY system/etc/opt/edge/policies/managed/performance.json /etc/opt/edge/policies/managed/performance.json
-
-# Bootstrap manifests
-COPY manifests/flatpak-remotes.json /usr/share/bootc-bootstrap/flatpak-remotes.json
-COPY manifests/flatpak-apps.json /usr/share/bootc-bootstrap/flatpak-apps.json
-COPY manifests/gnome-extensions.json /usr/share/bootc-bootstrap/gnome-extensions.json
-COPY manifests/gsettings.json /usr/share/bootc-bootstrap/gsettings.json
-COPY manifests/host-shims.json /usr/share/bootc-bootstrap/host-shims.json
-COPY repo.json /usr/share/bootc/repo.json
-
-# Scripts and CLI
-COPY scripts/bootc-bootstrap /usr/bin/bootc-bootstrap
-COPY scripts/bootc-apply /usr/bin/bootc-apply
-COPY scripts/bootc-repo /usr/bin/bootc-repo
-COPY scripts/bkt /usr/bin/bkt
-
-# Systemd units
-COPY systemd/user/bootc-bootstrap.service /usr/lib/systemd/user/bootc-bootstrap.service
-COPY systemd/user/bootc-capture.service /usr/lib/systemd/user/bootc-capture.service
-COPY systemd/user/bootc-capture.timer /usr/lib/systemd/user/bootc-capture.timer
-COPY systemd/system/bootc-apply.service /usr/lib/systemd/system/bootc-apply.service
-COPY systemd/user/dbus-broker.service.d/override.conf /usr/lib/systemd/user/dbus-broker.service.d/override.conf
-
-# Skel
-COPY skel/.config/nushell/config.nu /etc/skel/.config/nushell/config.nu
-COPY skel/.config/nushell/env.nu /etc/skel/.config/nushell/env.nu
-
-# Optional features (staging area — conditionals applied in image stage)
-COPY system/remote-play/ /usr/share/bootc-optional/remote-play/
-COPY system/NetworkManager/conf.d/ /usr/share/bootc-optional/NetworkManager/conf.d/
-COPY system/asahi/ /usr/share/bootc-optional/asahi/
-COPY system/systemd/journald.conf.d/ /usr/share/bootc-optional/systemd/journald.conf.d/
-COPY system/systemd/logind.conf.d/ /usr/share/bootc-optional/systemd/logind.conf.d/
-
-# ujust and distrobox
-COPY ujust/60-custom.just /usr/share/ublue-os/just/60-custom.just
-COPY distrobox.ini /etc/distrobox/distrobox.ini
-
-# Fontconfig override (fc-cache runs in image stage after all fonts are present)
 COPY system/fontconfig/99-emoji-fix.conf /etc/fonts/conf.d/99-emoji-fix.conf
+COPY system/keyd/default.conf /etc/keyd/default.conf
+# ... (all static config COPYs — generated from image-config.json modules)
 ```
 
-**Key design choice**: `collect-config` starts `FROM scratch`, not
-`FROM base`. This means `COPY --from=collect-config / /` only transfers
+`FROM scratch` means `COPY --from=collect-config / /` transfers only
 the files explicitly placed there — no base image duplication. The
-tradeoff is that `collect-config` cannot run any `RUN` instructions
-(no shell, no filesystem). All it does is COPY files into place.
+tradeoff is no `RUN` capability (no shell). Operations requiring a
+shell (chmod, symlinks, host shims, optional feature conditionals)
+go in the consolidated `RUN` in the image stage.
 
-The operations that require `RUN` (chmod, symlinks, host shims, kernel
-args, optional feature conditionals) stay in the `image` stage as a
-**single consolidated RUN** instruction.
+### The Consolidated `RUN`
 
-**Trigger**: any config file, manifest, script, systemd unit, or skel change.
-**Delta**: 1 layer in the final image (the `COPY --from=collect-config`).
+A single post-overlay `RUN` handles everything that needs a shell:
 
-### The New `image` Stage
+- `chmod` on scripts and binaries
+- systemd enable symlinks
+- host shims (base64 decode + chmod + symlink)
+- optional feature conditionals (`if [ "$ARG" = "1" ]; then install ...; fi`)
+- kernel arg file creation
+- staging directory creation
+
+This replaces the current 6 optional-feature RUNs + 1 host-shims
+RUN + the existing consolidated RUN = **8 RUNs collapsed into 1**.
+
+### Build Stage Consolidation
+
+Multi-output build stages use a staging root so their outputs can be
+copied in a single `COPY --link`:
+
+**keyd** (currently 7 COPYs → 1):
 
 ```dockerfile
-FROM base AS image
-
-# ── RPMs (inline — needs package manager) ────────────────────────────────────
-COPY --from=dl-code /rpms/ /tmp/rpms/
-COPY --from=dl-microsoft-edge /rpms/ /tmp/rpms/
-COPY --from=dl-1password /rpms/ /tmp/rpms/
-RUN dnf install -y /tmp/rpms/*.rpm <system-packages> && dnf clean all
-RUN <opt-relocation + tmpfiles>
-RUN rm -rf /tmp/rpms /tmp/external-repos.json /usr/bin/bkt-build
-
-# ── Upstream binaries/fonts/icons ────────────────────────────────────────────
-COPY --from=fetch-starship /usr/bin/starship /usr/bin/starship
-COPY --from=fetch-lazygit /usr/bin/lazygit /usr/bin/lazygit
-COPY --from=fetch-getnf /usr/bin/getnf /usr/bin/getnf
-COPY --from=fetch-bibata-cursor /usr/share/icons/... /usr/share/icons/...
-COPY --from=fetch-jetbrains-mono-nerd-font /usr/share/fonts/... /usr/share/fonts/...
-COPY --from=build-keyd /usr/bin/keyd /usr/bin/keyd
-# ... (remaining keyd + whitesur COPYs)
-
-# ── Configuration overlay ────────────────────────────────────────────────────
-COPY --from=collect-config / /
-
-# ── Post-overlay setup (single RUN) ─────────────────────────────────────────
-RUN set -eu; \
-    chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply ...; \
-    <keyd-enable-symlink>; \
-    <systemd-enable-symlinks>; \
-    <host-shims>; \
-    <kernel-args>; \
-    <optional-feature-conditionals>
-
-# ── Font cache (depends on RPM fonts + upstream fonts + fontconfig) ──────────
-RUN fc-cache -f
-
-# ── RPM snapshot ─────────────────────────────────────────────────────────────
-RUN rpm -qa --qf '%{NAME}\t%{EVR}\n' | sort > /usr/share/bootc/rpm-versions.txt
+FROM base AS build-keyd
+RUN ... && make -C /tmp/keyd PREFIX=/usr DESTDIR=/out FORCE_SYSTEMD=1 install
+# In image stage:
+COPY --link --from=build-keyd /out/ /
 ```
 
-**~20 layers** in the image stage, down from 75. The critical
-improvement: config changes only rebuild **2 layers** (collect-config
+**whitesur** (currently 2 COPYs → 1):
 
-- the consolidated RUN), not 40-53.
+```dockerfile
+FROM base AS fetch-whitesur
+RUN ... && ./install.sh -d /out/usr/share/icons
+# In image stage:
+COPY --link --from=fetch-whitesur /out/ /
+```
 
-### Delta Analysis: Before vs. After
+**wrappers** (currently 2 COPYs → 1):
 
-| Change                    | Before (layers rebuilt) | After (layers rebuilt)                                        |
-| ------------------------- | ----------------------- | ------------------------------------------------------------- |
-| VS Code RPM update        | 75                      | ~18 (RPM COPY cascades)                                       |
-| Starship version bump     | 53                      | ~10 (from upstream COPY onward)                               |
-| Config file edit          | 4–53                    | **3** (collect-config COPY + setup RUN + fc-cache + snapshot) |
-| Nushell skel change       | 4                       | **3** (same — config overlay)                                 |
-| Multiple concerns at once | 75                      | 3–18 (depends on what changed)                                |
+```dockerfile
+FROM rust:slim AS build-wrappers
+RUN ... -o /out/usr/bin/code ... -o /out/usr/bin/microsoft-edge-stable
+# In image stage:
+COPY --link --from=build-wrappers /out/ /
+```
 
-The biggest win is config changes: from up to 53 layers down to 3.
-RPM changes still cascade through the inline section, but that's
-unavoidable without the broken `COPY / /` approach.
+## Invalidation Matrix
 
-### Why `FROM scratch` for collect-config
+| Manifest change              | Stages rebuilt         | Image layers invalidated                  |
+| ---------------------------- | ---------------------- | ----------------------------------------- |
+| Bump starship version        | fetch-starship         | **1**                                     |
+| Bump Edge RPM                | dl-edge, install-edge  | **1** COPY + DB finalization              |
+| Add new external RPM         | new dl + install stage | **1** new COPY + DB finalization          |
+| Remove external RPM          | remove stage           | **-1** COPY + DB finalization             |
+| Edit keyd config             | —                      | **1** (collect-config)                    |
+| Add flatpak manifest         | —                      | **1** (collect-config)                    |
+| Change wrapper source        | build-wrappers         | **1**                                     |
+| Add system package           | —                      | **1** (dnf install layer)                 |
+| Change optional feature file | —                      | **1** (collect-config) + consolidated RUN |
 
-Using `FROM scratch` instead of `FROM base` solves the fundamental
-problem identified in the prepare audit:
+Every concern is O(1). The only shared layers are the DB finalization
+RUN (rebuilds when any external RPM changes) and the consolidated RUN
+(rebuilds when collect-config or any ARG changes).
 
-- `FROM base` + `COPY --from=collector / /` copies the **entire base
-  image** (~2-4GB), destroying the RPM database and bloating layers.
-- `FROM scratch` + `COPY --from=collector / /` copies **only the files
-  explicitly placed in the collector** — a clean overlay of config
-  files, typically a few hundred KB.
+## Layer Budget
 
-The tradeoff is no `RUN` capability in the collector (no shell). But
-config assembly is almost entirely COPY operations — the few `RUN`
-operations (chmod, symlinks, conditionals) consolidate into a single
-RUN in the `image` stage.
+| Layers  | What                                                                              |
+| ------- | --------------------------------------------------------------------------------- |
+| 1       | `RUN dnf install` (system packages only)                                          |
+| 1       | `RUN` tmpfiles + cleanup                                                          |
+| 3       | `COPY --link` per-package installs (code, edge, 1password)                        |
+| 1       | `RUN` RPM DB finalization                                                         |
+| 7       | `COPY --link` upstream (starship, lazygit, getnf, bibata, jbmono, keyd, whitesur) |
+| 1       | `COPY --link` collect-config                                                      |
+| 1       | `COPY --link` wrappers                                                            |
+| 1       | `RUN` consolidated post-overlay                                                   |
+| 1       | `RUN` fc-cache                                                                    |
+| 1       | `RUN` rpm snapshot                                                                |
+| **~18** | **Total**                                                                         |
 
-## Implementation Phases
+## Implementation
 
-### Phase 1: Hybrid Collector (High Impact)
+### Phase 1: `COPY --link` + RUN Consolidation
 
-Restructure `containerfile.rs` to emit:
+Add `--link` to all `COPY --from` instructions in the image stage.
+Fold the 6 optional-feature RUNs and the host-shims RUN into the
+existing consolidated RUN.
 
-1. **`emit_collect_config()`** — new function that emits the
-   `FROM scratch AS collect-config` stage with all static config COPYs
-2. **Refactored `emit_image_assembly()`** — the `image` stage now has:
-   - RPM COPYs + `dnf install` (inline, unchanged)
-   - `/opt` relocation + tmpfiles (inline, unchanged)
-   - Cleanup (inline, unchanged)
-   - Upstream COPYs (individual `COPY --from=fetch-*`, unchanged)
-   - `COPY --from=collect-config / /` (new — single config overlay)
-   - Consolidated `RUN` for chmod, symlinks, host shims, kernel args,
-     optional feature conditionals (new — replaces many individual RUNs)
-   - `fc-cache -f` (moved after all COPYs)
-   - `rpm -qa` snapshot (unchanged)
+**Generator changes**:
 
-The generator already controls the full Containerfile via
-`generate_full_containerfile()`, so this is a refactor of
-`emit_image_assembly` plus a new `emit_collect_config` called
-before it.
+- `emit_upstream_copies()`: add `--link` flag
+- `emit_consolidated_run()`: absorb optional feature conditionals
+  and host shim commands
+- `emit_optional_features()`: remove function; emit only `ARG`
+  declarations before the consolidated RUN
+- `emit_image_assembly()`: remove `emit_optional_features()` call
+  and HOST_SHIMS managed section emission
+- HOST_SHIMS: remove as a managed section; fold into consolidated
+  RUN. Use `bkt containerfile generate` to update shims.
 
-**Verification**: `bkt containerfile check` passes; `rpm -qa` diff
-between old and new image is empty; binary checksums match.
+**Verification**: `bkt containerfile check` passes. Build the image
+and confirm `rpm -qa` output matches the current image.
 
-### Phase 2: Per-Upstream Manifest Fragments (Future)
+### Phase 2: Per-Package RPM Install Stages
 
-Currently every fetch-\* stage copies the full `upstream/manifest.json`.
-A change to any upstream entry invalidates all fetch stages.
+Split external RPMs out of the monolithic `dnf install` into
+per-package install stages using `rpm -i --nodb --noscripts --nodeps`.
 
-Split into per-upstream fragments so each fetch stage only depends on
-its own entry. This is orthogonal to Phase 1 and can be done later.
+**Generator changes**:
 
-## Ordering Constraints
+- `emit_dl_stages()` → `emit_install_stages()`: each dl-\* stage
+  gains a `RUN rpm -i --nodb --noscripts --nodeps` step
+- `emit_rpm_collection()`: remove (no more `COPY --from=dl-* /rpms/`)
+- `emit_image_assembly()`: add per-package `COPY --link --from=install-*`
+  instructions, followed by a DB finalization `RUN`
+- System packages (`curl`, `gh`, `jq`, etc.) remain in a single
+  `RUN dnf install`
 
-The `COPY --from` order in the `image` stage matters for correctness:
+**Verification**: `rpm -qa` output identical. `rpm -V <package>` shows
+no verification failures. Wrapper binaries and `.desktop` files present.
 
-1. **RPM COPYs + dnf install** first — establishes package filesystem
-2. **`/opt` relocation + tmpfiles** — depends on RPM-installed files
-3. **Cleanup** — removes build artifacts
-4. **Upstream COPYs** — overlays binaries and fonts from fetch stages
-5. **`COPY --from=collect-config / /`** — overlays all static config
-   (highest priority — config wins over package defaults)
-6. **Consolidated RUN** — chmod, symlinks, host shims, kernel args,
-   optional feature conditionals (depends on files from all above)
-7. **`fc-cache -f`** — depends on RPM fonts + upstream fonts + fontconfig
-8. **`rpm -qa` snapshot** — captures final RPM state
+### Phase 3: Build Stage Consolidation
 
-## Edge Cases
+Modify multi-output build stages (keyd, whitesur, wrappers) to use
+`DESTDIR=/out` or equivalent staging roots, reducing multiple COPYs
+to a single `COPY --link --from=<stage> /out/ /`.
 
-### /opt Relocation
+**Generator changes**:
 
-The `/opt` relocation (`cp -a /opt/. /usr/lib/opt/`) depends on what
-RPMs installed into `/opt`. This stays inline in the `image` stage
-immediately after `dnf install`.
+- `emit_script_stages()`: add `DESTDIR=/out` for keyd and whitesur
+- `emit_upstream_copies()`: emit single COPY per consolidated stage
+- `emit_wrapper_build_stage()`: output to `/out/usr/bin/`
+- `emit_wrapper_copies()`: single `COPY --link --from=build-wrappers /out/ /`
 
-### fc-cache
+## Constraints
 
-`fc-cache -f` depends on both RPM-installed fonts and upstream fonts
-(from fetch stages) plus fontconfig rules (from collect-config). It
-runs in the `image` stage after all COPYs — this is the correct
-placement since it needs the complete font set.
-
-### Optional Feature Conditionals
-
-The `ARG ENABLE_*` + `RUN if [...]` pattern for optional features
-requires a shell. Since `collect-config` is `FROM scratch` (no shell),
-the conditional logic stays in the consolidated RUN in the `image`
-stage. The optional feature _files_ are staged to
-`/usr/share/bootc-optional/` by `collect-config`, and the consolidated
-RUN copies them to their final locations based on the ARG values.
-
-### RPM Version Snapshot
-
-`rpm -qa` must run in the final `image` stage after all COPYs, since
-it reflects the installed RPM state. This is the last instruction.
-
-### Host Shims
-
-The base64-decode-and-write pattern for host shims requires a shell
-(`echo ... | base64 -d > /path`). This stays in the consolidated RUN
-in the `image` stage, not in `collect-config`.
-
-### Systemd Enable Symlinks
-
-Creating symlinks like `ln -sf ... /usr/lib/systemd/system/multi-user.target.wants/`
-requires a shell. These stay in the consolidated RUN. Multiple services
-(keyd, bootc-apply) write to the same `multi-user.target.wants/`
-directory, so they must be in the same RUN to avoid conflicts.
-
-## Risks
-
-- **COPY --from overlay semantics**: `COPY --from=collect-config / /`
-  does a file-level merge, not a replace. Files from the collector
-  overwrite existing files at the same path, but deletions don't
-  propagate. This is fine — the collector only adds files.
-
-- **Layer size**: The `COPY --from=collect-config / /` produces one
-  layer instead of many small ones. This is actually better for
-  `bootc upgrade` since ostree works at the file level, not the layer
-  level. For registry pulls, larger layers compress better.
-
-- **Generator complexity**: `emit_image_assembly` is split into two
-  functions (`emit_collect_config` + refactored `emit_image_assembly`),
-  but each is simpler than the current monolith.
-
-- **FROM scratch limitations**: No RUN capability in `collect-config`.
-  All operations requiring a shell (chmod, symlinks, base64 decode,
-  conditionals) must be in the `image` stage's consolidated RUN.
+- `COPY --link` layers cannot see layers below them during build.
+  Fine for `COPY --from` since they copy from other stages.
+- `RUN` instructions cannot use `--link`. DB finalization,
+  consolidated setup, fc-cache, and rpm snapshot remain linear.
+- `collect-config` is `FROM scratch` — no `RUN` capability.
+- `/opt` relocation must happen inside each install stage, not in
+  the final image. `COPY --link` layers are computed in isolation
+  and cannot see the filesystem below them — a post-COPY `RUN`
+  would not find files placed by a linked COPY. Each install stage
+  that touches `/opt` relocates to `/usr/lib/opt/` before output.
+- `fc-cache` depends on RPM fonts + upstream fonts + fontconfig.
+  It runs after all COPYs.
+- `rpm -qa` snapshot must be last.
 
 ## Success Criteria
 
-- Image assembly stage has ~20 layers (down from 75)
-- Config-only changes rebuild ≤ 3 layers (collect-config COPY +
-  consolidated RUN + fc-cache)
+- A single-concern manifest change invalidates ≤ 2 layers
 - `bkt containerfile check` passes
-- `rpm -qa` output is identical to current image
-- CI build time is equal or faster (collect-config runs in parallel)
-
-## Non-Goals
-
-- Reducing the number of parallel pre-build stages (these are already
-  well-isolated)
-- Changing the base image or package selection
-- Modifying the `bkt-build` binary interface
-- Full collector approach (collect-rpms, collect-upstream) — blocked
-  by the `COPY / /` problem for stages that start `FROM base`
+- `rpm -qa` output identical to current image
+- CI build time equal or faster
+- `bootc upgrade` after a config-only change transfers minimal data

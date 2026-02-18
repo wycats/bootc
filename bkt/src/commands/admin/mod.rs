@@ -30,6 +30,7 @@
 //! See [RFC-0009](../../../docs/rfcs/0009-privileged-operations.md) for design details.
 
 mod bootc;
+mod daemon;
 mod kargs;
 mod systemctl;
 mod systemd;
@@ -40,6 +41,7 @@ use clap::{Args, Subcommand};
 use crate::pipeline::ExecutionPlan;
 
 pub use bootc::BootcAction;
+pub use daemon::DaemonAction;
 pub use kargs::KargsAction;
 pub use systemctl::SystemctlAction;
 pub use systemd::SystemdAction;
@@ -89,6 +91,15 @@ pub enum AdminAction {
         #[command(subcommand)]
         action: SystemdAction,
     },
+
+    /// Manage the host command daemon
+    ///
+    /// The daemon provides fast cross-boundary command execution for
+    /// distrobox containers, bypassing the D-Bus/host-spawn overhead.
+    Daemon {
+        #[command(subcommand)]
+        action: DaemonAction,
+    },
 }
 
 /// Execute an admin subcommand.
@@ -98,5 +109,6 @@ pub fn run(args: AdminArgs, plan: &ExecutionPlan) -> Result<()> {
         AdminAction::Systemctl { action } => systemctl::run(action, plan),
         AdminAction::Kargs { action } => action.execute(plan),
         AdminAction::Systemd { action } => action.execute(plan),
+        AdminAction::Daemon { action } => daemon::run(action, plan),
     }
 }

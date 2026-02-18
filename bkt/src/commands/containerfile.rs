@@ -10,8 +10,8 @@
 
 use crate::containerfile::{
     ContainerfileEditor, ContainerfileGeneratorInput, Section, generate_copr_repos,
-    generate_full_containerfile, generate_host_shims, generate_kernel_arguments,
-    generate_system_packages, generate_systemd_units,
+    generate_full_containerfile, generate_kernel_arguments, generate_system_packages,
+    generate_systemd_units,
 };
 use crate::manifest::image_config::ImageConfigManifest;
 use crate::manifest::system_config::SystemConfigManifest;
@@ -115,7 +115,6 @@ impl Plannable for ContainerfileSyncCommand {
         // Load manifests (read-only)
         let manifest = load_merged_manifest()?;
         let system_config = SystemConfigManifest::load()?;
-        let shims_manifest = load_merged_shims_manifest()?;
         let has_external_rpms = load_has_external_rpms()?;
 
         let mut section_updates = Vec::new();
@@ -160,16 +159,6 @@ impl Plannable for ContainerfileSyncCommand {
             Section::CoprRepos,
             generate_copr_repos(&repo_names),
             true,
-            &mut section_updates,
-            &mut warnings,
-        );
-
-        // HOST_SHIMS is optional - don't warn if missing
-        check_section(
-            &editor,
-            Section::HostShims,
-            generate_host_shims(&shims_manifest.shims),
-            false, // Don't warn if missing
             &mut section_updates,
             &mut warnings,
         );
@@ -420,12 +409,6 @@ fn load_merged_manifest() -> Result<SystemPackagesManifest> {
 }
 
 /// Load the merged shims manifest (repo + user)
-fn load_merged_shims_manifest() -> Result<ShimsManifest> {
-    let repo = ShimsManifest::load_repo()?;
-    let user = ShimsManifest::load_user()?;
-    Ok(ShimsManifest::merged(&repo, &user))
-}
-
 /// Check whether external-repos.json defines any repos (i.e. external RPMs exist).
 fn load_has_external_rpms() -> Result<bool> {
     let repo_path = crate::repo::find_repo_path()?;
