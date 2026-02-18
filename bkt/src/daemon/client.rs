@@ -77,6 +77,7 @@ impl DaemonClient {
 /// Execute a command via the daemon, falling back to direct execution if unavailable.
 ///
 /// This is the main entry point for daemon-accelerated execution.
+#[allow(dead_code)] // Will be used in Phase 2 (RFC-0049)
 pub fn execute_via_daemon(
     socket_path: &Path,
     argv: &[String],
