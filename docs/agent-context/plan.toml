@@ -5,7 +5,7 @@ exo_version = "0.1.0"
 [[epochs]]
 id = "01khsegrb7esbp21rxwxgxzr0w"
 title = "Foundation: Core Infrastructure"
-status = "active"
+status = "completed"
 ulid = "01KHSEGRB7ESBP21RXWXGXZR0W"
 
 [[epochs.phases]]
@@ -19,7 +19,7 @@ ulid = "01KHSEHQFY1HW6QAN97BETQKMR"
 [[epochs.phases]]
 id = "01khsehw15tncd68y8418z77qq"
 title = "Subsystem Infrastructure"
-status = "active"
+status = "completed"
 goals = []
 kind = "regular"
 ulid = "01KHSEHW15TNCD68Y8418Z77QQ"
@@ -27,13 +27,13 @@ ulid = "01KHSEHW15TNCD68Y8418Z77QQ"
 [[epochs]]
 id = "01khsegw3d3q25s8zwhbmcnqx4"
 title = "Daemon & Delegation"
-status = "pending"
+status = "active"
 ulid = "01KHSEGW3D3Q25S8ZWHBMCNQX4"
 
 [[epochs.phases]]
 id = "01khsej11vjjfxr3mmdejk6v1g"
 title = "Daemon PoC (RFC-0050 Phase 1)"
-status = "pending"
+status = "active"
 goals = []
 kind = "regular"
 ulid = "01KHSEJ11VJJFXR3MMDEJK6V1G"
