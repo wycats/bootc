@@ -1,12 +1,23 @@
 # RFC 0048: Persistent Host-Command Helper
 
-- **Status**: Draft
+- **Status**: Phase 1 Complete
 - **Created**: 2026-02-17
 - **Depends on**: RFC-0010 (Transparent Delegation), RFC-0046 (Test Performance)
+- **Next**: [RFC-0049](0049-daemon-production-hardening.md) (Production Hardening)
 
 ## Summary
 
 Spec out a persistent Unix socket-based daemon to replace the per-invocation D-Bus/host-spawn overhead when executing host commands from within a distrobox container. This addresses the ~120ms overhead per command that causes process explosion and OOM conditions during test runs.
+
+### Implementation Status
+
+| Phase                   | Status      | Notes                                               |
+| ----------------------- | ----------- | --------------------------------------------------- |
+| Phase 1: Protocol & PoC | ✅ Complete | Daemon works, ~4ms overhead                         |
+| Phase 2: Integration    | 🔜 Next     | See [RFC-0049](0049-daemon-production-hardening.md) |
+| Phase 3: Robustness     | Planned     |                                                     |
+| Phase 4: Optimization   | Planned     |                                                     |
+| Phase 5: systemd        | Planned     |                                                     |
 
 ---
 
@@ -346,46 +357,49 @@ Daemon Status: running
 
 ## 5. Implementation Phases
 
-### Phase 1: Protocol & Proof of Concept
+### Phase 1: Protocol & Proof of Concept ✅
 
 **Goal**: Validate the approach works for bkt delegation.
 
-1. Implement `bkt/src/daemon/protocol.rs`:
-   - Header struct (n_fds, n_argv, n_envp)
-   - Serialization/deserialization
-   - SCM_RIGHTS handling via `nix` crate
+**Status**: Complete (2026-02-17)
 
-2. Implement minimal server (`daemon/server.rs`):
-   - Listen on Unix socket
-   - Fork-exec on request
-   - Return exit status
+**Commits**:
 
-3. Implement minimal client (`daemon/client.rs`):
-   - Connect to socket
-   - Send request with fd passing
-   - Wait for response
+- `737dbea` - Initial daemon PoC
+- `91d4e63` - Optimize fork_exec with raw execve
 
-4. Add `bkt admin daemon run` command (foreground mode only)
+**Implementation**:
 
-5. Test manually:
+| Component             | File                                                               | Status |
+| --------------------- | ------------------------------------------------------------------ | ------ |
+| Protocol (SCM_RIGHTS) | [daemon/protocol.rs](../../bkt/src/daemon/protocol.rs)             | ✅     |
+| Server (fork_exec)    | [daemon/server.rs](../../bkt/src/daemon/server.rs)                 | ✅     |
+| Client                | [daemon/client.rs](../../bkt/src/daemon/client.rs)                 | ✅     |
+| CLI commands          | [commands/admin/daemon.rs](../../bkt/src/commands/admin/daemon.rs) | ✅     |
 
-   ```bash
-   # Terminal 1 (host)
-   bkt admin daemon run
+**Performance**:
 
-   # Terminal 2 (distrobox)
-   BKT_DAEMON_SOCKET=/run/user/1000/bkt/host.sock bkt status
-   ```
+- Daemon overhead: ~4ms (server-side fork_exec)
+- Total latency: ~100ms (dominated by bkt startup, not daemon)
 
-### Phase 2: Integration
+**Commands available**:
+
+```bash
+bkt admin daemon run     # Run daemon in foreground
+bkt admin daemon status  # Check if daemon is available
+bkt admin daemon test    # Test with `echo hello`
+```
+
+### Phase 2: Integration 🔜
 
 **Goal**: Make daemon usage transparent.
 
-1. Modify `delegate_to_host()` to try daemon first
-2. Add `bkt admin daemon start/stop/status`
-3. Add socket path detection logic
+**Status**: Planned — see [RFC-0049](0049-daemon-production-hardening.md) for detailed plan.
+
+1. Add `bkt admin daemon exec -- <cmd>` for arbitrary commands
+2. Modify `delegate_to_host()` to try daemon first
+3. Update shim generation to use daemon
 4. Add fallback to host-exec when daemon unavailable
-5. Add `--no-daemon` flag for debugging
 
 ### Phase 3: Robustness
 

@@ -153,16 +153,17 @@ pub fn recv_request(stream: &UnixStream) -> Result<(Request, [OwnedFd; 3])> {
         let mut fds: Option<[OwnedFd; 3]> = None;
         for cmsg in msg.cmsgs()? {
             if let ControlMessageOwned::ScmRights(received_fds) = cmsg
-                && received_fds.len() >= 3 {
-                    // SAFETY: We received these fds from the kernel via SCM_RIGHTS
-                    unsafe {
-                        fds = Some([
-                            OwnedFd::from_raw_fd(received_fds[0]),
-                            OwnedFd::from_raw_fd(received_fds[1]),
-                            OwnedFd::from_raw_fd(received_fds[2]),
-                        ]);
-                    }
+                && received_fds.len() >= 3
+            {
+                // SAFETY: We received these fds from the kernel via SCM_RIGHTS
+                unsafe {
+                    fds = Some([
+                        OwnedFd::from_raw_fd(received_fds[0]),
+                        OwnedFd::from_raw_fd(received_fds[1]),
+                        OwnedFd::from_raw_fd(received_fds[2]),
+                    ]);
                 }
+            }
         }
 
         (msg.bytes, fds)
