@@ -1,7 +1,7 @@
 //! Ephemeral manifest for tracking local-only changes.
 //!
 //! When `--local` is used, changes are recorded in an ephemeral manifest at
-//! `~/.local/share/bkt/ephemeral.json`. This manifest:
+//! `~/.local/state/bkt/ephemeral.json`. This manifest:
 //!
 //! 1. **Tracks all local-only changes** since last reboot
 //! 2. **Invalidates on reboot** (using `/proc/sys/kernel/random/boot_id`)
@@ -130,7 +130,7 @@ impl EphemeralChange {
 
 /// The ephemeral manifest tracking local-only changes.
 ///
-/// This manifest is stored at `~/.local/share/bkt/ephemeral.json` and is
+/// This manifest is stored at `~/.local/state/bkt/ephemeral.json` and is
 /// automatically invalidated when the boot ID changes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct EphemeralManifest {
@@ -156,12 +156,17 @@ impl EphemeralManifest {
     /// Path to the ephemeral manifest file.
     pub fn path() -> PathBuf {
         // Prefer $HOME for test isolation, fall back to BaseDirs
-        let data_dir = std::env::var("HOME")
+        let state_dir = std::env::var("XDG_STATE_HOME")
             .ok()
-            .map(|h| PathBuf::from(h).join(".local/share"))
-            .or_else(|| BaseDirs::new().map(|d| d.data_local_dir().to_path_buf()))
-            .unwrap_or_else(|| PathBuf::from(".local/share"));
-        data_dir.join("bkt").join("ephemeral.json")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var("HOME")
+                    .ok()
+                    .map(|h| PathBuf::from(h).join(".local/state"))
+            })
+            .or_else(|| BaseDirs::new().map(|d| d.home_dir().join(".local/state")))
+            .unwrap_or_else(|| PathBuf::from(".local/state"));
+        state_dir.join("bkt").join("ephemeral.json")
     }
 
     /// Read the current boot ID from the kernel.

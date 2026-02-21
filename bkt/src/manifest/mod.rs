@@ -21,7 +21,9 @@ pub mod image_config;
 pub mod parsers;
 pub mod shim;
 pub mod system_config;
+pub mod systemd_services;
 pub mod toolbox;
+pub mod try_pending;
 pub mod upstream;
 
 pub use appimage::*;
@@ -36,5 +38,7 @@ pub use flatpak::*;
 pub use gsetting::*;
 pub use homebrew::*;
 pub use shim::*;
+pub use systemd_services::*;
 pub use toolbox::*;
+pub use try_pending::*;
 pub use upstream::*;

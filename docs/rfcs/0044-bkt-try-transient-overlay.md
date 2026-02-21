@@ -1,8 +1,17 @@
-# RFC 0044: `bkt try` — Transient Overlay with Declarative Capture
+# RFC 0044: `bkt try` — Tier 1 Preview Mechanism
 
-## Status
+- **Status**: Draft
+- **Extends**: [RFC-0004](0004-bkt-admin.md) (Tier 1 — Image-Bound State)
 
-Draft
+## Summary
+
+`bkt try` provides **immediate preview of Tier 1 changes** while the normal
+pipeline (manifest → PR → CI build → bootc upgrade) runs in the background.
+It uses a transient `/usr` overlay that is lost on reboot, ensuring the system
+always converges to the declared image state.
+
+This is not a separate tier — it's a UX optimization that makes Tier 1 changes
+feel as immediate as Tier 2, while preserving the declarative model.
 
 ## Problem
 
@@ -99,7 +108,11 @@ bkt try <package>
   │   └─ Already unlocked → skip
   │   └─ Locked → unlock (mounts tmpfs overlay on /usr)
   │
-  ├─ Install: sudo dnf install -y <package>
+  ├─ Prepare: ensure runtime environment for package installation
+  │   └─ mkdir -p /var/lib/rpm-state (required for RPM scriptlets)
+  │
+  ├─ Install: sudo /usr/bin/dnf5 install -y <package>
+  │   └─ Bypasses Bazzite's dnf wrapper
   │   └─ Failure → report error, do NOT update manifest
   │   └─ Success → package is usable immediately
   │
@@ -148,6 +161,25 @@ manifest.
 
 ## Overlay Mechanics
 
+### Filesystem Topology
+
+On an atomic Linux system (Bazzite/bootc), the filesystem has distinct zones:
+
+| Path        | Mount Type             | Writable?                  | Persists Reboot? | Notes                      |
+| ----------- | ---------------------- | -------------------------- | ---------------- | -------------------------- |
+| `/`         | composefs              | ❌ No                      | N/A (immutable)  | Root filesystem from image |
+| `/usr`      | composefs (or overlay) | ❌ No (✅ with usroverlay) | ❌ No            | Where packages install     |
+| `/etc`      | btrfs subvol           | ✅ Yes                     | ✅ Yes           | System configuration       |
+| `/var`      | btrfs subvol           | ✅ Yes                     | ✅ Yes           | Variable data, logs, state |
+| `/var/home` | btrfs subvol           | ✅ Yes                     | ✅ Yes           | User home directories      |
+
+The key insight: **`/etc` and `/var` are always writable and persistent**, even
+when `/usr` is locked. This means:
+
+- Systemd unit enablement (symlinks in `/etc/systemd/system/`) persists
+- SELinux policy store (`/etc/selinux/targeted/active/`) is writable
+- Package state (`/var/lib/rpm-state/`) is writable
+
 ### `rpm-ostree usroverlay` (aka `ostree admin unlock`)
 
 - Mounts a **writable tmpfs** overlay on top of the composefs `/usr`
@@ -159,11 +191,48 @@ manifest.
 - Requires root (polkit rule already exists for wheel group)
 - Idempotent-ish: errors if already unlocked, but we can detect and skip
 
+### Environment Preparation
+
+RPM scriptlets expect certain directories to exist that may not be present on
+a fresh atomic system (since packages are normally installed during image build,
+not at runtime). Before running `dnf5 install`, `bkt try` must ensure:
+
+```bash
+# Required for RPM scriptlet state tracking
+mkdir -p /var/lib/rpm-state
+```
+
+Without this, packages with `%pre` scriptlets (especially SELinux policy packages
+like `*-selinux`) will fail with errors like:
+
+```
+cp: cannot create regular file '/var/lib/rpm-state/file_contexts': No such file or directory
+```
+
+The package files may still be extracted to `/usr`, but the scriptlet failure
+means the package won't be properly registered and post-install actions (like
+loading SELinux modules) won't run.
+
+### Bazzite-Specific: Bypassing the dnf Wrapper
+
+Bazzite ships a wrapper script at `/usr/bin/dnf` that blocks `install`/`remove`
+commands on the host (redirecting users to documentation). The wrapper passes
+through to `dnf5` inside containers.
+
+`bkt try` must call `/usr/bin/dnf5` directly to bypass this wrapper:
+
+```rust
+// NOT: Command::new("dnf")
+Command::new("/usr/bin/dnf5")
+    .args(["install", "-y", package])
+```
+
 ### What works in the overlay
 
-- `dnf install` — installs packages, creates files in `/usr`
+- `dnf5 install` — installs packages, creates files in `/usr`
 - Binaries are immediately available in `$PATH`
-- Systemd units can be enabled (symlinks land in overlay)
+- Systemd units can be enabled (symlinks land in `/etc`, which persists!)
+- SELinux modules can be loaded (policy store is in `/etc`)
 - Desktop entries appear after `update-desktop-database`
 
 ### What doesn't work
@@ -179,21 +248,53 @@ manifest.
   that already exists in the base image, the overlay version wins.
   This is usually fine but can cause confusion.
 
-## Relationship to Existing Tiers
+### Side Effects That Persist
 
-This fits naturally into the existing tier model:
+Because `/etc` and `/var` are always writable and persistent, some side effects
+of `bkt try` survive reboot even though the package itself is gone:
 
-| Tier         | Scope                   | Mechanism                  | Convergence                      |
-| ------------ | ----------------------- | -------------------------- | -------------------------------- |
-| Tier 1       | Image (immutable)       | Containerfile + bootc      | Reboot                           |
-| **Tier 1.5** | **Overlay (transient)** | **`bkt try` + usroverlay** | **Reboot (converges to Tier 1)** |
-| Tier 2       | User session            | flatpak, gsettings, shims  | Login / `bootc-bootstrap`        |
-| Tier 3       | Toolbox                 | distrobox, brew            | Immediate                        |
+| Side Effect           | Location                        | Persists? | Consequence                   |
+| --------------------- | ------------------------------- | --------- | ----------------------------- |
+| Systemd unit enabled  | `/etc/systemd/system/*.wants/`  | ✅ Yes    | Dangling symlink after reboot |
+| SELinux module loaded | `/etc/selinux/targeted/active/` | ✅ Yes    | Module remains (harmless)     |
+| Config files created  | `/etc/<package>/`               | ✅ Yes    | Orphaned config               |
+| State/cache files     | `/var/lib/<package>/`           | ✅ Yes    | Orphaned data                 |
 
-Tier 1.5 is a **preview layer** — it lets you experience a Tier 1
-change before it's baked into the image. The key property is that it
-always converges: the overlay is lost on reboot, and the image (built
-from the manifest change) takes over.
+This is generally harmless — systemd ignores dangling symlinks, SELinux modules
+for missing packages are inert, and orphaned config/data doesn't affect the system.
+However, `bkt try --status` should surface these artifacts for awareness.
+
+**Important:** If the user runs `bkt try <package>` and then decides NOT to merge
+the PR, they should run `bkt try --cleanup <package>` to remove the persistent
+side effects. (This is a Phase 2 feature.)
+
+## Relationship to the Tier Model
+
+The system has two tiers based on **change mechanism**:
+
+- **Tier 1** ([RFC-0004](0004-bkt-admin.md)): Image-bound state. Change requires
+  manifest → PR → CI build → bootc upgrade → reboot. No local modification possible.
+
+- **Tier 2** ([RFC-0007](0007-drift-detection.md)): Runtime-persistent state.
+  Change can happen locally, takes effect immediately, captured to manifest for
+  reproducibility.
+
+`bkt try` is **not a separate tier** — it's a **preview mechanism for Tier 1**.
+
+The state being modified (system packages in `/usr`) is Tier 1 state. The change
+mechanism is still Tier 1 (manifest → PR → build → upgrade). What `bkt try` adds
+is **immediate preview**: you can use the package now while the pipeline runs.
+
+| Aspect                 | Tier 1 (normal)      | Tier 1 (with `bkt try`)     | Tier 2          |
+| ---------------------- | -------------------- | --------------------------- | --------------- |
+| State location         | Image                | Image (+ transient overlay) | Runtime         |
+| Change mechanism       | PR → build → upgrade | PR → build → upgrade        | Local + capture |
+| Available immediately? | No                   | **Yes (preview)**           | Yes             |
+| Survives reboot?       | Yes (after upgrade)  | **No (until upgrade)**      | Yes             |
+
+The key property: `bkt try` **always converges to Tier 1**. The overlay is lost
+on reboot, and the image (built from the manifest change) takes over. If the PR
+is never merged, the system returns to its declared state on reboot.
 
 ## Safety Properties
 
@@ -217,41 +318,108 @@ from the manifest change) takes over.
    `bkt try --status` shows the full delta between overlay, manifest,
    and base image.
 
-## Open Questions
+## Design Decisions
 
-### 1. PR workflow for `bkt try`
+### PR Workflow
 
-Should `bkt try` create one PR per package, or batch multiple `try`
-invocations into a single PR?
+Multiple `bkt try` invocations within the same session accumulate into a single
+`try/*` branch and PR. A new terminal session starts a fresh branch. This
+balances audit clarity with avoiding PR noise when exploring multiple packages.
 
-**Option A:** One PR per `bkt try` invocation. Simple, clear audit trail.
-But could create PR noise if the user tries 5 packages in a row.
+```
+$ bkt try ripgrep
+→ PR #125 created: "feat(try): add ripgrep"
 
-**Option B:** Accumulate tries into a `try/*` branch, one PR updated
-with each new package. Cleaner, but more complex branch management.
+$ bkt try fd-find
+→ PR #125 updated: "feat(try): add ripgrep, fd-find"
 
-### 2. Polkit integration
+# Later, new session:
+$ bkt try strace
+→ PR #126 created: "feat(try): add strace"
+```
 
-`rpm-ostree usroverlay` and `dnf install` require root. The existing
-polkit rule (`50-bkt-admin.rules`) grants passwordless access for
-`bootc` and `rpm-ostree` to the wheel group. Should `dnf` be added
-to this rule, or should `bkt try` use a dedicated polkit action?
+### Privilege Escalation
 
-### 3. Memory budget for overlay
+`bkt try` uses `pkexec` for privileged operations, consistent with other `bkt admin`
+commands. A polkit rule (`50-bkt-try.rules`) grants wheel group members passwordless
+access to:
 
-Since the overlay is RAM-backed, should `bkt try` check available
-memory before installing and warn if the package is large?
+- `/usr/bin/rpm-ostree` (for `usroverlay`)
+- `/usr/bin/dnf5` (for package installation)
+- `/usr/bin/mkdir` (for creating `/var/lib/rpm-state`)
 
-### 4. Interaction with `bootc upgrade`
+The Bazzite dnf wrapper is bypassed by calling `/usr/bin/dnf5` directly.
 
-If `bootc upgrade` stages a new image while the overlay is active,
-does the overlay survive until reboot? (It should — the overlay is
-on the running deployment, not the staged one.) Need to verify.
+### Memory Budget
 
-### 5. Extension to non-RPM packages
+Before installing, `bkt try` queries the package download size via `dnf5 info`.
+If the package exceeds 100MB, a warning is displayed:
 
-Phase 3 proposes extending to upstream binaries. Should this also
-cover COPR repos (`bkt try --copr <repo> <package>`)?
+```
+⚠ cockpit-machines requires 450MB. The overlay is RAM-backed.
+  Continue? [y/N]
+```
+
+This prevents accidental RAM exhaustion from large packages.
+
+### Interaction with `bootc upgrade`
+
+**Verified empirically:** The overlay survives `bootc upgrade`. The upgrade
+stages a new deployment to be activated on reboot, but does not affect the
+running system. The overlay remains on the current deployment's `/usr` until
+reboot.
+
+This is the desired behavior: you can `bkt try`, the PR merges, CI builds,
+`bootc upgrade` stages the new image, and on reboot the overlay disappears
+but the package is now baked into the real image.
+
+### Persistent Side Effects
+
+`bkt try` tracks side effects in `~/.local/state/bkt/try-pending.json`:
+
+```json
+{
+  "cockpit": {
+    "installed_at": "2026-02-18T23:02:00Z",
+    "pr": 125,
+    "branch": "try/cockpit",
+    "services_enabled": ["cockpit.socket"],
+    "selinux_modules": ["cockpit"]
+  }
+}
+```
+
+This enables:
+
+- `bkt try --status` to show what's pending
+- `bkt try --cleanup <package>` to undo persistent artifacts if the PR is abandoned
+- Automatic cleanup prompts when a `try/*` PR is closed without merging
+
+### Service Enablement
+
+When a package ships a systemd unit with a matching name (e.g., `cockpit` →
+`cockpit.socket` or `cockpit.service`), `bkt try` offers to enable it:
+
+```
+$ bkt try cockpit
+→ Installing cockpit...
+✓ cockpit installed
+→ Found cockpit.socket. Enable it? [Y/n] y
+→ Enabling cockpit.socket...
+✓ cockpit.socket enabled (listening on :9090)
+→ Added cockpit to system-packages.json
+→ Added cockpit.socket (enabled) to systemd-services.json
+→ PR #125 created
+```
+
+The service enablement is also captured in the manifest, so the final image
+will have the service enabled by default.
+
+### COPR and Third-Party Repos
+
+COPR support is deferred to Phase 3. It adds complexity around repo enablement,
+GPG key trust, and manifest representation. For now, `bkt try` only supports
+packages from configured Fedora repos.
 
 ## Implementation Plan
 
@@ -259,15 +427,20 @@ cover COPR repos (`bkt try --copr <repo> <package>`)?
 
 1. Add `TryCommand` to `bkt/src/commands/`
 2. Implement overlay unlock (detect state, call `rpm-ostree usroverlay`)
-3. Implement `dnf install` via `CommandRunner`
-4. Manifest update + containerfile regeneration (existing infrastructure)
-5. PR creation (existing `bkt --pr` infrastructure)
-6. Polkit rule update if needed
+3. Implement environment preparation (`mkdir -p /var/lib/rpm-state`)
+4. Implement `dnf5 install` via direct `/usr/bin/dnf5` call (bypassing wrapper)
+5. Manifest update + containerfile regeneration (existing infrastructure)
+6. PR creation (existing `bkt --pr` infrastructure)
+7. Polkit rule update if needed
 
-### Phase 2: Status and visibility
+### Phase 2: Status and cleanup
 
 1. `bkt try --status` comparing overlay vs manifest vs base image
-2. Integration with `bkt status` dashboard
+2. `bkt try --cleanup <package>` to remove persistent side effects:
+   - Disable systemd units that were enabled
+   - Remove orphaned config in `/etc`
+   - Optionally remove SELinux modules
+3. Integration with `bkt status` dashboard
 
 ### Phase 3: Upstream binaries
 

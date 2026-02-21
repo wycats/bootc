@@ -57,6 +57,27 @@ trait Systemd1Manager {
         runtime: bool,
     ) -> zbus::Result<Vec<UnitFileSymlinkChange>>;
 
+    /// Mask unit files (link to /dev/null).
+    /// Returns Vec<(type, symlink_name, destination)>
+    fn mask_unit_files(
+        &self,
+        files: &[&str],
+        runtime: bool,
+        force: bool,
+    ) -> zbus::Result<Vec<UnitFileSymlinkChange>>;
+
+    /// Unmask unit files (remove /dev/null links).
+    /// Returns Vec<(type, symlink_name, destination)>
+    fn unmask_unit_files(
+        &self,
+        files: &[&str],
+        runtime: bool,
+    ) -> zbus::Result<Vec<UnitFileSymlinkChange>>;
+
+    /// Get the unit file state for a unit.
+    /// Returns: enabled, disabled, masked, static, etc.
+    fn get_unit_file_state(&self, unit: &str) -> zbus::Result<String>;
+
     /// Reload systemd daemon configuration.
     fn reload(&self) -> zbus::Result<()>;
 
@@ -291,6 +312,53 @@ impl SystemdManager {
             .context("Failed to reload systemd daemon")?;
 
         Ok(())
+    }
+
+    /// Mask a unit (prevent it from starting).
+    ///
+    /// Creates a symlink to /dev/null in /etc/systemd/system/.
+    pub fn mask(&self, unit: &str) -> Result<()> {
+        let name = Self::normalize_unit_name(unit);
+        let manager = self.manager()?;
+        manager
+            .mask_unit_files(&[name.as_str()], false, false)
+            .context(format!("Failed to mask unit: {}", name))?;
+
+        // Reload daemon to pick up changes
+        manager
+            .reload()
+            .context("Failed to reload systemd daemon")?;
+
+        Ok(())
+    }
+
+    /// Unmask a unit (allow it to start again).
+    ///
+    /// Removes the /dev/null symlink from /etc/systemd/system/.
+    pub fn unmask(&self, unit: &str) -> Result<()> {
+        let name = Self::normalize_unit_name(unit);
+        let manager = self.manager()?;
+        manager
+            .unmask_unit_files(&[name.as_str()], false)
+            .context(format!("Failed to unmask unit: {}", name))?;
+
+        // Reload daemon to pick up changes
+        manager
+            .reload()
+            .context("Failed to reload systemd daemon")?;
+
+        Ok(())
+    }
+
+    /// Get the unit file state for a unit.
+    ///
+    /// Returns the state as a string: "enabled", "disabled", "masked", "static", etc.
+    pub fn get_unit_file_state(&self, unit: &str) -> Result<String> {
+        let name = Self::normalize_unit_name(unit);
+        let manager = self.manager()?;
+        manager
+            .get_unit_file_state(&name)
+            .context(format!("Failed to get unit file state: {}", name))
     }
 
     /// Reload the systemd daemon (daemon-reload).

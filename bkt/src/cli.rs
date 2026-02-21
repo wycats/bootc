@@ -78,6 +78,9 @@ pub enum Commands {
     #[command(alias = "sys")]
     System(commands::system::SystemArgs),
 
+    /// Try transient overlay installs while capturing manifest changes
+    Try(commands::try_cmd::TryArgs),
+
     /// Development toolbox commands (shortcut for --context dev)
     Dev(commands::dev::DevArgs),
 
@@ -184,6 +187,7 @@ impl Commands {
             Commands::Profile(_) => CommandTarget::Host, // Reads system manifests, calls rpm
             Commands::Base(_) => CommandTarget::Host,   // Requires host rpm/rpm-ostree
             Commands::System(_) => CommandTarget::Host, // System/image operations
+            Commands::Try(_) => CommandTarget::Host,    // Try operates on host overlay
             Commands::Distrobox(_) => CommandTarget::Host, // Distrobox config is host-level
             Commands::AppImage(_) => CommandTarget::Host, // AppImages are host-level
             Commands::Fetchbin(_) => CommandTarget::Host, // Host binaries

@@ -1,0 +1,8 @@
+{
+  "$schema": "../schemas/systemd-services.schema.json",
+  "services": {
+    "tuned.service": "enabled",
+    "tuned-ppd.service": "enabled",
+    "power-profiles-daemon.service": "masked"
+  }
+}

@@ -1,0 +1,33 @@
+// bkt try: Passwordless transient overlay operations for wheel group
+//
+// Allows wheel users to run rpm-ostree usroverlay and dnf5 via pkexec
+// without prompting. This mirrors sudo access already granted to wheel.
+//
+// Installed by: Containerfile
+// See: docs/rfcs/0044-bkt-try-transient-overlay.md
+
+polkit.addRule(function(action, subject) {
+    if (action.id !== "org.freedesktop.policykit.exec") {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    if (!subject.isInGroup("wheel")) {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    var program = action.lookup("program");
+
+    if (program === "/usr/bin/rpm-ostree") {
+        return polkit.Result.YES;
+    }
+
+    if (program === "/usr/bin/dnf5") {
+        return polkit.Result.YES;
+    }
+
+    if (program === "/usr/bin/mkdir") {
+        return polkit.Result.YES;
+    }
+
+    return polkit.Result.NOT_HANDLED;
+});

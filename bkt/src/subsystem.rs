@@ -373,6 +373,7 @@ impl SubsystemRegistry {
                 Box::new(FlatpakSubsystem),
                 Box::new(DistroboxSubsystem),
                 Box::new(GsettingSubsystem),
+                Box::new(SystemdServicesSubsystem),
                 Box::new(ShimSubsystem),
                 Box::new(AppImageSubsystem),
                 Box::new(FetchbinSubsystem),
@@ -982,6 +983,114 @@ impl Manifest for GSettingsManifest {
 }
 
 // ----------------------------------------------------------------------------
+// Systemd Services Subsystem
+// ----------------------------------------------------------------------------
+
+use crate::dbus::SystemdManager;
+use crate::manifest::SystemdServicesManifest;
+
+/// Systemd services subsystem.
+pub struct SystemdServicesSubsystem;
+
+impl Subsystem for SystemdServicesSubsystem {
+    fn name(&self) -> &'static str {
+        "Systemd Services"
+    }
+
+    fn id(&self) -> &'static str {
+        "systemd-services"
+    }
+
+    fn phase(&self) -> ExecutionPhase {
+        ExecutionPhase::Configuration
+    }
+
+    fn tier(&self) -> SubsystemTier {
+        SubsystemTier::Convergent
+    }
+
+    fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
+        let system =
+            SystemdServicesManifest::load(&ctx.system_manifest_path("systemd-services.json"))?;
+        let user = SystemdServicesManifest::load(&ctx.user_manifest_path("systemd-services.json"))?;
+        Ok(Box::new(SystemdServicesManifest::merged(&system, &user)))
+    }
+
+    fn capture(&self, _ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
+        Ok(None)
+    }
+
+    fn sync(
+        &self,
+        _ctx: &PlanContext,
+        _config: &SubsystemConfig,
+    ) -> Result<Option<Box<dyn DynPlan>>> {
+        Ok(None)
+    }
+
+    fn drift(&self, ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
+        let system =
+            SystemdServicesManifest::load(&ctx.system_manifest_path("systemd-services.json"))?;
+        let user = SystemdServicesManifest::load(&ctx.user_manifest_path("systemd-services.json"))?;
+        let merged = SystemdServicesManifest::merged(&system, &user);
+
+        let manager = SystemdManager::new()?;
+        let mut report = DriftReport::default();
+
+        let mut services: Vec<_> = merged.services.iter().collect();
+        services.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+        for (service, expected_state) in services {
+            let expected = expected_state.as_str();
+            report.expected.push(format!("{} = {}", service, expected));
+
+            match manager.get_unit_file_state(service) {
+                Ok(actual) => {
+                    report.actual.push(format!("{} = {}", service, actual));
+                    if !expected_state.matches_systemd_state(&actual) {
+                        report.missing.push(format!(
+                            "{} (expected {}, actual {})",
+                            service, expected, actual
+                        ));
+                    }
+                }
+                Err(_) => {
+                    report.actual.push(format!("{} = <unknown>", service));
+                    report.missing.push(format!(
+                        "{} (expected {}, actual <unknown>)",
+                        service, expected
+                    ));
+                }
+            }
+        }
+
+        report.expected.sort();
+        report.actual.sort();
+        report.missing.sort();
+
+        Ok(Some(report))
+    }
+
+    fn supports_capture(&self) -> bool {
+        false
+    }
+
+    fn supports_sync(&self) -> bool {
+        false
+    }
+
+    fn supports_drift(&self) -> bool {
+        true
+    }
+}
+
+impl Manifest for SystemdServicesManifest {
+    fn to_json(&self) -> Result<String> {
+        Ok(serde_json::to_string_pretty(self)?)
+    }
+}
+
+// ----------------------------------------------------------------------------
 // Shim Subsystem
 // ----------------------------------------------------------------------------
 
@@ -1425,8 +1534,8 @@ mod tests {
         let registry = SubsystemRegistry::builtin();
         let all = registry.all();
 
-        // Should have all 9 subsystems
-        assert_eq!(all.len(), 9);
+        // Should have all 10 subsystems
+        assert_eq!(all.len(), 10);
 
         // Verify expected IDs
         let ids: Vec<_> = all.iter().map(|s| s.id()).collect();
@@ -1439,6 +1548,7 @@ mod tests {
         assert!(ids.contains(&"fetchbin"));
         assert!(ids.contains(&"homebrew"));
         assert!(ids.contains(&"system"));
+        assert!(ids.contains(&"systemd-services"));
     }
 
     #[test]
@@ -1457,6 +1567,7 @@ mod tests {
                 "system",
                 "extension",
                 "gsetting",
+                "systemd-services",
                 "shim",
             ]
         );
@@ -1491,7 +1602,7 @@ mod tests {
 
         // Exclude gsetting
         let selected = registry.filtered(None, &["gsetting"]);
-        assert_eq!(selected.len(), 8);
+        assert_eq!(selected.len(), 9);
 
         // Include extension but exclude it (exclude wins)
         let selected = registry.filtered(Some(&["extension"]), &["extension"]);
