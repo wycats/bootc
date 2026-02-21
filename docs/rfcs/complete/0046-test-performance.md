@@ -2,7 +2,7 @@
 
 ## Status
 
-**Complete** — Investigation led to [RFC-0050: Persistent Host-Command Helper](../0050-persistent-host-command-helper.md), which implements the daemon solution identified here.
+**Complete** — Investigation led to the daemon optimization in [RFC-0010: Transparent Command Delegation](../canon/0010-transparent-delegation.md#performance-optimization-host-command-daemon).
 
 ## Problem Statement
 

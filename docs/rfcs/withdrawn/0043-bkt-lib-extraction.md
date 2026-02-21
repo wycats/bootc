@@ -5,9 +5,9 @@
 
 ## Withdrawal Rationale
 
-This RFC proposed extracting bkt into a library with a `CommandRunner` trait to enable in-process testing. However, [RFC-0050: Persistent Host-Command Helper](../0050-persistent-host-command-helper.md) provides a simpler solution to the underlying performance problem:
+This RFC proposed extracting bkt into a library with a `CommandRunner` trait to enable in-process testing. However, the daemon optimization in [RFC-0010: Transparent Command Delegation](../canon/0010-transparent-delegation.md#performance-optimization-host-command-daemon) provides a simpler solution to the underlying performance problem:
 
-- **Daemon approach** (RFC-0050): Reduces cross-boundary latency from ~120ms to ~4ms by eliminating D-Bus overhead
+- **Daemon approach**: Reduces cross-boundary latency from ~120ms to ~4ms by eliminating D-Bus overhead
 - **Lib extraction** (this RFC): Would require significant refactoring for marginal additional gains
 
 The daemon solution addresses the root cause (D-Bus/podman overhead) without requiring architectural changes to bkt. The lib extraction remains a valid future optimization but is no longer necessary for the immediate performance goals.

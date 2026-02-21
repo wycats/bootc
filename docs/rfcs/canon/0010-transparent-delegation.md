@@ -1,10 +1,11 @@
 # RFC-0010: Transparent Command Delegation
 
-- **Status**: Implemented
+- **Status**: Implemented (daemon optimization in progress)
 - **Created**: 2026-01-05
 - **Updated**: 2026-02-20
 - **Depends on**: RFC-0009 (Privileged Operations)
 - **Related**: [RFC-0017](../0017-distrobox-integration.md) (Distrobox Integration)
+- **Absorbs**: RFC-0050 (Persistent Host-Command Helper)
 
 > **✅ This RFC is implemented.**
 >
@@ -21,6 +22,7 @@
 > - `BKT_DELEGATED=1` prevents recursion when `bkt` is exported as a distrobox shim
 > - `Status`, `Doctor`, `Profile`, `Base` are **Host** (not Either) — they read system manifests
 > - See [RFC-0017](../0017-distrobox-integration.md) for why `bkt` must be excluded from distrobox exports
+> - **Daemon optimization** (Phase 1 complete): See [Performance Optimization](#performance-optimization-host-command-daemon)
 
 ## Summary
 
@@ -529,6 +531,121 @@ This RFC introduces:
 
 The result: all `bkt` commands work identically from host or toolbox, without
 users needing to think about `flatpak-spawn`.
+
+---
+
+## Performance Optimization: Host-Command Daemon
+
+> **Status**: Phase 1 Complete (daemon works, ~4ms overhead)
+>
+> This section was consolidated from RFC-0050 (Persistent Host-Command Helper).
+
+### The Problem
+
+The `flatpak-spawn --host` delegation path has ~120ms overhead per invocation:
+
+```
+bkt (container)
+  → flatpak-spawn --host
+    → D-Bus session bus
+      → org.freedesktop.Flatpak.Development.HostCommand
+        → bkt (host)
+```
+
+This causes process explosion and OOM conditions during test runs (see
+[RFC-0046](../complete/0046-test-performance.md) for the investigation).
+
+### The Solution: Unix Socket Daemon
+
+A persistent daemon on the host accepts commands via Unix socket, bypassing
+D-Bus entirely:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              HOST                                        │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  bkt admin daemon run                                            │    │
+│  │  - Listens on $XDG_RUNTIME_DIR/bkt/host.sock                     │    │
+│  │  - Accepts connections, forks, execs requested command           │    │
+│  │  - Returns exit status                                           │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                              ↑                                           │
+│                              │ Unix socket (bind-mounted into container) │
+│                              ↓                                           │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  DISTROBOX (bootc-dev)                                           │    │
+│  │  - bkt detects daemon socket exists                              │    │
+│  │  - Sends command request via socket                              │    │
+│  │  - Waits for exit status                                         │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Measured overhead**: ~4ms (vs ~120ms for D-Bus path).
+
+### Implementation Status
+
+| Phase                   | Status      | Notes                       |
+| ----------------------- | ----------- | --------------------------- |
+| Phase 1: Protocol & PoC | ✅ Complete | Daemon works, ~4ms overhead |
+| Phase 2: Integration    | 🔜 Next     | delegate_to_host() + shims  |
+| Phase 3: Robustness     | Planned     | Timeouts, graceful shutdown |
+| Phase 4: Optimization   | Planned     | Benchmarks, keep-alive      |
+| Phase 5: systemd        | Planned     | Auto-start on login         |
+
+### Module Structure
+
+```
+bkt/src/daemon/
+├── mod.rs          # Public API: socket_path(), daemon_available()
+├── protocol.rs     # Wire format (header, SCM_RIGHTS for fd passing)
+├── server.rs       # Host-side daemon (fork_exec)
+└── client.rs       # Container-side client
+```
+
+### Commands
+
+```bash
+bkt admin daemon run     # Run daemon in foreground
+bkt admin daemon status  # Check if daemon is available
+bkt admin daemon test    # Test with `echo hello`
+```
+
+### Phase 2: Integration Plan
+
+When Phase 2 is implemented, `delegate_to_host()` will try the daemon first:
+
+```rust
+fn delegate_to_host() -> Result<()> {
+    // Try fast path: daemon socket
+    if daemon::daemon_available() {
+        Output::info("Delegating to host via daemon...");
+        return delegate_via_daemon();
+    }
+
+    // Fall back to slow path: flatpak-spawn
+    Output::info("Delegating to host via flatpak-spawn...");
+    delegate_via_flatpak_spawn()
+}
+```
+
+Shims generated by `bkt shim` will also use the daemon when available:
+
+```bash
+#!/bin/bash
+if [[ -S "${XDG_RUNTIME_DIR}/bkt/host.sock" ]]; then
+    exec bkt admin daemon exec -- {command} "$@"
+else
+    exec flatpak-spawn --host {command} "$@"
+fi
+```
+
+### Why Host-Side Daemon?
+
+1. **Socket visibility**: `$XDG_RUNTIME_DIR` is bind-mounted into distrobox
+2. **No double-crossing**: Container connects directly to host daemon
+3. **Same security model**: Daemon runs as same user, no privilege escalation
+4. **Matches existing pattern**: Similar to D-Bus session bus architecture
 
 ---
 
