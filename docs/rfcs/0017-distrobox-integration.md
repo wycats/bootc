@@ -1,9 +1,9 @@
 # RFC 0017: Distrobox Integration and Exported Shims
 
-- Feature Name: `distrobox_integration`
-- Start Date: 2026-01-20
-- RFC PR: (leave this empty until PR is opened)
-- Tracking Issue: (leave this empty)
+- **Status**: Implemented
+- **Created**: 2026-01-20
+- **Updated**: 2026-02-20
+- **Related**: [RFC-0010](canon/0010-transparent-delegation.md) (Transparent Delegation)
 
 ## Summary
 
@@ -80,6 +80,7 @@ bkt treats `distrobox.ini` as the native state in the same way it treats gsettin
       "bins": {
         "from": ["~/.cargo/bin", "~/.proto/shims"],
         "also": ["/usr/local/bin/nu", "~/.proto/bin/proto"],
+        "exclude": ["bkt"],
         "to": "~/.local/bin/distrobox"
       },
       "init_hooks": ["rustup default stable", "rustup update stable"],
@@ -91,6 +92,28 @@ bkt treats `distrobox.ini` as the native state in the same way it treats gsettin
   }
 }
 ```
+
+### Binary Exclusions
+
+The `bins.exclude` array lists binary names that should **not** be exported, even if they exist in `bins.from` directories. This is critical for tools that have their own delegation logic.
+
+**Why `bkt` must be excluded:**
+
+When `bkt` is exported as a distrobox shim, running `bkt status` from the host triggers this chain:
+
+1. Host shell finds `~/.local/bin/distrobox/bkt` (the shim)
+2. Shim runs `distrobox enter bootc-dev -- bkt status`
+3. Inside container, `bkt` detects it's in a toolbox and the command targets Host
+4. `bkt` delegates via `flatpak-spawn --host bkt status`
+5. Host shell finds `~/.local/bin/distrobox/bkt` again → **infinite loop**
+
+The `BKT_DELEGATED=1` env var (see [RFC-0010](canon/0010-transparent-delegation.md)) prevents the loop, but the cleaner solution is to exclude `bkt` from exports entirely. Tools with their own container↔host delegation logic should not be wrapped in distrobox shims.
+
+**General rule**: Any binary that:
+- Detects container environment and delegates to host, OR
+- Has special host-only requirements (polkit, systemctl, etc.)
+
+...should be added to `bins.exclude`.
 
 ### Generated `distrobox.ini`
 

@@ -1,28 +1,32 @@
 # RFC-0010: Transparent Command Delegation
 
-- **Status**: Accepted
+- **Status**: Implemented
 - **Created**: 2026-01-05
+- **Updated**: 2026-02-20
 - **Depends on**: RFC-0009 (Privileged Operations)
+- **Related**: [RFC-0017](../0017-distrobox-integration.md) (Distrobox Integration)
 
-> **✅ This RFC is being implemented.**
+> **✅ This RFC is implemented.**
 >
-> The `bkt` binary is bind-mounted into distrobox containers via `~/.local/bin`.
 > When a host-only command (like `bkt status`) runs inside a container, it
-> automatically re-executes on the host via `distrobox-host-exec`.
+> automatically re-executes on the host via `flatpak-spawn --host`.
 >
-> This supersedes [RFC-0018: Host-Only Shims](0018-host-only-shims.md), which
+> This supersedes [RFC-0018: Host-Only Shims](../withdrawn/0018-host-only-shims.md), which
 > proposed a different approach that was never implemented.
 >
-> **Implementation Notes (2026-02-03):**
-> - Use `distrobox-host-exec` (documented distrobox mechanism), not `flatpak-spawn --host`
+> **Implementation Notes (2026-02-20):**
+> - Use `flatpak-spawn --host --env=BKT_DELEGATED=1` (not `distrobox-host-exec`)
+>   - `distrobox-host-exec` doesn't forward env vars; `flatpak-spawn --env=` does
+>   - This is the underlying mechanism distrobox uses anyway (via host-spawn → D-Bus)
+> - `BKT_DELEGATED=1` prevents recursion when `bkt` is exported as a distrobox shim
 > - `Status`, `Doctor`, `Profile`, `Base` are **Host** (not Either) — they read system manifests
-> - `Dnf` command doesn't exist (superseded by RFC-0020 → `bkt dev` and `bkt system`)
+> - See [RFC-0017](../0017-distrobox-integration.md) for why `bkt` must be excluded from distrobox exports
 
 ## Summary
 
 Commands that must run on the host should work identically from both the host
 and the toolbox. When run from the toolbox, `bkt` automatically delegates to
-the host via `distrobox-host-exec`.
+the host via `flatpak-spawn --host`.
 
 This RFC defines a **CommandTarget** enum and early delegation mechanism that
 makes this transparent to both users and command implementations.
@@ -242,21 +246,26 @@ fn maybe_delegate(cli: &Cli) -> Result<()> {
 ### 4. Delegation Functions
 
 ```rust
-/// Delegate the current command to the host via distrobox-host-exec.
+/// Delegate the current command to the host via flatpak-spawn.
 ///
-/// distrobox-host-exec is the documented mechanism for running host commands
-/// from within a distrobox container. It's more reliable than flatpak-spawn
-/// which may not be available in all container configurations.
+/// We use `flatpak-spawn --host` directly instead of `distrobox-host-exec` because:
+/// 1. It's the underlying mechanism distrobox uses anyway (via host-spawn → D-Bus)
+/// 2. It supports `--env=VAR=VALUE` to pass environment variables to the host
+/// 3. distrobox-host-exec doesn't forward env vars set via Command::env()
+///
+/// The `BKT_DELEGATED=1` env var prevents recursion when bkt is exported as a
+/// distrobox shim (see RFC-0017 for why bkt must be excluded from exports).
 fn delegate_to_host() -> Result<()> {
     Output::info("Delegating to host...");
 
     let args: Vec<String> = std::env::args().collect();
-    let status = std::process::Command::new("distrobox-host-exec")
+    let status = std::process::Command::new("flatpak-spawn")
+        .arg("--host")
+        .arg("--env=BKT_DELEGATED=1")
         .arg("bkt")
         .args(&args[1..])  // Skip argv[0] (the current binary path)
-        .env("BKT_DELEGATED", "1")  // Prevent recursion
         .status()
-        .context("Failed to execute distrobox-host-exec")?;
+        .context("Failed to execute flatpak-spawn --host")?;
 
     // Exit with the same code as the delegated command
     std::process::exit(status.code().unwrap_or(1));
@@ -350,7 +359,7 @@ fn maybe_delegate(cli: &Cli) -> Result<()> {
     match (runtime, target) {
         (RuntimeEnvironment::Toolbox, CommandTarget::Host) => {
             if cli.dry_run {
-                Output::dry_run("Would delegate to host: distrobox-host-exec bkt ...");
+                Output::dry_run("Would delegate to host: flatpak-spawn --host bkt ...");
                 // Continue to show the rest of the dry-run output
                 return Ok(());
             }
