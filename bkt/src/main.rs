@@ -67,17 +67,24 @@ fn maybe_delegate(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-/// Delegate the current command to the host via distrobox-host-exec.
+/// Delegate the current command to the host via flatpak-spawn.
+///
+/// We use `flatpak-spawn --host` directly instead of `distrobox-host-exec` because:
+/// 1. It's the underlying mechanism distrobox uses anyway (via host-spawn)
+/// 2. It supports `--env=VAR=VALUE` to pass environment variables to the host
+/// 3. distrobox-host-exec doesn't forward env vars set via Command::env()
 fn delegate_to_host() -> Result<()> {
     output::Output::info("Delegating to host...");
 
     let args: Vec<String> = std::env::args().collect();
-    let status = std::process::Command::new("distrobox-host-exec")
+
+    let status = std::process::Command::new("flatpak-spawn")
+        .arg("--host")
+        .arg("--env=BKT_DELEGATED=1")
         .arg("bkt")
         .args(&args[1..]) // Skip argv[0] (the current binary path)
-        .env("BKT_DELEGATED", "1") // Prevent recursion
         .status()
-        .context("Failed to execute distrobox-host-exec")?;
+        .context("Failed to execute flatpak-spawn --host")?;
 
     // Exit with the same code as the delegated command
     std::process::exit(status.code().unwrap_or(1));
@@ -129,6 +136,7 @@ fn main() -> Result<()> {
         Commands::Apply(args) => commands::apply::run(args, &plan),
         Commands::Capture(args) => commands::capture::run(args, &plan),
         Commands::System(args) => commands::system::run(args, &plan),
+        Commands::Try(args) => commands::try_cmd::run(args, &plan),
         Commands::Dev(args) => commands::dev::run(args, &plan),
         Commands::Flatpak(args) => commands::flatpak::run(args, &plan),
         Commands::Distrobox(args) => commands::distrobox::run(args, &plan),

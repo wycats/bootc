@@ -9,8 +9,16 @@ use predicates::prelude::*;
 use std::os::unix::fs::PermissionsExt;
 
 /// Get bkt command for testing.
+///
+/// Sets `BKT_FORCE_HOST=1` to bypass host delegation, ensuring tests run
+/// deterministically regardless of whether they execute in a container/toolbox.
+///
+/// Tests that modify state (ephemeral manifest, shims, etc.) should create their
+/// own `TempDir` and set `HOME` via `.env("HOME", temp.path())` for isolation.
 fn bkt() -> Command {
-    cargo_bin_cmd!("bkt")
+    let mut cmd = cargo_bin_cmd!("bkt");
+    cmd.env("BKT_FORCE_HOST", "1");
+    cmd
 }
 
 // ============================================================================
@@ -885,7 +893,7 @@ fn local_path_shows_path() {
         .args(["local", "path"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(".local/share/bkt/ephemeral.json"));
+        .stdout(predicate::str::contains(".local/state/bkt/ephemeral.json"));
 }
 
 #[test]
