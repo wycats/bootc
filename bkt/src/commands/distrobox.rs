@@ -160,6 +160,7 @@ struct ContainerApplyPlan {
     name: String,
     bins_from: Vec<String>,
     bins_also: Vec<String>,
+    bins_exclude: Vec<String>,
     bins_to: String,
 }
 
@@ -193,6 +194,7 @@ impl Plannable for DistroboxSyncCommand {
                 name: name.clone(),
                 bins_from: container.bins.from.clone(),
                 bins_also: container.bins.also.clone(),
+                bins_exclude: container.bins.exclude.clone(),
                 bins_to: container
                     .bins
                     .to
@@ -271,6 +273,16 @@ impl Plan for DistroboxSyncPlan {
                 let expanded_dir = expand_home(dir);
                 let bins = list_bins_in_dir(&container.name, &expanded_dir, dir)?;
                 for bin in bins {
+                    // Extract binary name from path for exclusion check
+                    let bin_name = Path::new(&bin)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(&bin);
+                    // Skip excluded binaries (e.g., bkt has its own delegation logic)
+                    if container.bins_exclude.iter().any(|e| e == bin_name) {
+                        Output::info(format!("Skipping '{}' (excluded from export).", bin_name));
+                        continue;
+                    }
                     Output::info(format!("Exporting '{}' from '{}'.", bin, container.name));
                     run_export(&container.name, &bin, &container.bins_to)?;
                 }
@@ -282,6 +294,15 @@ impl Plan for DistroboxSyncPlan {
             }
 
             for bin in &container.bins_also {
+                // Extract binary name from path for exclusion check
+                let bin_name = Path::new(bin)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(bin);
+                if container.bins_exclude.iter().any(|e| e == bin_name) {
+                    Output::info(format!("Skipping '{}' (excluded from export).", bin));
+                    continue;
+                }
                 Output::info(format!("Exporting '{}' from '{}'.", bin, container.name));
                 run_export(&container.name, bin, &container.bins_to)?;
                 report.record_success_and_notify(
@@ -683,6 +704,9 @@ impl Plannable for DistroboxCaptureCommand {
             if let Some(existing) = existing_manifest.containers.get(name) {
                 if !existing.bins.from.is_empty() {
                     container.bins.from = existing.bins.from.clone();
+                }
+                if !existing.bins.exclude.is_empty() {
+                    container.bins.exclude = existing.bins.exclude.clone();
                 }
                 if container.bins.to.is_none() {
                     container.bins.to = existing.bins.to.clone();

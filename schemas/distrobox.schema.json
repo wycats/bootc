@@ -30,6 +30,13 @@
             "type": "string"
           }
         },
+        "exclude": {
+          "description": "Binary names to exclude from export (e.g., binaries with their own delegation logic)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "from": {
           "description": "Directories to export all binaries from (absolute or ~ paths)",
           "type": "array",

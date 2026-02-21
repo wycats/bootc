@@ -18,6 +18,10 @@ pub struct DistroboxBins {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub also: Vec<String>,
 
+    /// Binary names to exclude from export (e.g., binaries with their own delegation logic)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude: Vec<String>,
+
     /// Path to export binaries to (default: ~/.local/bin)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<String>,
@@ -26,6 +30,11 @@ pub struct DistroboxBins {
 impl DistroboxBins {
     pub fn is_empty(&self) -> bool {
         self.from.is_empty() && self.also.is_empty() && self.to.is_none()
+    }
+
+    /// Check if a binary name should be excluded from export.
+    pub fn is_excluded(&self, name: &str) -> bool {
+        self.exclude.iter().any(|e| e == name)
     }
 }
 
