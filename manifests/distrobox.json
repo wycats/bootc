@@ -3,19 +3,10 @@
   "containers": {
     "bootc-dev": {
       "image": "ghcr.io/wycats/bootc-toolbox:latest",
-      "packages": [
-        "gcc",
-        "libatomic"
-      ],
+      "packages": ["gcc", "libatomic"],
       "bins": {
-        "from": [
-          "~/.cargo/bin",
-          "~/.proto/shims"
-        ],
-        "also": [
-          "/usr/local/bin/nu",
-          "~/.proto/bin/proto"
-        ],
+        "from": ["~/.cargo/bin", "~/.proto/shims"],
+        "also": ["/usr/local/bin/nu", "~/.proto/bin/proto"],
         "to": "~/.local/bin/distrobox"
       },
       "init_hooks": [
@@ -26,11 +17,7 @@
       "pull": true,
       "init": false,
       "root": false,
-      "path": [
-        "~/.local/bin",
-        "~/.local/bin/distrobox",
-        "$PATH"
-      ]
+      "path": ["~/.local/bin", "~/.local/bin/distrobox", "$PATH"]
     }
   }
 }

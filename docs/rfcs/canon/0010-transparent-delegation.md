@@ -16,6 +16,7 @@
 > proposed a different approach that was never implemented.
 >
 > **Implementation Notes (2026-02-20):**
+>
 > - Use `flatpak-spawn --host --env=BKT_DELEGATED=1` (not `distrobox-host-exec`)
 >   - `distrobox-host-exec` doesn't forward env vars; `flatpak-spawn --env=` does
 >   - This is the underlying mechanism distrobox uses anyway (via host-spawn → D-Bus)
@@ -92,35 +93,35 @@ you clearly want Host context—you just happen to be _in_ a toolbox.
 
 Each command has a natural target:
 
-| Command           | Target     | Notes                                    |
-| ----------------- | ---------- | ---------------------------------------- |
-| `bkt flatpak *`   | **Host**   | Flatpaks are installed on host           |
-| `bkt extension *` | **Host**   | GNOME extensions are host-level          |
-| `bkt gsetting *`  | **Host**   | GSettings are host-level                 |
-| `bkt shim *`      | **Host**   | Shims enable host→toolbox bridging       |
-| `bkt capture`     | **Host**   | Reads host state                         |
-| `bkt apply`       | **Host**   | Applies to host                          |
-| `bkt status`      | **Host**   | Reads system manifests in /usr/share     |
-| `bkt doctor`      | **Host**   | Validates host toolchains and paths      |
-| `bkt profile`     | **Host**   | Reads system manifests, calls rpm        |
-| `bkt base`        | **Host**   | Requires host rpm/rpm-ostree             |
-| `bkt system *`    | **Host**   | System/image-level operations            |
-| `bkt distrobox *` | **Host**   | Distrobox config is host-level           |
-| `bkt appimage *`  | **Host**   | AppImages are host-level (GearLever)     |
-| `bkt fetchbin *`  | **Host**   | Host binaries                            |
-| `bkt homebrew *`  | **Host**   | Linuxbrew is host-level                  |
-| `bkt dev *`       | **Dev**    | Toolbox operations                       |
-| `bkt admin bootc` | **Host**   | Already delegates correctly              |
-| `bkt drift`       | **Either** | Only reads local state file              |
-| `bkt schema`      | **Either** | Pure utility                             |
-| `bkt completions` | **Either** | Pure utility                             |
-| `bkt repo`        | **Either** | Works on repo files                      |
-| `bkt upstream`    | **Either** | Works on repo files                      |
-| `bkt changelog`   | **Either** | Works on repo files                      |
-| `bkt skel`        | **Either** | Works on user files                      |
-| `bkt buildinfo`   | **Either** | Read-only info                           |
-| `bkt containerfile` | **Either** | Ephemeral manifest                     |
-| `bkt local`       | **Either** | Manifest editing                         |
+| Command             | Target     | Notes                                |
+| ------------------- | ---------- | ------------------------------------ |
+| `bkt flatpak *`     | **Host**   | Flatpaks are installed on host       |
+| `bkt extension *`   | **Host**   | GNOME extensions are host-level      |
+| `bkt gsetting *`    | **Host**   | GSettings are host-level             |
+| `bkt shim *`        | **Host**   | Shims enable host→toolbox bridging   |
+| `bkt capture`       | **Host**   | Reads host state                     |
+| `bkt apply`         | **Host**   | Applies to host                      |
+| `bkt status`        | **Host**   | Reads system manifests in /usr/share |
+| `bkt doctor`        | **Host**   | Validates host toolchains and paths  |
+| `bkt profile`       | **Host**   | Reads system manifests, calls rpm    |
+| `bkt base`          | **Host**   | Requires host rpm/rpm-ostree         |
+| `bkt system *`      | **Host**   | System/image-level operations        |
+| `bkt distrobox *`   | **Host**   | Distrobox config is host-level       |
+| `bkt appimage *`    | **Host**   | AppImages are host-level (GearLever) |
+| `bkt fetchbin *`    | **Host**   | Host binaries                        |
+| `bkt homebrew *`    | **Host**   | Linuxbrew is host-level              |
+| `bkt dev *`         | **Dev**    | Toolbox operations                   |
+| `bkt admin bootc`   | **Host**   | Already delegates correctly          |
+| `bkt drift`         | **Either** | Only reads local state file          |
+| `bkt schema`        | **Either** | Pure utility                         |
+| `bkt completions`   | **Either** | Pure utility                         |
+| `bkt repo`          | **Either** | Works on repo files                  |
+| `bkt upstream`      | **Either** | Works on repo files                  |
+| `bkt changelog`     | **Either** | Works on repo files                  |
+| `bkt skel`          | **Either** | Works on user files                  |
+| `bkt buildinfo`     | **Either** | Read-only info                       |
+| `bkt containerfile` | **Either** | Ephemeral manifest                   |
+| `bkt local`         | **Either** | Manifest editing                     |
 
 ## Design
 
@@ -669,17 +670,14 @@ revealed that such a trait would not be beneficial.
 ### Key Findings
 
 1. **Inconsistent `ExecutionPlan` usage**:
-
    - 8 commands receive `&ExecutionPlan` but 4 mark it `_plan` (unused)
    - 10 commands don't take `ExecutionPlan` at all
 
 2. **`Plannable` trait is underutilized**:
-
    - Only `apply` and `capture` fully embrace it
    - Domain commands use it for sync/capture but not add/remove/list
 
 3. **Domain validation is inconsistent**:
-
    - Some commands call `validate_domain()`, others don't
    - This is intentional: read-only commands don't need validation
 

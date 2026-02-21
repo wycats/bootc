@@ -13,11 +13,15 @@ use std::os::unix::fs::PermissionsExt;
 /// Sets `BKT_FORCE_HOST=1` to bypass host delegation, ensuring tests run
 /// deterministically regardless of whether they execute in a container/toolbox.
 ///
+/// Clears `XDG_STATE_HOME` so that tests setting `HOME` get proper isolation
+/// for the ephemeral manifest (which checks `XDG_STATE_HOME` before `HOME`).
+///
 /// Tests that modify state (ephemeral manifest, shims, etc.) should create their
 /// own `TempDir` and set `HOME` via `.env("HOME", temp.path())` for isolation.
 fn bkt() -> Command {
     let mut cmd = cargo_bin_cmd!("bkt");
     cmd.env("BKT_FORCE_HOST", "1");
+    cmd.env_remove("XDG_STATE_HOME");
     cmd
 }
 

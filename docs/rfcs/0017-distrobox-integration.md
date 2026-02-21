@@ -110,6 +110,7 @@ When `bkt` is exported as a distrobox shim, running `bkt status` from the host t
 The `BKT_DELEGATED=1` env var (see [RFC-0010](canon/0010-transparent-delegation.md)) prevents the loop, but the cleaner solution is to exclude `bkt` from exports entirely. Tools with their own container↔host delegation logic should not be wrapped in distrobox shims.
 
 **General rule**: Any binary that:
+
 - Detects container environment and delegates to host, OR
 - Has special host-only requirements (polkit, systemctl, etc.)
 

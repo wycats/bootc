@@ -4,6 +4,7 @@ use tracing_subscriber::EnvFilter;
 
 use bkt::commands;
 use bkt::context;
+use bkt::daemon;
 use bkt::output;
 use bkt::pipeline;
 use bkt::{Cli, Commands};
@@ -67,14 +68,55 @@ fn maybe_delegate(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-/// Delegate the current command to the host via flatpak-spawn.
+/// Delegate the current command to the host.
+///
+/// Tries the daemon socket first (fast path, ~4ms), falls back to
+/// flatpak-spawn --host (slow path, ~120ms) if daemon is unavailable.
+fn delegate_to_host() -> Result<()> {
+    // Try fast path: daemon socket
+    if daemon::daemon_available() {
+        return delegate_via_daemon();
+    }
+
+    // Fall back to slow path: flatpak-spawn
+    delegate_via_flatpak_spawn()
+}
+
+/// Delegate via the host daemon socket (fast path).
+///
+/// The daemon runs on the host and accepts commands via Unix socket,
+/// bypassing D-Bus overhead entirely. See RFC-0010 for details.
+fn delegate_via_daemon() -> Result<()> {
+    output::Output::info("Delegating to host via daemon...");
+
+    let socket_path = daemon::socket_path()?;
+    let client = daemon::DaemonClient::new(&socket_path);
+
+    // Build argv with BKT_DELEGATED=1 to prevent recursion
+    let args: Vec<String> = std::env::args().collect();
+    let mut argv = vec!["bkt".to_string()];
+    argv.extend(args[1..].iter().cloned());
+
+    // Build envp with BKT_DELEGATED=1 added
+    let mut envp: Vec<String> = std::env::vars()
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect();
+    envp.push("BKT_DELEGATED=1".to_string());
+
+    let cwd = std::env::current_dir().context("Failed to get current directory")?;
+
+    let exit_code = client.execute(&argv, &envp, &cwd)?;
+    std::process::exit(exit_code);
+}
+
+/// Delegate via flatpak-spawn --host (slow path).
 ///
 /// We use `flatpak-spawn --host` directly instead of `distrobox-host-exec` because:
 /// 1. It's the underlying mechanism distrobox uses anyway (via host-spawn)
 /// 2. It supports `--env=VAR=VALUE` to pass environment variables to the host
 /// 3. distrobox-host-exec doesn't forward env vars set via Command::env()
-fn delegate_to_host() -> Result<()> {
-    output::Output::info("Delegating to host...");
+fn delegate_via_flatpak_spawn() -> Result<()> {
+    output::Output::info("Delegating to host via flatpak-spawn...");
 
     let args: Vec<String> = std::env::args().collect();
 
