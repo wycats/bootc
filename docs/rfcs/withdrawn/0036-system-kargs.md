@@ -1,9 +1,21 @@
 # RFC 0036: Kernel Arguments Enhancement
 
+- **Status**: Withdrawn (Absorbed)
 - Feature Name: `kargs_enhancement`
 - Start Date: 2026-02-02
 - RFC PR: #90
 - Tracking Issue: (leave this empty)
+
+> **📦 Absorbed into RFC-0004**
+>
+> This RFC documented gaps in `bkt admin kargs`. The content has been absorbed
+> into [RFC-0004: Tier 1 — Image-Bound State](../0004-bkt-admin.md), which is
+> now the canonical home for all Tier 1 (image-time) configuration including
+> kernel arguments.
+>
+> The gaps documented here (no `/usr/lib/bootc/kargs.d` integration, no
+> `/proc/cmdline` visibility) are now listed in RFC-0004's "Current Gaps"
+> section.
 
 ## Summary
 

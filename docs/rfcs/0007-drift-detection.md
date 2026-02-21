@@ -1,163 +1,68 @@
-# RFC 0007: Configuration Drift Detection
+# RFC 0007: Tier 2 — Runtime State & Drift Detection
 
-- Status: Draft
+- **Status**: Partially Implemented
 - Feature Name: `drift_detection`
 - Start Date: 2025-12-31
 - RFC PR: (leave this empty until PR is opened)
 - Tracking Issue: (leave this empty)
 
-## Summary
-
-Provide first-class drift detection that compares manifest declarations with
-actual system state and reports differences in a single unified report.
-This RFC remains future work, but it should build on the comparison and
-diffing infrastructure that already exists in the codebase.
-
-## Current State
-
-Drift detection is partially built and visible in several places:
-
-- `bkt status` computes `pending_sync`, `pending_capture`, and `has_drift` as
-  aggregate drift signals across multiple subsystems.
-- `bkt profile diff` prints missing and extra items for flatpaks, extensions,
-  and gsettings.
-- `bkt drift` exists as a command surface but currently only explains the
-  concept and points users at `bkt capture --dry-run`.
-- `bkt/src/manifest/diff.rs` provides a `Diffable` trait plus collection diff
-  helpers used by manifest types.
-
-The gap is not raw comparison primitives. The gap is a unified drift report,
-consistent command surface, and coverage for all domains.
-
-## What Remains To Build
-
-### Unified Drift Report
-
-Create a single, structured report that composes drift across subsystems,
-with a summary and per-domain sections. The report should be produced by
-`bkt drift check` and should also power `bkt status` when available.
-
-### Command Surface
-
-Implement the real `bkt drift check` command with:
-
-- Per-domain filters (flatpak, extension, gsetting, shim, distrobox, appimage,
-  homebrew, system packages).
-- Human and JSON output.
-- Exit codes based on drift severity.
-- Optional persistence to `.local/state/bkt/last-drift-check.json` for
-  `bkt drift status`.
-
-### Domain Coverage Gaps
-
-Some domains already have comparison logic in other commands, but drift
-coverage is incomplete. The drift report should include at least:
-
-- Flatpaks and extensions (already comparable in `bkt profile diff`).
-- GSettings (diff against manifest values).
-- Shims (generated files vs manifest, including missing and extra).
-- Distrobox exports and packages.
-- AppImage and Homebrew manifests.
-- System packages and layered RPMs (as a distinct tier).
-
-### Ignore Rules
-
-Define ignore rules for drift reporting (a `.bktignore` file or manifest
-metadata), so known intentional differences can be suppressed.
-
-### Monitoring (Optional, Later)
-
-Add an optional periodic drift check with user-visible reporting. This is
-explicitly future work and not required for the initial command.
-
-## Guide-level Explanation (Proposed)
-
-### Checking For Drift
-
-```bash
-bkt drift check
-
-# Proposed output
-# Drift Report
-# Flatpaks:
-#   + org.gnome.Boxes (installed, not in manifest)
-#   - org.gnome.Calculator (in manifest, not installed)
-#
-# GSettings:
-#   ~ org.gnome.desktop.interface.gtk-theme
-#     manifest: Adwaita-dark
-#     current:  Colloid-Dark
-#
-# Shims:
-#   - cargo (expected shim missing)
-```
-
-### Domain Filters
-
-```bash
-bkt drift check flatpak
-bkt drift check gsettings
-```
-
-## Reference-level Explanation
-
-### Data Flow
-
-```
-Collect system state -> Diff vs manifest -> Compose report -> Output
-```
-
-### Diffing Strategy
-
-Use the existing `Diffable` trait and `diff_collections`/`diff_string_sets`
-helpers to compute added, removed, and changed items for each domain.
-Each subsystem should expose a small adapter that returns a `DiffResult` or a
-normalized domain report which the drift report aggregates.
-
-### Exit Codes (Proposed)
-
-| Code | Meaning                                   |
-| ---- | ----------------------------------------- |
-| 0    | No drift detected                         |
-| 1    | Drift detected in managed domains         |
-| 2    | Error collecting state or performing diff |
-
-## Drawbacks
-
-- Requires careful domain coverage to avoid false positives.
-- Some domains are expensive to query without caching.
-
-## Rationale and Alternatives
-
-This RFC consolidates existing comparison work into a single, discoverable
-drift report rather than leaving drift detection scattered across commands.
-
-## Unresolved Questions
-
-1. Should `bkt drift check` persist full reports or only a summary?
-2. What is the minimum set of domains for a useful first release?# RFC 0007: Configuration Drift Detection
-
-- **Status**: Deferred
-- Feature Name: `drift_detection`
-- Start Date: 2025-12-31
-- RFC PR: (leave this empty until PR is opened)
-- Tracking Issue: (leave this empty)
-
-> **⏸️ Implementation Deferred**
+> **ℹ️ Implementation Status**
 >
-> The `bkt drift` command exists but is a stub that directs users to
-> `bkt capture --dry-run` as an interim solution.
->
-> The original implementation relied on a Python script, which was removed
-> per the project's "No Custom Python Scripts" axiom (see [VISION.md](../VISION.md)).
->
-> A native Rust implementation following this RFC's design is planned but
-> not yet prioritized. The `bkt capture` workflow provides equivalent
-> functionality for most use cases.
+> | Feature                    | Status         | Notes                                          |
+> | -------------------------- | -------------- | ---------------------------------------------- |
+> | `bkt status` drift signals | ✅ Implemented | `pending_sync`, `pending_capture`, `has_drift` |
+> | `bkt profile diff`         | ✅ Implemented | Flatpaks, extensions, gsettings                |
+> | `bkt drift` command        | ⚠️ Stub        | Points to `bkt capture --dry-run`              |
+> | Unified drift report       | ❌ Not started |                                                |
+> | Systemd service state      | ❌ Not started | New domain proposed in this RFC                |
+> | `.bktignore`               | ❌ Not started |                                                |
 
 ## Summary
 
-Implement mechanisms to detect when the running system's state diverges from the declared manifest state, enabling proactive identification and resolution of configuration drift.
+This RFC defines **Tier 2 state management** — runtime configuration that lives
+outside the bootc image and can drift from declared manifests. Tier 2 changes
+can be applied immediately without a reboot, but the system state may diverge
+from manifests over time.
+
+Tier 2 is the complement to [RFC-0004](0004-bkt-admin.md) (Tier 1), which covers
+image-bound state that requires a rebuild and reboot.
+
+## The Tier Model
+
+The system has two fundamentally different state lifecycles:
+
+| Tier                                       | State Location                        | Change Mechanism      | Drift Possible?                 |
+| ------------------------------------------ | ------------------------------------- | --------------------- | ------------------------------- |
+| **Tier 1** ([RFC-0004](0004-bkt-admin.md)) | Baked into image                      | PR → build → reboot   | No — image is deterministic     |
+| **Tier 2** (this RFC)                      | Runtime (flatpak DB, gsettings, /etc) | Immediate or deferred | Yes — runtime state can diverge |
+
+### What Belongs in Tier 2
+
+- **Flatpaks** — Applications installed via Flatpak
+- **GNOME Extensions** — Shell extensions (enabled/disabled state)
+- **GSettings** — GNOME configuration values
+- **Shims** — Host command wrappers in `~/.local/bin`
+- **Host binaries** — Binaries installed via `fetchbin` to `~/.local/bin`
+- **Distrobox** — Container configurations and exports
+- **Toolbox packages** — Packages installed inside distrobox containers
+- **AppImages** — Portable applications
+- **Homebrew** — Packages in the Homebrew prefix (inside distrobox)
+- **Systemd service state** (runtime) — Services enabled/disabled/masked in `/etc`
+
+Note: Some Tier 2 domains live inside containers (homebrew, toolbox-packages),
+but they use the same change mechanism — local modification captured to manifest
+for reproducibility. The container boundary is orthogonal to the tier model.
+
+### Why Tier 2 Can Drift
+
+Tier 2 state lives in mutable locations:
+
+- Flatpak database (`~/.local/share/flatpak`, `/var/lib/flatpak`)
+- GSettings/dconf (`~/.config/dconf`)
+- Systemd runtime state (`/etc/systemd/system/`)
+
+Users (or other tools) can modify this state directly, causing it to diverge
+from the declared manifests. Drift detection identifies these divergences.
 
 ## Motivation
 
@@ -167,30 +72,35 @@ Despite best intentions, systems drift:
 2. **Manual gsettings**: Changes made via GUI or direct commands
 3. **Forgotten experiments**: Packages installed for testing, never removed
 4. **External tools**: Other scripts modifying system state
+5. **Masked services**: Someone runs `systemctl mask` and forgets
 
 Drift is inevitable. The question is: how quickly do you detect it?
 
 ### The Manifest-Driven Approach
 
-**Important**: The manifest is the source of truth. The Containerfile is an **output**, never edited directly.
+**Important**: The manifest is the source of truth.
 
 ```
 +-------------+     +---------------+     +-------------+
-|  manifest   |---->| Containerfile |---->|   Image     |
-|  (source)   |     |  (generated)  |     |  (output)   |
+|  manifest   |---->|   bkt sync    |---->|   System    |
+|  (source)   |     |  (converge)   |     |  (runtime)  |
 +-------------+     +---------------+     +-------------+
+       ↑                                        |
+       +------------- bkt capture <-------------+
 ```
 
-Users interact with manifests via `bkt` commands. The Containerfile is regenerated automatically.
+Users interact with manifests via `bkt` commands. The system converges to
+manifest state via `bkt sync`, and runtime changes are captured back via
+`bkt capture`.
 
 ### Types of Drift
 
-| Type               | Example                     | Detection                     |
-| ------------------ | --------------------------- | ----------------------------- |
-| **Additive**       | Extra Flatpak installed     | Compare installed vs manifest |
-| **Subtractive**    | Package removed locally     | Compare manifest vs installed |
-| **Modificational** | gsetting changed            | Compare current vs manifest   |
-| **Version**        | Package updated outside bkt | Compare versions              |
+| Type               | Example                             | Detection                      |
+| ------------------ | ----------------------------------- | ------------------------------ |
+| **Additive**       | Extra Flatpak installed             | Compare installed vs manifest  |
+| **Subtractive**    | Package removed locally             | Compare manifest vs installed  |
+| **Modificational** | gsetting changed                    | Compare current vs manifest    |
+| **State**          | Service masked when it shouldn't be | Compare unit state vs manifest |
 
 ## Guide-level Explanation
 
@@ -199,26 +109,32 @@ Users interact with manifests via `bkt` commands. The Containerfile is regenerat
 ```bash
 # Full drift report
 bkt drift check
-# +-------------------------------------------------------------+
-# | Drift Report                                                |
-# +-------------------------------------------------------------+
-# | Flatpaks:                                                   |
-# |   + org.gnome.Boxes (installed, not in manifest)            |
-# |   - org.gnome.Calculator (in manifest, not installed)       |
-# |                                                             |
-# | GSettings:                                                  |
-# |   ~ org.gnome.desktop.interface.gtk-theme                   |
-# |     manifest: Adwaita-dark                                  |
-# |     current:  Colloid-Dark                                  |
-# |                                                             |
-# | Packages:                                                   |
-# |   + htop (layered, not in manifest)                         |
-# +-------------------------------------------------------------+
+
+# Example output:
+# Drift Report
+# ============
+#
+# Flatpaks:
+#   + org.gnome.Boxes (installed, not in manifest)
+#   - org.gnome.Calculator (in manifest, not installed)
+#
+# GSettings:
+#   ~ org.gnome.desktop.interface.gtk-theme
+#     manifest: Adwaita-dark
+#     current:  Colloid-Dark
+#
+# Systemd Services:
+#   ~ tuned.service
+#     manifest: enabled
+#     current:  masked
+#
+# Shims:
+#   - cargo (expected shim missing)
 
 # Check specific domain
 bkt drift check flatpak
 bkt drift check gsettings
-bkt drift check packages
+bkt drift check systemd
 ```
 
 ### Resolving Drift
@@ -227,8 +143,8 @@ bkt drift check packages
 # Interactive resolution
 bkt drift resolve
 # For each drift item:
-#   [a] Add to manifest (legitimize the change)
-#   [r] Remove/revert (restore manifest state)
+#   [c] Capture to manifest (legitimize the change)
+#   [a] Apply manifest to system (revert the change)
 #   [s] Skip (ignore for now)
 #   [i] Ignore permanently (add to .bktignore)
 
@@ -239,7 +155,68 @@ bkt drift resolve --prefer-manifest
 bkt drift resolve --prefer-system
 ```
 
-### Continuous Monitoring
+### Domain: Systemd Service State (NEW)
+
+This RFC adds **systemd service runtime state** as a Tier 2 domain. This tracks
+the enable/disable/mask state of services in `/etc/systemd/system/`, which is
+mutable and persists across reboots but is NOT part of the image.
+
+#### Why This Matters
+
+The tuned/tuned-ppd incident illustrates the problem:
+
+- Bazzite ships with `tuned` and `tuned-ppd` enabled via presets
+- Someone (or something) ran `systemctl mask tuned`
+- The mask persisted in `/etc/systemd/system/tuned.service -> /dev/null`
+- Power management silently broke
+- No tooling detected or reported this drift
+
+#### Manifest Format
+
+```json
+// manifests/systemd-services.json
+{
+  "$schema": "../schemas/systemd-services.schema.json",
+  "services": {
+    "tuned.service": "enabled",
+    "tuned-ppd.service": "enabled",
+    "power-profiles-daemon.service": "masked",
+    "cups.service": "disabled"
+  }
+}
+```
+
+Valid states: `enabled`, `disabled`, `masked`
+
+#### Command Surface
+
+```bash
+# Declare intended state
+bkt systemd enable tuned.service tuned-ppd.service
+bkt systemd disable cups.service
+bkt systemd mask power-profiles-daemon.service
+
+# Check drift
+bkt drift check systemd
+
+# Apply manifest state to system
+bkt sync systemd
+
+# Capture current state to manifest
+bkt capture systemd
+```
+
+#### Implementation
+
+The existing `bkt/src/dbus/systemd.rs` has `enable()` and `disable()` methods.
+This RFC adds:
+
+- `mask()` / `unmask()` methods via D-Bus
+- A new `systemd-services.json` manifest
+- Drift detection comparing manifest to `systemctl is-enabled` output
+- Sync logic to reconcile state
+
+### Continuous Monitoring (Future)
 
 ```bash
 # Enable drift monitoring (systemd timer)
@@ -254,71 +231,6 @@ bkt drift monitor status
 
 Monitoring creates periodic drift reports and can notify via desktop notification.
 
-### Separating User Packages from Base Image Tracking
-
-The system maintains a clear separation between what YOU install and what Bazzite provides:
-
-- **system-packages.json**: Packages explicitly installed by the user on the host
-- **toolbox-packages.json**: Packages explicitly installed by the user in toolbox
-- **base-image-assumptions.json**: What the upstream Bazzite image provides (reference only)
-
-```bash
-# See what packages we expect Bazzite to provide
-bkt base list
-
-# Verify Bazzite still provides them
-bkt base verify
-
-# See packages you explicitly added to host
-bkt packages list
-```
-
-**Important**: `base-image-assumptions.json` is a **reference document** that tracks what upstream provides. It is NOT used to install packages—it's used to detect when upstream changes break our assumptions.
-
-This ensures drift detection only flags changes to **user-managed** packages, not changes in upstream.
-
-### Hybrid Tracking for Upstream Issues
-
-Sometimes you need a package temporarily because upstream is missing a feature. The **hybrid tracking** approach:
-
-```bash
-# Install package, file upstream issue
-bkt dnf install missing-feature --track-upstream https://github.com/org/repo/issues/123
-
-# View tracked packages
-bkt dnf tracked
-# missing-feature
-#   Upstream: https://github.com/org/repo/issues/123
-#   Expected: 2025-Q2
-#   Action: Remove when fixed
-
-# When upstream fixes it
-bkt dnf untrack missing-feature
-```
-
-#### Manifest Entry
-
-```json
-{
-  "packages": ["missing-feature"],
-  "tracking": {
-    "missing-feature": {
-      "upstream_issue": "https://github.com/org/repo/issues/123",
-      "added": "2025-01-02",
-      "expected_resolution": "2025-Q2",
-      "action_on_resolution": "remove",
-      "notes": "Workaround until upstream adds this feature"
-    }
-  }
-}
-```
-
-This enables:
-
-- **Proactive cleanup**: Periodic check of tracked issues
-- **Documentation**: Why was this installed?
-- **Automated reminders**: Notify when issue is closed
-
 ## Reference-level Explanation
 
 ### Drift Detection Pipeline
@@ -332,80 +244,102 @@ This enables:
 
 #### Collecting System State
 
-| Domain     | Collection Method                          |
-| ---------- | ------------------------------------------ |
-| Flatpaks   | `flatpak list --app --columns=application` |
-| Packages   | `rpm -qa` + `rpm-ostree status`            |
-| GSettings  | `dconf dump /`                             |
-| Extensions | `gnome-extensions list --enabled`          |
+| Domain      | Collection Method                                         |
+| ----------- | --------------------------------------------------------- |
+| Flatpaks    | `flatpak list --app --columns=application`                |
+| Extensions  | `gnome-extensions list --enabled`                         |
+| GSettings   | `gsettings get <schema> <key>`                            |
+| Shims       | Check file existence in shims directory                   |
+| Distrobox   | `distrobox list`                                          |
+| AppImages   | Scan AppImage directory                                   |
+| Homebrew    | `brew list`                                               |
+| **Systemd** | `systemctl is-enabled <unit>` or D-Bus `GetUnitFileState` |
 
-#### Comparison Logic
+#### Systemd State Detection
+
+For each service in the manifest:
 
 ```rust
-fn detect_drift(manifest: &Manifest, system: &SystemState) -> DriftReport {
-    let mut report = DriftReport::new();
+fn get_service_state(unit: &str) -> Result<ServiceState> {
+    // Use D-Bus org.freedesktop.systemd1.Manager.GetUnitFileState
+    // Returns: "enabled", "disabled", "masked", "static", etc.
+    let state = systemd_manager.get_unit_file_state(unit)?;
 
-    // Check for additions (in system, not in manifest)
-    for item in &system.items {
-        if !manifest.contains(item) {
-            report.additions.push(item.clone());
-        }
+    // Also check for runtime masks in /etc/systemd/system/
+    let etc_path = format!("/etc/systemd/system/{}", unit);
+    if std::fs::read_link(&etc_path).map(|p| p == Path::new("/dev/null")).unwrap_or(false) {
+        return Ok(ServiceState::Masked);
     }
 
-    // Check for removals (in manifest, not in system)
-    for item in &manifest.items {
-        if !system.contains(item) {
-            report.removals.push(item.clone());
-        }
+    match state.as_str() {
+        "enabled" | "enabled-runtime" => Ok(ServiceState::Enabled),
+        "disabled" => Ok(ServiceState::Disabled),
+        "masked" | "masked-runtime" => Ok(ServiceState::Masked),
+        "static" => Ok(ServiceState::Static), // No [Install] section
+        _ => Ok(ServiceState::Unknown),
     }
-
-    // Check for modifications (in both, but different)
-    for item in &manifest.items {
-        if let Some(sys_item) = system.get(item.id()) {
-            if sys_item != item {
-                report.modifications.push(Modification {
-                    expected: item.clone(),
-                    actual: sys_item.clone(),
-                });
-            }
-        }
-    }
-
-    report
 }
 ```
 
-### Manifest Separation
+### Manifest Formats
 
-Three manifest types serve distinct purposes:
+#### systemd-services.json (NEW)
 
+```json
+{
+  "$schema": "../schemas/systemd-services.schema.json",
+  "services": {
+    "tuned.service": "enabled",
+    "tuned-ppd.service": "enabled",
+    "power-profiles-daemon.service": "masked"
+  }
+}
 ```
-manifests/
-├── base-image-assumptions.json  # What Bazzite provides (upstream reference)
-├── system-packages.json         # Host packages YOU added (managed by bkt)
-└── toolbox-packages.json        # Toolbox packages YOU added (managed by bkt)
+
+#### Drift Report Format
+
+```json
+{
+  "generated_at": "2026-02-18T10:30:00Z",
+  "domains": {
+    "flatpak": {
+      "additions": [{ "id": "org.gnome.Boxes", "source": "flathub" }],
+      "removals": [],
+      "modifications": []
+    },
+    "gsettings": {
+      "modifications": [
+        {
+          "key": "org.gnome.desktop.interface.gtk-theme",
+          "expected": "Adwaita-dark",
+          "actual": "Colloid-Dark"
+        }
+      ]
+    },
+    "systemd": {
+      "modifications": [
+        {
+          "unit": "tuned.service",
+          "expected": "enabled",
+          "actual": "masked"
+        }
+      ]
+    }
+  },
+  "summary": {
+    "total_drift": 3,
+    "by_type": { "additions": 1, "modifications": 2 }
+  }
+}
 ```
 
-The **base-image-assumptions.json** file is a **reference document** that tracks what the upstream Bazzite image provides. It is NOT used to install packages—it's used for:
+### Exit Codes
 
-- CI verification that Bazzite still provides expected packages
-- Drift detection to catch upstream breaking changes
-- Documentation of our dependencies on the base image
-
-The Containerfile references only `system-packages.json` for the `RUN dnf install` command—these are packages YOU add beyond what Bazzite provides.
-
-```dockerfile
-# === BASE IMAGE ===
-FROM ghcr.io/ublue-os/bazzite-gnome:stable
-# ↑ This provides everything in base-image-assumptions.json
-
-# === USER PACKAGES (managed by bkt) ===
-# Only packages YOU added beyond what Bazzite provides
-RUN dnf install -y \
-    htop \
-    neovim
-# === END USER PACKAGES ===
-```
+| Code | Meaning                                   |
+| ---- | ----------------------------------------- |
+| 0    | No drift detected                         |
+| 1    | Drift detected in managed domains         |
+| 2    | Error collecting state or performing diff |
 
 ### Ignore Patterns
 
@@ -417,230 +351,18 @@ flatpak:org.gnome.Boxes
 # Ignore patterns
 gsettings:org.gnome.desktop.privacy.*
 
-# Ignore entire domains
-# [disabled] packages:*
+# Ignore systemd services
+systemd:cups.service
 ```
 
-### Drift Report Format
+## Relationship to Other RFCs
 
-```json
-{
-  "generated_at": "2025-01-02T10:30:00Z",
-  "domains": {
-    "flatpak": {
-      "additions": [{ "id": "org.gnome.Boxes", "source": "flathub" }],
-      "removals": [],
-      "modifications": []
-    },
-    "gsettings": {
-      "additions": [],
-      "removals": [],
-      "modifications": [
-        {
-          "key": "org.gnome.desktop.interface.gtk-theme",
-          "expected": "Adwaita-dark",
-          "actual": "Colloid-Dark"
-        }
-      ]
-    }
-  },
-  "summary": {
-    "total_drift": 2,
-    "by_type": {
-      "additions": 1,
-      "modifications": 1
-    }
-  }
-}
-```
-
-### Systemd Timer
-
-```ini
-# ~/.config/systemd/user/bkt-drift.timer
-[Unit]
-Description=Periodic drift check
-
-[Timer]
-OnBootSec=5min
-OnUnitActiveSec=1h
-
-[Install]
-WantedBy=timers.target
-```
-
-```ini
-# ~/.config/systemd/user/bkt-drift.service
-[Unit]
-Description=Check for configuration drift
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/bkt drift check --quiet --notify
-```
-
-### Interactive Resolution
-
-The `bkt drift resolve` command provides interactive resolution for detected drift, allowing users to make informed decisions about each drifted item.
-
-#### Command Interface
-
-```bash
-# Interactive resolution (walks through each item)
-bkt drift resolve
-
-# Domain-specific resolution
-bkt drift resolve --only flatpak
-bkt drift resolve --only extension
-bkt drift resolve --only gsettings
-bkt drift resolve --only packages
-
-# Batch operations
-bkt drift resolve --capture-all      # Capture all drift to manifest
-bkt drift resolve --apply-all        # Apply manifest to system
-bkt drift resolve --prefer-manifest  # Use manifest as source of truth
-bkt drift resolve --prefer-system    # Use system as source of truth
-
-# Preview mode
-bkt drift resolve --dry-run          # Show what would happen
-```
-
-#### User Prompts
-
-For each drifted item, the user sees the current state and available actions:
-
-**Additive Drift (item in system, not in manifest):**
-
-```
-Flatpak: org.gnome.Boxes
-  System: installed (not in manifest)
-
-[c] Capture to manifest
-[r] Remove from system
-[s] Skip (leave as-is)
-[i] Ignore permanently (add to .bktignore)
->
-```
-
-**Subtractive Drift (item in manifest, not in system):**
-
-```
-Flatpak: org.gnome.Calculator
-  Manifest: declared (not installed)
-
-[a] Apply (install from manifest)
-[d] Delete from manifest
-[s] Skip (leave as-is)
-[i] Ignore permanently (add to .bktignore)
->
-```
-
-**Modificational Drift (item differs between manifest and system):**
-
-```
-GSettings: org.gnome.desktop.interface.gtk-theme
-  Manifest: Adwaita-dark
-  System:   Colloid-Dark
-
-[c] Capture system value to manifest
-[a] Apply manifest value to system
-[s] Skip (leave as-is)
-[i] Ignore permanently (add to .bktignore)
->
-```
-
-#### Batch Operations
-
-For quick resolution without interactive prompts:
-
-| Flag                | Behavior                                                               |
-| ------------------- | ---------------------------------------------------------------------- |
-| `--capture-all`     | Add all untracked items to manifest, update manifest for modifications |
-| `--apply-all`       | Install missing items, remove untracked items, revert modifications    |
-| `--prefer-manifest` | Alias for `--apply-all`—manifest is source of truth                    |
-| `--prefer-system`   | Alias for `--capture-all`—system state is source of truth              |
-
-```bash
-# After reviewing drift report, capture everything
-bkt drift check
-bkt drift resolve --capture-all
-
-# Or revert everything to manifest state
-bkt drift resolve --apply-all
-```
-
-#### Dry Run Mode
-
-The `--dry-run` flag shows what would happen without making changes:
-
-```bash
-bkt drift resolve --dry-run --prefer-manifest
-# Would remove: org.gnome.Boxes (flatpak)
-# Would install: org.gnome.Calculator (flatpak)
-# Would reset: org.gnome.desktop.interface.gtk-theme → Adwaita-dark
-#
-# 3 changes would be made. Run without --dry-run to apply.
-```
-
-#### Integration with .bktignore
-
-Items marked with `[i] Ignore permanently` are added to `.bktignore`:
-
-```ini
-# .bktignore
-# Automatically added via `bkt drift resolve`
-flatpak:org.gnome.Boxes           # Ignored 2025-01-02
-gsettings:org.gnome.desktop.privacy.remember-recent-files  # Ignored 2025-01-02
-```
-
-Ignored items are excluded from future drift detection:
-
-```bash
-# Show what's being ignored
-bkt drift ignored
-
-# Remove an item from ignore list
-bkt drift unignore flatpak:org.gnome.Boxes
-```
-
-#### Domain-Specific Resolution
-
-Resolve drift for specific domains only:
-
-```bash
-# Only resolve flatpak drift
-bkt drift resolve --only flatpak
-
-# Only resolve extension drift
-bkt drift resolve --only extension
-
-# Only resolve gsettings drift
-bkt drift resolve --only gsettings
-
-# Only resolve package drift
-bkt drift resolve --only packages
-
-# Combine with batch operations
-bkt drift resolve --only flatpak --capture-all
-```
-
-#### Resolution Report
-
-After resolution, a summary is displayed:
-
-```
-╭─────────────────────────────────────╮
-│ Drift Resolution Complete           │
-├─────────────────────────────────────┤
-│ Captured to manifest:  3            │
-│ Applied from manifest: 1            │
-│ Removed from system:   1            │
-│ Added to .bktignore:   2            │
-│ Skipped:               0            │
-╰─────────────────────────────────────╯
-
-Manifest updated. Run `bkt build` to regenerate Containerfile.
-```
+| RFC                                                         | Relationship                                   |
+| ----------------------------------------------------------- | ---------------------------------------------- |
+| [RFC-0004](0004-bkt-admin.md)                               | Tier 1 complement — image-bound state          |
+| [RFC-0021](0021-local-change-management.md)                 | Ephemeral manifest for uncommitted changes     |
+| [RFC-0023](0023-system-status-dashboard.md)                 | `bkt status` consumes drift signals            |
+| [RFC-0048](0048-subsystem-and-containerfile-unification.md) | Defines `SubsystemTier::Convergent` for Tier 2 |
 
 ## Drawbacks
 
@@ -652,59 +374,37 @@ Full drift checks can be slow. Mitigation: incremental checks, caching.
 
 Some drift is intentional. Mitigation: `.bktignore` and interactive resolution.
 
-### Privacy Concerns
+### Systemd Complexity
 
-Drift reports contain system state. Mitigation: reports stay local unless explicitly shared.
+Systemd has many unit states beyond enabled/disabled/masked. Mitigation: focus
+on the common cases; treat "static" units as informational.
 
 ## Rationale and Alternatives
 
 ### Why Not Just Trust the Manifest?
 
-Because humans forget to use `bkt` commands.
-
-### Alternative: Git-based Tracking
-
-Compare manifests across commits. Useful for historical analysis but doesn't catch runtime drift.
+Because humans forget to use `bkt` commands. And external tools (like whatever
+masked tuned) don't know about our manifests.
 
 ### Alternative: Immutable Everything
 
 Reboot to apply all changes. Too disruptive for development workflow.
+
+### Alternative: No Systemd Tracking
+
+Leave systemd state unmanaged. But the tuned incident shows this leads to
+silent, persistent failures that are hard to diagnose.
 
 ## Prior Art
 
 - **Puppet/Chef/Ansible**: Desired state configuration with drift detection
 - **Terraform Plan**: Shows diff between desired and actual state
 - **etckeeper**: Track /etc in git
-
-## Unresolved Questions
-
-### Q1: Manifest Separation
-
-**Resolution**: Three separate manifests: `base-image-assumptions.json` (what Bazzite provides—upstream reference), `system-packages.json` (user-added host packages), and `toolbox-packages.json` (user-added toolbox packages). Drift detection only applies to user-managed packages. Base image assumptions are verified separately via `bkt base verify`.
-
-### Q2: GSettings Scope
-
-**Resolution**: Track only explicitly managed settings. Use `gsettings reset` for schema-provided defaults.
-
-### Q3: Performance
-
-**Resolution**: Incremental checks with caching. Full check only on demand.
-
-### Q4: Extension State
-
-**Resolution**: Track enabled/disabled state. Extension version managed separately.
-
-### Q5: Layered Packages
-
-**Resolution**: Include `rpm-ostree` layered packages in drift detection.
-
-### Q6: Temporary Packages
-
-**Resolution**: Use hybrid tracking with `--track-upstream` for temporary workarounds.
+- **systemd presets**: Distribution-level service configuration
 
 ## Future Possibilities
 
 - **Drift Webhooks**: Notify external systems
 - **Drift History**: Track drift over time
-- **Predictive Drift**: Warn before drift occurs (e.g., "You're about to run `flatpak install` - use `bkt flatpak add` instead")
-- **Drift Remediation Playbooks**: Pre-defined resolution strategies
+- **Predictive Drift**: Warn before drift occurs
+- **Boot-time Reconciliation**: Automatically fix drift on login

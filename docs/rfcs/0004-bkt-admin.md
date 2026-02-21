@@ -1,87 +1,4 @@
-# RFC 0004: bkt admin
-
-Privileged host operations and image-time system configuration.
-
-## Motivation
-
-Some actions require host privileges (bootc, systemd control), while other
-actions need to be recorded for image builds (kernel args and persistent
-systemd configuration). `bkt admin` provides a clear split between immediate
-host operations and manifest-backed image settings.
-
-## Design
-
-### Command Surface
-
-Host operations (immediate):
-
-- `bkt admin bootc status`
-- `bkt admin bootc upgrade --confirm|--yes`
-- `bkt admin bootc switch <image> --confirm|--yes`
-- `bkt admin bootc rollback --confirm|--yes`
-
-- `bkt admin systemctl status <unit>`
-- `bkt admin systemctl start|stop|restart <unit> --confirm`
-- `bkt admin systemctl enable|disable <unit> --confirm`
-- `bkt admin systemctl daemon-reload --confirm`
-
-Image-time configuration (manifest backed):
-
-- `bkt admin kargs append <arg...>`
-- `bkt admin kargs remove <arg...>`
-- `bkt admin kargs list`
-
-- `bkt admin systemd enable <unit...>`
-- `bkt admin systemd disable <unit...>`
-- `bkt admin systemd mask <unit...>`
-- `bkt admin systemd list`
-
-### Manifest Format
-
-Image-time settings are stored in `manifests/system-config.json`:
-
-```json
-{
-  "kargs": {
-    "append": ["quiet"],
-    "remove": ["rhgb"]
-  },
-  "systemd": {
-    "enable": ["docker.socket"],
-    "disable": ["cups.service"],
-    "mask": []
-  },
-  "udev": { "rules": [] },
-  "selinux": { "booleans": {} },
-  "firmware_notes": []
-}
-```
-
-### Behavior
-
-- `bootc` actions run via `pkexec bootc` and require explicit confirmation for
-  mutating operations. Read-only status is passwordless for wheel users.
-- `systemctl` actions use D-Bus (zbus) instead of shelling out to `systemctl`.
-  Mutating operations require confirmation and prompt in interactive sessions.
-- `kargs` and `systemd` mutate `manifests/system-config.json` only; they do not
-  apply changes to the running system.
-- Containerfile generation consumes `system-config.json` to emit:
-  - `rpm-ostree kargs` in the KERNEL_ARGUMENTS section.
-  - `systemctl enable/disable/mask` in the SYSTEMD_UNITS section.
-
-## Implementation Notes
-
-- Admin commands are designed to run on the host; when invoked from a toolbox,
-  D-Bus routing still reaches the host system.
-- Mutating operations require `--confirm` (or `--yes` for bootc) to prevent
-  accidental host changes.
-- `bkt admin systemd` and `bkt admin kargs` only write manifests today; they
-  do not create PRs or trigger builds.
-
-## Known Gaps
-
-- No `bkt admin` support for udev rules, SELinux policies, or firmware notes.
-- No tooling for adding custom systemd unit files to the manifest.# RFC 0004: System Administration (`bkt admin`)
+# RFC 0004: Tier 1 — Image-Bound State (`bkt admin`)
 
 - **Status**: Partially Implemented
 - Feature Name: `bkt_admin`
@@ -91,35 +8,67 @@ Image-time settings are stored in `manifests/system-config.json`:
 
 > **ℹ️ Implementation Status**
 >
-> | Feature               | Status         | Notes                                       |
-> | --------------------- | -------------- | ------------------------------------------- |
-> | `bkt admin kargs`     | ✅ Implemented | Manifest-only; see RFC-0036 for enhancement |
-> | `bkt admin systemd`   | ✅ Implemented | Enable/disable/mask units                   |
-> | `bkt admin systemctl` | ✅ Implemented | Direct systemctl wrapper                    |
-> | `bkt admin bootc`     | ✅ Implemented | bootc operations                            |
-> | udev rules            | ❌ Not started |                                             |
-> | SELinux policies      | ❌ Not started |                                             |
-> | Firmware settings     | ❌ Not started |                                             |
->
-> **Note:** The kernel arguments section describes `rpm-ostree kargs` approach.
-> [RFC-0036](0036-system-kargs.md) proposes enhancing `bkt admin kargs` to use
-> bootc-native `kargs.d/` TOML files instead.
+> | Feature               | Status         | Notes                     |
+> | --------------------- | -------------- | ------------------------- |
+> | `bkt admin kargs`     | ✅ Implemented | Manifest-only             |
+> | `bkt admin systemd`   | ✅ Implemented | Enable/disable/mask units |
+> | `bkt admin systemctl` | ✅ Implemented | Direct systemctl wrapper  |
+> | `bkt admin bootc`     | ✅ Implemented | bootc operations          |
+> | udev rules            | ❌ Not started |                           |
+> | SELinux policies      | ❌ Not started |                           |
+> | Firmware settings     | ❌ Not started |                           |
 
 ## Summary
 
-Implement `bkt admin` commands for managing system-level configuration that must be baked into the bootc image, including systemd units, kernel arguments, SELinux policies, and firmware settings.
+This RFC defines **Tier 1 state management** — configuration that must be baked
+into the bootc image. Changes to Tier 1 state require the full pipeline:
+manifest edit → PR → CI build → `bootc upgrade` → reboot.
+
+Tier 1 is the complement to [RFC-0007](0007-drift-detection.md) (Tier 2), which
+covers runtime state that can be applied immediately and may drift.
+
+## The Tier Model
+
+The system has two fundamentally different state lifecycles:
+
+| Tier                                             | State Location                        | Change Mechanism      | Drift Possible?                 |
+| ------------------------------------------------ | ------------------------------------- | --------------------- | ------------------------------- |
+| **Tier 1** (this RFC)                            | Baked into image                      | PR → build → reboot   | No — image is deterministic     |
+| **Tier 2** ([RFC-0007](0007-drift-detection.md)) | Runtime (flatpak DB, gsettings, /etc) | Immediate or deferred | Yes — runtime state can diverge |
+
+### What Belongs in Tier 1
+
+- **System packages** (`dnf install`) — RPMs in the base image
+- **Kernel arguments** — Parameters passed to the kernel at boot
+- **Systemd unit state** (image-time) — Services enabled/disabled/masked in the image
+- **Custom systemd units** — Unit files shipped in the image
+- **udev rules** — Hardware configuration
+- **SELinux policies** — Security contexts
+- **Upstream binaries** — Binaries fetched from GitHub releases during build
+
+### Why Tier 1 Has No Drift
+
+Tier 1 state is **deterministic** — the image defines exactly what's present.
+When you boot, you get exactly what the Containerfile produced. There's no
+runtime process that can modify `/usr` or change what packages are installed.
+
+This is why drift detection ([RFC-0007](0007-drift-detection.md)) focuses on
+Tier 2. Tier 1 "drift" is handled by the image build itself — if the manifest
+says "install htop" and the image doesn't have htop, the build fails.
 
 ## Motivation
 
-Some system configuration cannot be applied at runtime - it must be part of the image:
+Some system configuration cannot be applied at runtime — it must be part of the
+image:
 
 1. **Systemd units**: Services that start at boot
 2. **Kernel arguments**: Parameters passed to the kernel
 3. **udev rules**: Hardware configuration
 4. **SELinux policies**: Security contexts
-5. **Firmware settings**: UEFI variables
+5. **Firmware settings**: UEFI variables (documentation only)
 
-These configurations are critical for a functional system but are easy to forget when rebuilding.
+These configurations are critical for a functional system but are easy to forget
+when rebuilding.
 
 ### Current Pain Points
 
@@ -140,8 +89,57 @@ bkt admin kargs append quiet splash
 # Systemd units
 bkt admin systemd enable docker.socket
 
-# Both update the Containerfile and create a PR
+# Both update the manifest and regenerate the Containerfile
 ```
+
+## Design
+
+### Command Surface
+
+**Host operations (immediate):**
+
+These commands affect the running system directly via D-Bus or pkexec:
+
+- `bkt admin bootc status`
+- `bkt admin bootc upgrade --confirm|--yes`
+- `bkt admin bootc switch <image> --confirm|--yes`
+- `bkt admin bootc rollback --confirm|--yes`
+
+- `bkt admin systemctl status <unit>`
+- `bkt admin systemctl start|stop|restart <unit> --confirm`
+- `bkt admin systemctl enable|disable <unit> --confirm`
+- `bkt admin systemctl daemon-reload --confirm`
+
+**Image-time configuration (manifest-backed):**
+
+These commands update `manifests/system-config.json` only — they do not affect
+the running system:
+
+- `bkt admin kargs append <arg...>`
+- `bkt admin kargs remove <arg...>`
+- `bkt admin kargs list`
+
+- `bkt admin systemd enable <unit...>`
+- `bkt admin systemd disable <unit...>`
+- `bkt admin systemd mask <unit...>`
+- `bkt admin systemd list`
+
+### The `systemctl` vs `systemd` Distinction
+
+Note the two different command groups:
+
+| Command                          | Scope          | Effect                             |
+| -------------------------------- | -------------- | ---------------------------------- |
+| `bkt admin systemctl enable foo` | **Runtime**    | Enables unit now via D-Bus         |
+| `bkt admin systemd enable foo`   | **Image-time** | Records in manifest for next build |
+
+This mirrors the Tier 1/Tier 2 split:
+
+- `systemctl` = immediate host operation (like Tier 2)
+- `systemd` = image-time configuration (Tier 1)
+
+For services that need both, run both commands — or use `bkt admin systemctl`
+with `--persist` (future) to do both at once.
 
 ## Guide-level Explanation
 
@@ -157,7 +155,7 @@ bkt admin kargs append quiet splash
 # Remove argument
 bkt admin kargs remove rhgb
 
-# List current
+# List current manifest entries
 bkt admin kargs list
 ```
 
@@ -169,10 +167,16 @@ RUN rpm-ostree kargs --append=quiet --append=splash
 # === END KERNEL ARGUMENTS ===
 ```
 
+#### Current Gaps
+
+- No `/usr/lib/bootc/kargs.d` integration (bootc-native approach)
+- No immediate application or `/proc/cmdline` visibility
+- `list` only shows manifest entries, not active kernel command line
+
 ### Systemd Units
 
 ```bash
-# Enable a service
+# Enable a service (image-time)
 bkt admin systemd enable docker.socket
 
 # Enable multiple
@@ -248,11 +252,13 @@ These are stored in documentation, not applied automatically.
 
 ### Manifest Structure
 
+Image-time settings are stored in `manifests/system-config.json`:
+
 ```json
-// manifests/admin.json
 {
+  "$schema": "../schemas/system-config.schema.json",
   "kargs": {
-    "append": ["quiet", "splash"],
+    "append": ["quiet", "splash", "zswap.enabled=1"],
     "remove": ["rhgb"]
   },
   "systemd": {
@@ -307,39 +313,56 @@ RUN setsebool -P httpd_can_network_connect on
 # === END SELINUX ===
 ```
 
-### Local Application
+### Behavior
 
-Some admin changes can be applied locally without a reboot:
+- `bootc` actions run via `pkexec bootc` and require explicit confirmation for
+  mutating operations. Read-only status is passwordless for wheel users.
+- `systemctl` actions use D-Bus (zbus) instead of shelling out to `systemctl`.
+  Mutating operations require confirmation and prompt in interactive sessions.
+- `kargs` and `systemd` mutate `manifests/system-config.json` only; they do not
+  apply changes to the running system.
+- Containerfile generation consumes `system-config.json` to emit the appropriate
+  RUN commands.
 
-```bash
-bkt admin systemd enable docker.socket
-# Runs: systemctl enable --now docker.socket
-# Updates manifest and opens PR
-```
+## Implementation Notes
 
-Others require a reboot or new image:
+- Admin commands are designed to run on the host; when invoked from a toolbox,
+  D-Bus routing still reaches the host system.
+- Mutating operations require `--confirm` (or `--yes` for bootc) to prevent
+  accidental host changes.
+- `bkt admin systemd` and `bkt admin kargs` only write manifests today; they
+  do not create PRs or trigger builds.
 
-```bash
-bkt admin kargs append quiet
-# Updates manifest and opens PR
-# Note: Kernel args take effect on next boot
-```
+## Relationship to Other RFCs
+
+| RFC                                                         | Relationship                                           |
+| ----------------------------------------------------------- | ------------------------------------------------------ |
+| [RFC-0007](0007-drift-detection.md)                         | Tier 2 complement — runtime state and drift detection  |
+| [RFC-0035](0035-admin-update.md)                            | Uses `bkt admin` as part of the update workflow        |
+| [RFC-0037](0037-bkt-upgrade.md)                             | `bkt upgrade` wraps `bkt admin bootc upgrade`          |
+| [RFC-0044](0044-bkt-try-transient-overlay.md)               | `bkt try` provides transient preview of Tier 1 changes |
+| [RFC-0048](0048-subsystem-and-containerfile-unification.md) | Defines `SubsystemTier::Atomic` for Tier 1 subsystems  |
 
 ## Drawbacks
 
 ### Limited Local Effect
 
-Kernel args and some systemd changes require reboot. Mitigation: clear messaging.
+Kernel args and systemd changes require a new image build and reboot.
+Mitigation: clear messaging about what takes effect when.
 
 ### SELinux Complexity
 
-SELinux is complex. Mitigation: support only simple boolean cases.
+SELinux is complex. Mitigation: support only simple boolean cases initially.
 
 ## Rationale and Alternatives
 
 ### Why Not Just Edit Containerfile?
 
-Programmatic tracking enables drift detection and easier updates.
+Programmatic tracking enables:
+
+- Consistent manifest format across all configuration
+- Containerfile regeneration from manifests
+- Future drift detection for Tier 1 (comparing manifest to staged image)
 
 ### Alternative: Ansible
 
@@ -349,13 +372,11 @@ More powerful but overkill for personal distribution.
 
 - **rpm-ostree kargs**: Direct kernel argument management
 - **systemd presets**: Distribution-level service configuration
-
-## Unresolved Questions
-
-_None currently - this RFC focuses on well-understood patterns._
+- **bootc kargs.d**: Drop-in TOML files for kernel arguments
 
 ## Future Possibilities
 
 - **Boot Loader Configuration**: GRUB themes, timeout
 - **Secure Boot**: Key enrollment automation
 - **Hardware Profiles**: Different configs for different machines
+- **`--persist` flag**: Apply change immediately AND record in manifest
