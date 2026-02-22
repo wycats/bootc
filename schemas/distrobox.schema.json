@@ -5,7 +5,10 @@
   "type": "object",
   "properties": {
     "$schema": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "containers": {
       "type": "object",
@@ -43,7 +46,10 @@
         },
         "to": {
           "description": "Path to export binaries to (default: ~/.local/bin)",
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -131,7 +137,9 @@
           }
         }
       },
-      "required": ["image"]
+      "required": [
+        "image"
+      ]
     }
   }
 }
