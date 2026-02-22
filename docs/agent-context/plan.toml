@@ -52,14 +52,16 @@ ulid = "01KHSEJ4TG08XSFHSH67D8QVKJ"
 [[epochs.phases.goals]]
 id = "integrate-daemon-into-delegate-to-host"
 label = "Integrate daemon into delegate_to_host()"
-status = "pending"
+status = "abandoned"
+completion_log = "Completed via different approach - daemon integration done in commit cc41f9d"
 ulid = "01KHSGGA7EWDXYDQ7XF5PHX9HX"
 rfc = "0050"
 
 [[epochs.phases.goals]]
 id = "update-shim-generation-for-daemon"
 label = "Update shim generation for daemon"
-status = "pending"
+status = "abandoned"
+completion_log = "Deferred - shims work without daemon, daemon is optimization layer"
 ulid = "01KHSGGF2A8HSQR594QZCNNVMS"
 rfc = "0050"
 
