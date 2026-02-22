@@ -107,6 +107,10 @@
           "dest": "/usr/lib/systemd/user/bootc-capture.timer"
         },
         {
+          "src": "systemd/user/bkt-daemon.service",
+          "dest": "/usr/lib/systemd/user/bkt-daemon.service"
+        },
+        {
           "src": "systemd/system/bootc-apply.service",
           "dest": "/usr/lib/systemd/system/bootc-apply.service"
         },
@@ -120,6 +124,7 @@
         "chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/bootc-repo /usr/bin/bkt",
         "mkdir -p /usr/lib/systemd/user/default.target.wants",
         "ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service",
+        "ln -sf ../bkt-daemon.service /usr/lib/systemd/user/default.target.wants/bkt-daemon.service",
         "mkdir -p /usr/lib/systemd/user/timers.target.wants",
         "ln -sf ../bootc-capture.timer /usr/lib/systemd/user/timers.target.wants/bootc-capture.timer",
         "mkdir -p /usr/lib/systemd/system/multi-user.target.wants",

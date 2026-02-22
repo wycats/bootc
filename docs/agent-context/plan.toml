@@ -237,21 +237,24 @@ kind = "regular"
 ulid = "01KJ3H4ARYBF17GD8QE9BJJWR2"
 
 [[epochs.phases.goals]]
-id = "systemd-user-service"
-label = "Create systemd user service for daemon"
-status = "pending"
-ulid = "01KJ3H4HBAEQCNFH38E3N3KWZK"
-
-[[epochs.phases.goals]]
 id = "socket-activation"
 label = "Consider socket activation vs always-on"
-status = "pending"
+status = "completed"
+completion_log = "Always-on chosen over socket activation: simpler, no cold start, trivial resource cost"
 ulid = "01KJ3H4N1SCQSPKTEDSMRKRKVD"
+
+[[epochs.phases.goals]]
+id = "systemd-user-service"
+label = "Create systemd user service for daemon"
+status = "completed"
+completion_log = "Service file created, enabled at boot, documented in WORKFLOW.md"
+ulid = "01KJ3H4HBAEQCNFH38E3N3KWZK"
 
 [[epochs.phases.goals]]
 id = "daemon-status-integration"
 label = "Integrate daemon status into bkt doctor"
-status = "pending"
+status = "completed"
+completion_log = "Daemon check added to bkt doctor with 3-state detection and actionable hints"
 ulid = "01KJ3H4STW4R92QXGRG7BTFG3R"
 
 [[epochs.phases.rfcs]]

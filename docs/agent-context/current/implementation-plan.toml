@@ -9,11 +9,74 @@ id = "01kj3h4arybf17gd8qe9bjjwr2"
 [[plan.goals]]
 id = "systemd-user-service"
 
+[[plan.goals.tasks]]
+id = "systemd-user-service"
+title = "Create complete bkt-daemon.service file (with restart policy)"
+status = "completed"
+completed_at = "2026-02-22T21:16:25.915835181+00:00"
+completion_log = "Created systemd/user/bkt-daemon.service and added COPY to Containerfile"
+
+[[plan.goals.tasks]]
+id = "install-via-skel"
+title = "Enable service at boot (symlink in default.target.wants)"
+status = "completed"
+completed_at = "2026-02-22T21:19:10.283640489+00:00"
+completion_log = "Added symlink in Containerfile to enable service at boot (follows bootc-bootstrap pattern)"
+
+[[plan.goals.tasks]]
+id = "document-activation"
+title = "Document manual activation in WORKFLOW.md"
+status = "completed"
+completed_at = "2026-02-22T21:26:34.802883834+00:00"
+completion_log = "Added Daemon Acceleration section to WORKFLOW.md with enable instructions"
+
 [[plan.goals]]
 id = "socket-activation"
 
+[[plan.goals.tasks]]
+id = "research-socket-activation"
+title = "Research socket activation requirements (sd_listen_fds)"
+status = "completed"
+completed_at = "2026-02-22T21:06:15.869889430+00:00"
+completion_log = "Researched: sd_listen_fds requires code changes to accept pre-bound fd"
+
+[[plan.goals.tasks]]
+id = "decide-strategy"
+title = "Decide: always-on vs socket-activated"
+status = "completed"
+completed_at = "2026-02-22T21:06:20.969025804+00:00"
+completion_log = "Decision: always-on (simple, 2MB trivial, no cold start latency)"
+
+[[plan.goals.tasks]]
+id = "defer-or-implement"
+title = "Defer socket activation or implement based on decision"
+status = "completed"
+completed_at = "2026-02-22T21:06:24.479593198+00:00"
+completion_log = "Deferred: socket activation not needed for single-user workstation"
+
 [[plan.goals]]
 id = "daemon-status-integration"
+
+[[plan.goals.tasks]]
+id = "daemon-check-function"
+title = "Implement daemon check in doctor.rs (function + wire into run)"
+status = "completed"
+completed_at = "2026-02-22T21:29:56.535061338+00:00"
+completion_log = "Added check_daemon_status() with 3-state logic (running/stale/missing)"
+
+[[plan.goals.tasks]]
+id = "systemd-aware-hint"
+title = "Add systemd-aware hint (detect if service installed)"
+status = "completed"
+completed_at = "2026-02-22T21:30:09.614803245+00:00"
+completion_log = "Already covered: hints reference systemctl commands; service is always installed in image"
+
+[[plan.goals.tasks]]
+id = "test-doctor-output"
+title = "Verify doctor output (daemon running vs stopped)"
+status = "completed"
+completed_at = "2026-02-22T21:31:29.598312872+00:00"
+completion_log = "Verified all 3 states: running (✓), stale socket (✗ restart hint), not running (✗ enable hint)"
 # Goals contain tasks. Use 'exo-add-task' to add tasks to goals.
 
 
