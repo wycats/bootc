@@ -226,13 +226,13 @@ id = "0006"
 [[epochs]]
 id = "01kj3h3ma3xbtnyjsn2kj3pkxy"
 title = "Daemon Systemd Integration"
-status = "active"
+status = "completed"
 ulid = "01KJ3H3MA3XBTNYJSN2KJ3PKXY"
 
 [[epochs.phases]]
 id = "01kj3h4arybf17gd8qe9bjjwr2"
 title = "systemd Auto-Start (Phase 5)"
-status = "active"
+status = "completed"
 kind = "regular"
 ulid = "01KJ3H4ARYBF17GD8QE9BJJWR2"
 
