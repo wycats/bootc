@@ -11,7 +11,9 @@ use std::os::fd::{AsRawFd, OwnedFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Instant;
+use tracing::{debug, error, info, warn};
 
 use super::protocol::{self, Request, Response};
 
@@ -20,6 +22,10 @@ pub struct DaemonServer {
     socket_path: PathBuf,
     listener: UnixListener,
     shutdown: Arc<AtomicBool>,
+    /// Number of connections served since startup.
+    connections_served: AtomicU64,
+    /// Server start time for uptime tracking.
+    start_time: Instant,
 }
 
 impl DaemonServer {
@@ -50,13 +56,25 @@ impl DaemonServer {
                 .context("Failed to set socket permissions")?;
         }
 
-        eprintln!("Daemon listening on: {}", socket_path.display());
+        info!("Daemon listening on: {}", socket_path.display());
 
         Ok(Self {
             socket_path: socket_path.to_path_buf(),
             listener,
             shutdown: Arc::new(AtomicBool::new(false)),
+            connections_served: AtomicU64::new(0),
+            start_time: Instant::now(),
         })
+    }
+
+    /// Get the number of connections served since startup.
+    pub fn connections_served(&self) -> u64 {
+        self.connections_served.load(Ordering::Relaxed)
+    }
+
+    /// Get the server uptime.
+    pub fn uptime(&self) -> std::time::Duration {
+        self.start_time.elapsed()
     }
 
     /// Run the server's main loop.
@@ -64,7 +82,7 @@ impl DaemonServer {
         // Set up signal handlers for graceful shutdown
         let shutdown = self.shutdown.clone();
         ctrlc::set_handler(move || {
-            eprintln!("\nReceived shutdown signal");
+            info!("Received shutdown signal");
             shutdown.store(true, Ordering::SeqCst);
         })
         .context("Failed to set signal handler")?;
@@ -78,8 +96,15 @@ impl DaemonServer {
                     // Set blocking for the connection
                     stream.set_nonblocking(false)?;
 
-                    if let Err(e) = self.handle_connection(stream) {
-                        eprintln!("Connection error: {}", e);
+                    let start = Instant::now();
+                    match self.handle_connection(stream) {
+                        Ok(()) => {
+                            self.connections_served.fetch_add(1, Ordering::Relaxed);
+                            debug!("Request completed in {:?}", start.elapsed());
+                        }
+                        Err(e) => {
+                            warn!("Connection error: {}", e);
+                        }
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -87,13 +112,18 @@ impl DaemonServer {
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
                 Err(e) => {
-                    eprintln!("Accept error: {}", e);
+                    error!("Accept error: {}", e);
                 }
             }
         }
 
         // Clean up socket on shutdown
-        eprintln!("Shutting down...");
+        let served = self.connections_served();
+        let uptime = self.uptime();
+        info!(
+            "Shutting down after {:?}, {} connections served",
+            uptime, served
+        );
         let _ = std::fs::remove_file(&self.socket_path);
 
         Ok(())
@@ -104,10 +134,10 @@ impl DaemonServer {
         // Receive the request with file descriptors
         let (request, fds) = protocol::recv_request(&stream)?;
 
-        eprintln!(
-            "Executing: {} (cwd: {})",
-            request.argv.join(" "),
-            request.cwd.display()
+        debug!(
+            command = %request.argv.join(" "),
+            cwd = %request.cwd.display(),
+            "Executing command"
         );
 
         // Fork and exec

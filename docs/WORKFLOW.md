@@ -29,6 +29,24 @@ Both share your home directory. The toolbox is a container that mounts `~`.
 | `bkt dev dnf ...`     | Toolbox | Auto-delegates from host via toolbox run |
 | `bkt status`          | Either  | Runs in current context                  |
 
+### Daemon Acceleration
+
+When running `bkt` from the toolbox, delegation uses `flatpak-spawn` by default (~120ms overhead). The **bkt daemon** provides ~30x faster delegation (~4ms) via Unix socket.
+
+**New installations**: The daemon starts automatically at login.
+
+**Existing installations**: Enable once after upgrading:
+
+```bash
+# Check daemon status
+bkt admin daemon status
+
+# If not running, enable and start
+systemctl --user enable --now bkt-daemon.service
+```
+
+The daemon is optional — all commands work without it, just slower from toolbox.
+
 ## Syncing System Changes to Manifests
 
 After installing things via GUI (GNOME Software, Extension Manager, Settings):

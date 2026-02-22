@@ -116,6 +116,7 @@ COPY scripts/bkt /usr/bin/bkt
 COPY systemd/user/bootc-bootstrap.service /usr/lib/systemd/user/bootc-bootstrap.service
 COPY systemd/user/bootc-capture.service /usr/lib/systemd/user/bootc-capture.service
 COPY systemd/user/bootc-capture.timer /usr/lib/systemd/user/bootc-capture.timer
+COPY systemd/user/bkt-daemon.service /usr/lib/systemd/user/bkt-daemon.service
 COPY systemd/system/bootc-apply.service /usr/lib/systemd/system/bootc-apply.service
 # dbus-broker: raise soft fd limit to prevent session crashes under heavy container load
 COPY systemd/user/dbus-broker.service.d/override.conf /usr/lib/systemd/user/dbus-broker.service.d/override.conf
@@ -284,6 +285,7 @@ RUN set -eu; \
     chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/bootc-repo /usr/bin/bkt; \
     mkdir -p /usr/lib/systemd/user/default.target.wants; \
     ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service; \
+    ln -sf ../bkt-daemon.service /usr/lib/systemd/user/default.target.wants/bkt-daemon.service; \
     mkdir -p /usr/lib/systemd/user/timers.target.wants; \
     ln -sf ../bootc-capture.timer /usr/lib/systemd/user/timers.target.wants/bootc-capture.timer; \
     mkdir -p /usr/lib/systemd/system/multi-user.target.wants; \

@@ -1,0 +1,17 @@
+[Unit]
+Description=bkt host command daemon
+Documentation=man:bkt(1)
+# Start after the graphical session is ready (ensures XDG_RUNTIME_DIR exists)
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/bkt admin daemon run
+Restart=on-failure
+RestartSec=5
+
+# Socket cleanup on unclean exit (daemon normally cleans up on SIGTERM)
+ExecStopPost=-/usr/bin/rm -f %t/bkt/host.sock
+
+[Install]
+WantedBy=default.target

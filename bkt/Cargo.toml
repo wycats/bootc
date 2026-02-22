@@ -49,6 +49,14 @@ assert_fs = "1"
 proptest = "1"
 tempfile = "3"
 serial_test = "3"
+whoami = "1"
+
+# Benchmarking
+criterion = "0.5"
+
+[[bench]]
+name = "daemon"
+harness = false
 
 [dependencies.is-terminal]
 version = "0.4"

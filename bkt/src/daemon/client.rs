@@ -6,19 +6,31 @@ use anyhow::{Context, Result};
 use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
+use super::DEFAULT_TIMEOUT;
 use super::protocol::{self, Request};
 
 /// Client for communicating with the daemon.
 pub struct DaemonClient {
     socket_path: PathBuf,
+    timeout: Duration,
 }
 
 impl DaemonClient {
-    /// Create a new client for the given socket path.
+    /// Create a new client for the given socket path with default timeout.
     pub fn new(socket_path: &Path) -> Self {
         Self {
             socket_path: socket_path.to_path_buf(),
+            timeout: DEFAULT_TIMEOUT,
+        }
+    }
+
+    /// Create a new client with a custom timeout.
+    pub fn with_timeout(socket_path: &Path, timeout: Duration) -> Self {
+        Self {
+            socket_path: socket_path.to_path_buf(),
+            timeout,
         }
     }
 
@@ -36,6 +48,14 @@ impl DaemonClient {
                 self.socket_path.display()
             )
         })?;
+
+        // Set timeouts to avoid hanging forever
+        stream
+            .set_read_timeout(Some(self.timeout))
+            .context("Failed to set read timeout")?;
+        stream
+            .set_write_timeout(Some(self.timeout))
+            .context("Failed to set write timeout")?;
 
         // Build the request
         let request = Request {

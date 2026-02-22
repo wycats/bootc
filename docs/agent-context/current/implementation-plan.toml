@@ -2,76 +2,81 @@
 # Implementation Plan
 
 [phase]
-id = "01khsej4tg08xsfhsh67d8qvkj"
+id = "01kj3h4arybf17gd8qe9bjjwr2"
 
 [plan]
 
 [[plan.goals]]
-id = "integrate-daemon-into-delegate-to-host"
+id = "systemd-user-service"
 
 [[plan.goals.tasks]]
-id = "add-bkt-admin-daemon-exec-command"
-title = "Add bkt admin daemon exec command"
-status = "pending"
+id = "systemd-user-service"
+title = "Create complete bkt-daemon.service file (with restart policy)"
+status = "completed"
+completed_at = "2026-02-22T21:16:25.915835181+00:00"
+completion_log = "Created systemd/user/bkt-daemon.service and added COPY to Containerfile"
 
 [[plan.goals.tasks]]
-id = "modify-delegate-to-host-to-try-daemon-first"
-title = "Modify delegate_to_host() to try daemon first"
-status = "pending"
+id = "install-via-skel"
+title = "Enable service at boot (symlink in default.target.wants)"
+status = "completed"
+completed_at = "2026-02-22T21:19:10.283640489+00:00"
+completion_log = "Added symlink in Containerfile to enable service at boot (follows bootc-bootstrap pattern)"
 
 [[plan.goals.tasks]]
-id = "add-fallback-to-host-exec-when-daemon-unavailable"
-title = "Add fallback to host-exec when daemon unavailable"
-status = "pending"
+id = "document-activation"
+title = "Document manual activation in WORKFLOW.md"
+status = "completed"
+completed_at = "2026-02-22T21:26:34.802883834+00:00"
+completion_log = "Added Daemon Acceleration section to WORKFLOW.md with enable instructions"
 
 [[plan.goals]]
-id = "update-shim-generation-for-daemon"
+id = "socket-activation"
 
 [[plan.goals.tasks]]
-id = "update-shim-script-template-with-daemon-support"
-title = "Update shim script template with daemon support"
-status = "pending"
+id = "research-socket-activation"
+title = "Research socket activation requirements (sd_listen_fds)"
+status = "completed"
+completed_at = "2026-02-22T21:06:15.869889430+00:00"
+completion_log = "Researched: sd_listen_fds requires code changes to accept pre-bound fd"
 
 [[plan.goals.tasks]]
-id = "add-shell-fallback-for-when-daemon-unavailable"
-title = "Add shell fallback for when daemon unavailable"
-status = "pending"
+id = "decide-strategy"
+title = "Decide: always-on vs socket-activated"
+status = "completed"
+completed_at = "2026-02-22T21:06:20.969025804+00:00"
+completion_log = "Decision: always-on (simple, 2MB trivial, no cold start latency)"
+
+[[plan.goals.tasks]]
+id = "defer-or-implement"
+title = "Defer socket activation or implement based on decision"
+status = "completed"
+completed_at = "2026-02-22T21:06:24.479593198+00:00"
+completion_log = "Deferred: socket activation not needed for single-user workstation"
 
 [[plan.goals]]
-id = "fix-bkt-dnf-to-bkt-system-references"
+id = "daemon-status-integration"
 
-[[plan.goals]]
-id = "remove-false-delegation-claims-from-docs"
+[[plan.goals.tasks]]
+id = "daemon-check-function"
+title = "Implement daemon check in doctor.rs (function + wire into run)"
+status = "completed"
+completed_at = "2026-02-22T21:29:56.535061338+00:00"
+completion_log = "Added check_daemon_status() with 3-state logic (running/stale/missing)"
 
-[[plan.goals]]
-id = "update-export-location-in-architecture"
+[[plan.goals.tasks]]
+id = "systemd-aware-hint"
+title = "Add systemd-aware hint (detect if service installed)"
+status = "completed"
+completed_at = "2026-02-22T21:30:09.614803245+00:00"
+completion_log = "Already covered: hints reference systemctl commands; service is always installed in image"
 
-[[plan.goals]]
-id = "mark-implemented-features-in-docs"
-
-[[plan.goals]]
-id = "decide-on-rfc-0018-host-only-shims"
-
-[[plan.goals]]
-id = "add-missing-manifests-to-bkt-schema-list"
-
-[[plan.goals]]
-id = "align-host-shims-schema-with-code"
-
-[[plan.goals]]
-id = "resolve-repos-json-vs-repo-json"
-
-[[plan.goals]]
-id = "cli-integration-tests-for-all-commands"
-
-[[plan.goals]]
-id = "pr-workflow-unit-tests"
-
-[[plan.goals]]
-id = "manifest-validation-tests"
-
-[[plan.goals]]
-id = "doctor-health-checks-path-shims"
+[[plan.goals.tasks]]
+id = "test-doctor-output"
+title = "Verify doctor output (daemon running vs stopped)"
+status = "completed"
+completed_at = "2026-02-22T21:31:29.598312872+00:00"
+completion_log = "Verified all 3 states: running (✓), stale socket (✗ restart hint), not running (✗ enable hint)"
 # Goals contain tasks. Use 'exo-add-task' to add tasks to goals.
 
 

@@ -3,6 +3,7 @@
 //! Runs pre-flight checks and reports system readiness.
 
 use crate::command_runner::RealCommandRunner;
+use crate::daemon;
 use crate::output::Output;
 use crate::pr::run_preflight_checks;
 use anyhow::Result;
@@ -27,6 +28,7 @@ pub fn run(args: DoctorArgs) -> Result<()> {
     results.push(check_devtools_resolve_to_distrobox("cargo"));
     results.push(check_devtools_resolve_to_distrobox("node"));
     results.push(check_devtools_resolve_to_distrobox("pnpm"));
+    results.push(check_daemon_status());
 
     if args.format == "json" {
         let json_results: Vec<_> = results
@@ -403,6 +405,25 @@ fn check_cargo_bin_exports() -> crate::pr::PreflightResult {
                 missing_shims.join(", ")
             ),
             "Run `bkt distrobox apply` to create shims for these binaries",
+        )
+    }
+}
+
+/// Check if the bkt daemon is running and connectable.
+fn check_daemon_status() -> crate::pr::PreflightResult {
+    if daemon::daemon_available() {
+        pass("bkt daemon", "Daemon is running and connectable")
+    } else if daemon::daemon_socket_exists() {
+        fail(
+            "bkt daemon",
+            "Daemon socket exists but is not connectable (stale?)",
+            "Restart the daemon: systemctl --user restart bkt-daemon.service",
+        )
+    } else {
+        fail(
+            "bkt daemon",
+            "Daemon is not running (~30x slower container→host delegation)",
+            "Start the daemon: systemctl --user enable --now bkt-daemon.service",
         )
     }
 }
