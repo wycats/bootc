@@ -28,7 +28,7 @@ ulid = "01KHSEHW15TNCD68Y8418Z77QQ"
 [[epochs]]
 id = "01khsegw3d3q25s8zwhbmcnqx4"
 title = "Daemon & Delegation"
-status = "active"
+status = "completed"
 ulid = "01KHSEGW3D3Q25S8ZWHBMCNQX4"
 
 [[epochs.phases]]
@@ -45,7 +45,7 @@ id = "0050"
 [[epochs.phases]]
 id = "01khsej4tg08xsfhsh67d8qvkj"
 title = "Daemon Integration (RFC-0050 Phase 2)"
-status = "active"
+status = "completed"
 kind = "regular"
 ulid = "01KHSEJ4TG08XSFHSH67D8QVKJ"
 
@@ -64,17 +64,6 @@ status = "abandoned"
 completion_log = "Deferred - shims work without daemon, daemon is optimization layer"
 ulid = "01KHSGGF2A8HSQR594QZCNNVMS"
 rfc = "0050"
-
-[[epochs.phases.rfcs]]
-id = "0050"
-
-[[epochs.phases]]
-id = "01khsej9cx0eymbvmme9vrq7mg"
-title = "Daemon Production (RFC-0050 Phases 3-5)"
-status = "pending"
-goals = []
-kind = "regular"
-ulid = "01KHSEJ9CX0EYMBVMME9VRQ7MG"
 
 [[epochs.phases.rfcs]]
 id = "0050"
@@ -233,3 +222,37 @@ ulid = "01KHSGYZCVSTJMXS5VSC5GH03W"
 
 [[epochs.phases.rfcs]]
 id = "0006"
+
+[[epochs]]
+id = "01kj3h3ma3xbtnyjsn2kj3pkxy"
+title = "Daemon Systemd Integration"
+status = "active"
+ulid = "01KJ3H3MA3XBTNYJSN2KJ3PKXY"
+
+[[epochs.phases]]
+id = "01kj3h4arybf17gd8qe9bjjwr2"
+title = "systemd Auto-Start (Phase 5)"
+status = "active"
+kind = "regular"
+ulid = "01KJ3H4ARYBF17GD8QE9BJJWR2"
+
+[[epochs.phases.goals]]
+id = "systemd-user-service"
+label = "Create systemd user service for daemon"
+status = "pending"
+ulid = "01KJ3H4HBAEQCNFH38E3N3KWZK"
+
+[[epochs.phases.goals]]
+id = "socket-activation"
+label = "Consider socket activation vs always-on"
+status = "pending"
+ulid = "01KJ3H4N1SCQSPKTEDSMRKRKVD"
+
+[[epochs.phases.goals]]
+id = "daemon-status-integration"
+label = "Integrate daemon status into bkt doctor"
+status = "pending"
+ulid = "01KJ3H4STW4R92QXGRG7BTFG3R"
+
+[[epochs.phases.rfcs]]
+id = "0050"

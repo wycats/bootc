@@ -2,76 +2,18 @@
 # Implementation Plan
 
 [phase]
-id = "01khsej4tg08xsfhsh67d8qvkj"
+id = "01kj3h4arybf17gd8qe9bjjwr2"
 
 [plan]
 
 [[plan.goals]]
-id = "integrate-daemon-into-delegate-to-host"
-
-[[plan.goals.tasks]]
-id = "add-bkt-admin-daemon-exec-command"
-title = "Add bkt admin daemon exec command"
-status = "pending"
-
-[[plan.goals.tasks]]
-id = "modify-delegate-to-host-to-try-daemon-first"
-title = "Modify delegate_to_host() to try daemon first"
-status = "pending"
-
-[[plan.goals.tasks]]
-id = "add-fallback-to-host-exec-when-daemon-unavailable"
-title = "Add fallback to host-exec when daemon unavailable"
-status = "pending"
+id = "systemd-user-service"
 
 [[plan.goals]]
-id = "update-shim-generation-for-daemon"
-
-[[plan.goals.tasks]]
-id = "update-shim-script-template-with-daemon-support"
-title = "Update shim script template with daemon support"
-status = "pending"
-
-[[plan.goals.tasks]]
-id = "add-shell-fallback-for-when-daemon-unavailable"
-title = "Add shell fallback for when daemon unavailable"
-status = "pending"
+id = "socket-activation"
 
 [[plan.goals]]
-id = "fix-bkt-dnf-to-bkt-system-references"
-
-[[plan.goals]]
-id = "remove-false-delegation-claims-from-docs"
-
-[[plan.goals]]
-id = "update-export-location-in-architecture"
-
-[[plan.goals]]
-id = "mark-implemented-features-in-docs"
-
-[[plan.goals]]
-id = "decide-on-rfc-0018-host-only-shims"
-
-[[plan.goals]]
-id = "add-missing-manifests-to-bkt-schema-list"
-
-[[plan.goals]]
-id = "align-host-shims-schema-with-code"
-
-[[plan.goals]]
-id = "resolve-repos-json-vs-repo-json"
-
-[[plan.goals]]
-id = "cli-integration-tests-for-all-commands"
-
-[[plan.goals]]
-id = "pr-workflow-unit-tests"
-
-[[plan.goals]]
-id = "manifest-validation-tests"
-
-[[plan.goals]]
-id = "doctor-health-checks-path-shims"
+id = "daemon-status-integration"
 # Goals contain tasks. Use 'exo-add-task' to add tasks to goals.
 
 
