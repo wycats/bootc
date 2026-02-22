@@ -75,7 +75,16 @@ fn maybe_delegate(cli: &Cli) -> Result<()> {
 fn delegate_to_host() -> Result<()> {
     // Try fast path: daemon socket
     if daemon::daemon_available() {
-        return delegate_via_daemon();
+        match delegate_via_daemon() {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                // Daemon failed - fall back to flatpak-spawn
+                tracing::warn!(
+                    "Daemon delegation failed, falling back to flatpak-spawn: {}",
+                    e
+                );
+            }
+        }
     }
 
     // Fall back to slow path: flatpak-spawn

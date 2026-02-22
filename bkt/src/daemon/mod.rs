@@ -39,7 +39,12 @@ pub use protocol::{Request, Response};
 pub use server::DaemonServer;
 
 use anyhow::{Context, Result};
+use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use std::time::Duration;
+
+/// Default connection timeout for daemon operations.
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Returns the path to the daemon socket.
 ///
@@ -51,10 +56,37 @@ pub fn socket_path() -> Result<PathBuf> {
 }
 
 /// Check if the daemon socket exists and is connectable.
+///
+/// This performs an actual connection attempt to detect stale sockets
+/// (e.g., from a crashed daemon that didn't clean up).
 pub fn daemon_available() -> bool {
-    if let Ok(path) = socket_path() {
-        path.exists()
-    } else {
-        false
+    let Ok(path) = socket_path() else {
+        return false;
+    };
+
+    if !path.exists() {
+        return false;
     }
+
+    // Try to connect with a short timeout to detect stale sockets
+    match UnixStream::connect(&path) {
+        Ok(stream) => {
+            // Set a read timeout to avoid blocking forever
+            let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
+            drop(stream);
+            true
+        }
+        Err(_) => {
+            // Socket exists but can't connect - it's stale
+            tracing::debug!("Daemon socket exists but is not connectable (stale?)");
+            false
+        }
+    }
+}
+
+/// Check if the daemon socket exists (without attempting connection).
+///
+/// This is faster than `daemon_available()` but won't detect stale sockets.
+pub fn daemon_socket_exists() -> bool {
+    socket_path().map(|p| p.exists()).unwrap_or(false)
 }

@@ -537,7 +537,7 @@ users needing to think about `flatpak-spawn`.
 
 ## Performance Optimization: Host-Command Daemon
 
-> **Status**: Phase 1 Complete (daemon works, ~4ms overhead)
+> **Status**: Phase 3 Complete (robustness improvements)
 >
 > This section was consolidated from RFC-0050 (Persistent Host-Command Helper).
 
@@ -586,13 +586,13 @@ D-Bus entirely:
 
 ### Implementation Status
 
-| Phase                   | Status      | Notes                       |
-| ----------------------- | ----------- | --------------------------- |
-| Phase 1: Protocol & PoC | ✅ Complete | Daemon works, ~4ms overhead |
-| Phase 2: Integration    | 🔜 Next     | delegate_to_host() + shims  |
-| Phase 3: Robustness     | Planned     | Timeouts, graceful shutdown |
-| Phase 4: Optimization   | Planned     | Benchmarks, keep-alive      |
-| Phase 5: systemd        | Planned     | Auto-start on login         |
+| Phase                   | Status      | Notes                                    |
+| ----------------------- | ----------- | ---------------------------------------- |
+| Phase 1: Protocol & PoC | ✅ Complete | Daemon works, ~4ms overhead              |
+| Phase 2: Integration    | ✅ Complete | delegate_to_host() uses daemon           |
+| Phase 3: Robustness     | ✅ Complete | Timeouts, stale socket detection, logging |
+| Phase 4: Optimization   | Planned     | Benchmarks, keep-alive                   |
+| Phase 5: systemd        | Planned     | Auto-start on login                      |
 
 ### Module Structure
 
