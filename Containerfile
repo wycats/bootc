@@ -213,7 +213,6 @@ COPY --link --from=install-bundled / /
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
-    /tmp/rpms/*.rpm \
     curl \
     distrobox \
     fontconfig \
