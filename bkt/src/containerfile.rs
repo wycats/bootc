@@ -297,6 +297,7 @@ pub fn generate_full_containerfile(input: &ContainerfileGeneratorInput) -> Strin
     emit_tools_stage(&mut lines);
     emit_base_stage(&mut lines);
     emit_dl_stages(&mut lines, &input.external_repos);
+    emit_install_stages(&mut lines, &input.external_repos);
     emit_fetch_stages(&mut lines, &input.upstreams);
     emit_script_stages(&mut lines, &input.upstreams);
     emit_wrapper_build_stage(&mut lines, &input.image_config);
@@ -385,6 +386,90 @@ fn emit_dl_stages(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
         lines.push(format!("ARG {}=0", cache_arg_name(&repo.name)));
         lines.push(format!("RUN bkt-build download-rpms {}", repo.name));
     }
+}
+
+/// Emit per-package install stages that extract RPMs without DB/scripts.
+/// Each stage runs `rpm -i --nodb --noscripts --nodeps` and handles /opt relocation.
+fn emit_install_stages(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
+    lines.push("".to_string());
+    lines.push(section_header(
+        "RPM install stages (per-package extraction with /opt relocation)",
+    ));
+    lines.push("".to_string());
+
+    for (idx, repo) in repos.repos.iter().enumerate() {
+        if idx > 0 {
+            lines.push("".to_string());
+        }
+        lines.push(format!("FROM base AS install-{}", repo.name));
+        lines.push(format!("COPY --from=dl-{} /rpms/ /tmp/rpms/", repo.name));
+
+        if let Some(opt_path) = &repo.opt_path {
+            // Repo installs to /opt — extract and relocate
+            lines.push(format!("RUN set -eu; {}", LINE_CONT));
+            lines.push(format!(
+                "    rpm -i --nodb --noscripts --nodeps /tmp/rpms/*.rpm; {}",
+                LINE_CONT
+            ));
+            lines.push(format!("    mkdir -p /usr/lib/opt; {}", LINE_CONT));
+            lines.push(format!(
+                "    if [ -d /opt/{opt} ]; then cp -a /opt/{opt}/. /usr/lib/opt/{opt}/; rm -rf /opt/{opt}; fi; {cont}",
+                opt = opt_path,
+                cont = LINE_CONT
+            ));
+            lines.push("    rm -rf /tmp/rpms".to_string());
+        } else {
+            // No /opt relocation needed
+            lines.push(
+                "RUN rpm -i --nodb --noscripts --nodeps /tmp/rpms/*.rpm && rm -rf /tmp/rpms"
+                    .to_string(),
+            );
+        }
+    }
+}
+
+/// Emit COPY --link instructions from install-* stages into final image.
+fn emit_install_copies(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
+    lines.push(
+        "# Import installed files from each install-* stage (COPY --link for layer independence)"
+            .to_string(),
+    );
+    for repo in &repos.repos {
+        lines.push(format!("COPY --link --from=install-{} / /", repo.name));
+    }
+}
+
+/// Emit RPM database finalization after all file payloads are in place.
+fn emit_rpm_db_finalization(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
+    if repos.repos.is_empty() {
+        return;
+    }
+
+    lines.push("# Finalize RPM database for external packages".to_string());
+    // Copy RPMs to separate dirs to avoid filename collisions
+    for repo in &repos.repos {
+        lines.push(format!(
+            "COPY --from=dl-{} /rpms/ /tmp/rpms-{}/",
+            repo.name, repo.name
+        ));
+    }
+
+    lines.push(format!("RUN set -eu; {}", LINE_CONT));
+    for repo in &repos.repos {
+        lines.push(format!(
+            "    rpm -i --justdb --nodeps /tmp/rpms-{}/*.rpm; {}",
+            repo.name, LINE_CONT
+        ));
+    }
+    lines.push(format!("    ldconfig; {}", LINE_CONT));
+
+    // Cleanup
+    let cleanup_parts: Vec<String> = repos
+        .repos
+        .iter()
+        .map(|r| format!("/tmp/rpms-{}", r.name))
+        .collect();
+    lines.push(format!("    rm -rf {}", cleanup_parts.join(" ")));
 }
 
 fn emit_fetch_stages(lines: &mut Vec<String>, upstreams: &UpstreamManifest) {
@@ -594,10 +679,12 @@ fn emit_image_assembly(lines: &mut Vec<String>, input: &ContainerfileGeneratorIn
     emit_managed_section(lines, Section::KernelArguments, &kargs);
     lines.push("".to_string());
 
-    emit_rpm_collection(lines, &input.external_repos);
+    // Per-package RPM file payloads (COPY --link for layer independence)
+    emit_install_copies(lines, &input.external_repos);
     lines.push("".to_string());
 
-    let pkgs = generate_system_packages(&input.packages, input.has_external_rpms);
+    // System packages only (external RPMs handled via install stages)
+    let pkgs = generate_system_packages(&input.packages, false);
     emit_managed_section(lines, Section::SystemPackages, &pkgs);
     lines.push("".to_string());
 
@@ -605,10 +692,12 @@ fn emit_image_assembly(lines: &mut Vec<String>, input: &ContainerfileGeneratorIn
     emit_managed_section(lines, Section::SystemdUnits, &units);
     lines.push("".to_string());
 
-    emit_opt_relocation(lines);
+    // tmpfiles for /var/opt symlinks (data-driven from opt_path)
+    emit_tmpfiles(lines, &input.external_repos);
     lines.push("".to_string());
 
-    emit_tmpfiles(lines, &input.external_repos);
+    // RPM database finalization (--justdb + ldconfig)
+    emit_rpm_db_finalization(lines, &input.external_repos);
     lines.push("".to_string());
 
     emit_cleanup(lines);
@@ -660,30 +749,6 @@ fn emit_image_assembly(lines: &mut Vec<String>, input: &ContainerfileGeneratorIn
     emit_rpm_snapshot(lines);
 }
 
-fn emit_rpm_collection(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
-    lines.push("# Collect downloaded RPMs from dl-* stages".to_string());
-    for repo in &repos.repos {
-        lines.push(format!("COPY --from=dl-{} /rpms/ /tmp/rpms/", repo.name));
-    }
-}
-
-fn emit_opt_relocation(lines: &mut Vec<String>) {
-    lines.push("# Relocate /opt to /usr/lib/opt for ostree compatibility".to_string());
-    lines.push(
-        "# On ostree, /opt -> /var/opt which is persistent and NOT updated on upgrade.".to_string(),
-    );
-    lines.push("# Moving to /usr/lib/opt makes it part of the immutable image.".to_string());
-    lines.push(format!("RUN set -eu; {}", LINE_CONT));
-    lines.push(format!(
-        "    if [ -d /opt ] && [ \"$(ls -A /opt 2>/dev/null)\" ]; then {}",
-        LINE_CONT
-    ));
-    lines.push(format!("        mkdir -p /usr/lib/opt; {}", LINE_CONT));
-    lines.push(format!("        cp -a /opt/. /usr/lib/opt/; {}", LINE_CONT));
-    lines.push(format!("        rm -rf /opt/*; {}", LINE_CONT));
-    lines.push("    fi".to_string());
-}
-
 fn emit_tmpfiles(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
     let opt_entries = opt_symlink_entries(repos);
 
@@ -708,7 +773,8 @@ fn emit_cleanup(lines: &mut Vec<String>) {
     lines.push(
         "# Clean up build-time artifacts (no longer needed after package install)".to_string(),
     );
-    lines.push("RUN rm -rf /tmp/rpms /tmp/external-repos.json /usr/bin/bkt-build".to_string());
+    // Note: /tmp/rpms is cleaned up in install stages and db finalization
+    lines.push("RUN rm -rf /tmp/external-repos.json /usr/bin/bkt-build".to_string());
 }
 
 fn emit_upstream_copies(lines: &mut Vec<String>, upstreams: &UpstreamManifest) {
@@ -913,15 +979,11 @@ fn ensure_trailing_slash(path: &str) -> String {
 }
 
 fn opt_symlink_entries(repos: &ExternalReposManifest) -> Vec<String> {
-    let known = [("1password", "1Password"), ("microsoft-edge", "microsoft")];
-
-    let mut entries = Vec::new();
-    for (name, dir) in known {
-        if repos.repos.iter().any(|repo| repo.name == name) {
-            entries.push(dir.to_string());
-        }
-    }
-    entries
+    repos
+        .repos
+        .iter()
+        .filter_map(|repo| repo.opt_path.clone())
+        .collect()
 }
 
 fn script_output_comment(upstream: &Upstream) -> Option<&'static str> {
