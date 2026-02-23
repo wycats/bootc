@@ -2,81 +2,77 @@
 # Implementation Plan
 
 [phase]
-id = "01kj3h4arybf17gd8qe9bjjwr2"
+id = "01khsejd4ms6zvj1yv6xgbhcsb"
 
 [plan]
 
 [[plan.goals]]
-id = "systemd-user-service"
+id = "verify"
 
 [[plan.goals.tasks]]
-id = "systemd-user-service"
-title = "Create complete bkt-daemon.service file (with restart policy)"
-status = "completed"
-completed_at = "2026-02-22T21:16:25.915835181+00:00"
-completion_log = "Created systemd/user/bkt-daemon.service and added COPY to Containerfile"
+id = "verify-rpm-qa"
+title = "Verify rpm -qa output identical to current image"
+status = "pending"
 
 [[plan.goals.tasks]]
-id = "install-via-skel"
-title = "Enable service at boot (symlink in default.target.wants)"
-status = "completed"
-completed_at = "2026-02-22T21:19:10.283640489+00:00"
-completion_log = "Added symlink in Containerfile to enable service at boot (follows bootc-bootstrap pattern)"
+id = "verify-rpm-v"
+title = "Verify rpm -V shows no failures for external packages"
+status = "pending"
 
 [[plan.goals.tasks]]
-id = "document-activation"
-title = "Document manual activation in WORKFLOW.md"
-status = "completed"
-completed_at = "2026-02-22T21:26:34.802883834+00:00"
-completion_log = "Added Daemon Acceleration section to WORKFLOW.md with enable instructions"
+id = "verify-wrappers"
+title = "Verify wrapper binaries and .desktop files functional"
+status = "pending"
+
+[[plan.goals.tasks]]
+id = "verify-minimal-transfer"
+title = "Verify single-package bump transfers minimal data"
+status = "pending"
 
 [[plan.goals]]
-id = "socket-activation"
+id = "per-package-layers"
 
 [[plan.goals.tasks]]
-id = "research-socket-activation"
-title = "Research socket activation requirements (sd_listen_fds)"
+id = "opt-path-manifest"
+title = "Add opt_path field to external-repos.json"
 status = "completed"
-completed_at = "2026-02-22T21:06:15.869889430+00:00"
-completion_log = "Researched: sd_listen_fds requires code changes to accept pre-bound fd"
+completed_at = "2026-02-23T02:19:57.898138497+00:00"
+completion_log = "Added opt_path field to ExternalRepo struct and manifest"
 
 [[plan.goals.tasks]]
-id = "decide-strategy"
-title = "Decide: always-on vs socket-activated"
+id = "emit-install-fn"
+title = "Add emit_install_stages() to containerfile.rs"
 status = "completed"
-completed_at = "2026-02-22T21:06:20.969025804+00:00"
-completion_log = "Decision: always-on (simple, 2MB trivial, no cold start latency)"
+completed_at = "2026-02-23T02:20:07.458543540+00:00"
+completion_log = "Added emit_install_stages(), emit_install_copies(), emit_rpm_db_finalization()"
 
 [[plan.goals.tasks]]
-id = "defer-or-implement"
-title = "Defer socket activation or implement based on decision"
+id = "rpm-extract"
+title = "Implement rpm --nodb extraction with /opt relocation"
 status = "completed"
-completed_at = "2026-02-22T21:06:24.479593198+00:00"
-completion_log = "Deferred: socket activation not needed for single-user workstation"
-
-[[plan.goals]]
-id = "daemon-status-integration"
+completed_at = "2026-02-23T02:20:07.527004561+00:00"
+completion_log = "Implemented rpm --nodb --noscripts --nodeps with per-stage /opt relocation"
 
 [[plan.goals.tasks]]
-id = "daemon-check-function"
-title = "Implement daemon check in doctor.rs (function + wire into run)"
+id = "assembly-copy"
+title = "Wire COPY --link from install stages into assembly"
 status = "completed"
-completed_at = "2026-02-22T21:29:56.535061338+00:00"
-completion_log = "Added check_daemon_status() with 3-state logic (running/stale/missing)"
+completed_at = "2026-02-23T02:20:07.632738841+00:00"
+completion_log = "Wired COPY --link --from=install-* into image assembly"
 
 [[plan.goals.tasks]]
-id = "systemd-aware-hint"
-title = "Add systemd-aware hint (detect if service installed)"
+id = "db-final"
+title = "Add rpm --justdb finalization + ldconfig"
 status = "completed"
-completed_at = "2026-02-22T21:30:09.614803245+00:00"
-completion_log = "Already covered: hints reference systemctl commands; service is always installed in image"
+completed_at = "2026-02-23T02:20:07.708874099+00:00"
+completion_log = "Added rpm --justdb finalization with ldconfig"
 
 [[plan.goals.tasks]]
-id = "test-doctor-output"
-title = "Verify doctor output (daemon running vs stopped)"
+id = "remove-old"
+title = "Remove monolithic dnf install and post-relocation RUN"
 status = "completed"
-completed_at = "2026-02-22T21:31:29.598312872+00:00"
-completion_log = "Verified all 3 states: running (✓), stale socket (✗ restart hint), not running (✗ enable hint)"
+completed_at = "2026-02-23T02:20:07.780486272+00:00"
+completion_log = "Removed emit_rpm_collection and emit_opt_relocation, updated cleanup"
 # Goals contain tasks. Use 'exo-add-task' to add tasks to goals.
 
 

@@ -71,16 +71,28 @@ id = "0050"
 [[epochs]]
 id = "01khsegzg08en3xak79490vnsj"
 title = "Layer Optimization"
-status = "pending"
+status = "active"
 ulid = "01KHSEGZG08EN3XAK79490VNSJ"
 
 [[epochs.phases]]
 id = "01khsejd4ms6zvj1yv6xgbhcsb"
 title = "Layer Independence (RFC-0045)"
-status = "pending"
-goals = []
+status = "active"
 kind = "regular"
 ulid = "01KHSEJD4MS6ZVJ1YV6XGBHCSB"
+
+[[epochs.phases.goals]]
+id = "per-package-layers"
+label = "Per-package RPM layers with /opt relocation"
+status = "completed"
+completion_log = "Per-package RPM layers implemented with COPY --link for layer independence"
+ulid = "01KJ42P8C2WB0W9FVAF43R7MMF"
+
+[[epochs.phases.goals]]
+id = "verify"
+label = "Verify correctness"
+status = "pending"
+ulid = "01KJ41V0R3P8KMMMTXS19QB5RN"
 
 [[epochs.phases.rfcs]]
 id = "0045"
