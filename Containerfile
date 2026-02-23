@@ -47,6 +47,11 @@ RUN set -eu; \
     if [ -d /opt/1Password ]; then cp -a /opt/1Password/. /usr/lib/opt/1Password/; rm -rf /opt/1Password; fi; \
     rm -rf /tmp/rpms
 
+# ── Bundled packages merged stage (reduces deployment layer count) ───────────
+
+FROM scratch AS install-bundled
+COPY --from=install-1password / /
+
 # ── Upstream fetch stages (parallel, each installs one upstream entry) ───────
 
 FROM base AS fetch-starship
@@ -201,13 +206,14 @@ FROM base AS image
 # No kernel arguments configured
 # === END KERNEL_ARGUMENTS ===
 
-# Import installed files from each install-* stage (COPY --link for layer independence)
+# Import installed files from install-* stages (COPY --link for layer independence)
 COPY --link --from=install-code / /
 COPY --link --from=install-microsoft-edge / /
-COPY --link --from=install-1password / /
+COPY --link --from=install-bundled / /
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
+    /tmp/rpms/*.rpm \
     curl \
     distrobox \
     fontconfig \

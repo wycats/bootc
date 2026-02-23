@@ -32,6 +32,11 @@
         "gpg_key": {
           "type": "string"
         },
+        "layer_group": {
+          "description": "Controls deployment layer grouping. Defaults to bundled.",
+          "$ref": "#/$defs/LayerGroup",
+          "default": "bundled"
+        },
         "name": {
           "type": "string"
         },
@@ -55,6 +60,21 @@
         "baseurl",
         "gpg_key",
         "packages"
+      ]
+    },
+    "LayerGroup": {
+      "description": "Controls how a package is grouped for deployment layers.\n\nBuild stages are always per-package (for cache efficiency).\nThis field controls deployment layer consolidation to avoid\nbtrfs hardlink limits in ostree.",
+      "oneOf": [
+        {
+          "description": "Package gets its own deployment layer.\nUse for high-churn, large packages (e.g., vscode, edge).",
+          "type": "string",
+          "const": "independent"
+        },
+        {
+          "description": "Package is grouped with other bundled packages.\nUse for low-churn, smaller packages.",
+          "type": "string",
+          "const": "bundled"
+        }
       ]
     }
   }
