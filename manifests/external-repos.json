@@ -13,14 +13,16 @@
       "display_name": "microsoft-edge",
       "baseurl": "https://packages.microsoft.com/yumrepos/edge",
       "gpg_key": "https://packages.microsoft.com/keys/microsoft.asc",
-      "packages": ["microsoft-edge-stable"]
+      "packages": ["microsoft-edge-stable"],
+      "opt_path": "microsoft"
     },
     {
       "name": "1password",
       "display_name": "1Password Stable Channel",
       "baseurl": "https://downloads.1password.com/linux/rpm/stable/$basearch",
       "gpg_key": "https://downloads.1password.com/linux/keys/1password.asc",
-      "packages": ["1password", "1password-cli"]
+      "packages": ["1password", "1password-cli"],
+      "opt_path": "1Password"
     }
   ]
 }

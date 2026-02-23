@@ -35,6 +35,13 @@
         "name": {
           "type": "string"
         },
+        "opt_path": {
+          "description": "Optional path for /opt relocation (e.g., \"microsoft\" or \"1Password\")",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "packages": {
           "type": "array",
           "items": {
