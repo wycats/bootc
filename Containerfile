@@ -25,6 +25,28 @@ FROM base AS dl-1password
 ARG CACHE_EPOCH_1PASSWORD=0
 RUN bkt-build download-rpms 1password
 
+# ── RPM install stages (per-package extraction with /opt relocation) ─────────
+
+FROM base AS install-code
+COPY --from=dl-code /rpms/ /tmp/rpms/
+RUN rpm -i --nodb --noscripts --nodeps /tmp/rpms/*.rpm && rm -rf /tmp/rpms
+
+FROM base AS install-microsoft-edge
+COPY --from=dl-microsoft-edge /rpms/ /tmp/rpms/
+RUN set -eu; \
+    rpm -i --nodb --noscripts --nodeps /tmp/rpms/*.rpm; \
+    mkdir -p /usr/lib/opt; \
+    if [ -d /opt/microsoft ]; then cp -a /opt/microsoft/. /usr/lib/opt/microsoft/; rm -rf /opt/microsoft; fi; \
+    rm -rf /tmp/rpms
+
+FROM base AS install-1password
+COPY --from=dl-1password /rpms/ /tmp/rpms/
+RUN set -eu; \
+    rpm -i --nodb --noscripts --nodeps /tmp/rpms/*.rpm; \
+    mkdir -p /usr/lib/opt; \
+    if [ -d /opt/1Password ]; then cp -a /opt/1Password/. /usr/lib/opt/1Password/; rm -rf /opt/1Password; fi; \
+    rm -rf /tmp/rpms
+
 # ── Upstream fetch stages (parallel, each installs one upstream entry) ───────
 
 FROM base AS fetch-starship
@@ -179,14 +201,13 @@ FROM base AS image
 # No kernel arguments configured
 # === END KERNEL_ARGUMENTS ===
 
-# Collect downloaded RPMs from dl-* stages
-COPY --from=dl-code /rpms/ /tmp/rpms/
-COPY --from=dl-microsoft-edge /rpms/ /tmp/rpms/
-COPY --from=dl-1password /rpms/ /tmp/rpms/
+# Import installed files from each install-* stage (COPY --link for layer independence)
+COPY --link --from=install-code / /
+COPY --link --from=install-microsoft-edge / /
+COPY --link --from=install-1password / /
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
-    /tmp/rpms/*.rpm \
     curl \
     distrobox \
     fontconfig \
@@ -210,25 +231,26 @@ RUN dnf install -y \
 # No systemd units configured
 # === END SYSTEMD_UNITS ===
 
-# Relocate /opt to /usr/lib/opt for ostree compatibility
-# On ostree, /opt -> /var/opt which is persistent and NOT updated on upgrade.
-# Moving to /usr/lib/opt makes it part of the immutable image.
-RUN set -eu; \
-    if [ -d /opt ] && [ "$(ls -A /opt 2>/dev/null)" ]; then \
-        mkdir -p /usr/lib/opt; \
-        cp -a /opt/. /usr/lib/opt/; \
-        rm -rf /opt/*; \
-    fi
-
 # Create systemd tmpfiles rule to symlink /var/opt contents from /usr/lib/opt
 RUN printf '%s\n' \
     '# Symlink /opt contents from immutable /usr/lib/opt' \
-    'L+ /var/opt/1Password - - - - /usr/lib/opt/1Password' \
     'L+ /var/opt/microsoft - - - - /usr/lib/opt/microsoft' \
+    'L+ /var/opt/1Password - - - - /usr/lib/opt/1Password' \
     >/usr/lib/tmpfiles.d/bootc-opt.conf
 
+# Finalize RPM database for external packages
+COPY --from=dl-code /rpms/ /tmp/rpms-code/
+COPY --from=dl-microsoft-edge /rpms/ /tmp/rpms-microsoft-edge/
+COPY --from=dl-1password /rpms/ /tmp/rpms-1password/
+RUN set -eu; \
+    rpm -i --justdb --nodeps /tmp/rpms-code/*.rpm; \
+    rpm -i --justdb --nodeps /tmp/rpms-microsoft-edge/*.rpm; \
+    rpm -i --justdb --nodeps /tmp/rpms-1password/*.rpm; \
+    ldconfig; \
+    rm -rf /tmp/rpms-code /tmp/rpms-microsoft-edge /tmp/rpms-1password
+
 # Clean up build-time artifacts (no longer needed after package install)
-RUN rm -rf /tmp/rpms /tmp/external-repos.json /usr/bin/bkt-build
+RUN rm -rf /tmp/external-repos.json /usr/bin/bkt-build
 
 # ── COPY upstream outputs into final image ───────────────────────────────────
 

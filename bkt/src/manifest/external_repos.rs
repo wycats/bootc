@@ -17,4 +17,7 @@ pub struct ExternalRepo {
     pub baseurl: String,
     pub gpg_key: String,
     pub packages: Vec<String>,
+    /// Optional path for /opt relocation (e.g., "microsoft" or "1Password")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opt_path: Option<String>,
 }
