@@ -21,6 +21,7 @@
 
 use crate::manifest::ExternalReposManifest;
 use crate::manifest::Shim;
+use crate::manifest::external_repos::LayerGroup;
 use crate::manifest::image_config::{FileCopy, ImageConfigManifest, ImageModule};
 use crate::manifest::system_config::SystemConfigManifest;
 use anyhow::{Context, Result, bail};
@@ -298,6 +299,7 @@ pub fn generate_full_containerfile(input: &ContainerfileGeneratorInput) -> Strin
     emit_base_stage(&mut lines);
     emit_dl_stages(&mut lines, &input.external_repos);
     emit_install_stages(&mut lines, &input.external_repos);
+    emit_bundled_stage(&mut lines, &input.external_repos);
     emit_fetch_stages(&mut lines, &input.upstreams);
     emit_script_stages(&mut lines, &input.upstreams);
     emit_wrapper_build_stage(&mut lines, &input.image_config);
@@ -428,14 +430,56 @@ fn emit_install_stages(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
     }
 }
 
+/// Emit a merged stage for bundled packages (if any exist).
+/// This stage combines outputs from individual install-* stages into one layer.
+fn emit_bundled_stage(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
+    let bundled: Vec<_> = repos
+        .repos
+        .iter()
+        .filter(|r| r.layer_group == LayerGroup::Bundled)
+        .collect();
+
+    if bundled.is_empty() {
+        return;
+    }
+
+    lines.push("".to_string());
+    lines.push(section_header(
+        "Bundled packages merged stage (reduces deployment layer count)",
+    ));
+    lines.push("".to_string());
+    lines.push("FROM scratch AS install-bundled".to_string());
+    for repo in &bundled {
+        lines.push(format!("COPY --from=install-{} / /", repo.name));
+    }
+}
+
 /// Emit COPY --link instructions from install-* stages into final image.
+/// Independent packages get their own layer; bundled packages share one layer.
 fn emit_install_copies(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
+    let independent: Vec<_> = repos
+        .repos
+        .iter()
+        .filter(|r| r.layer_group == LayerGroup::Independent)
+        .collect();
+    let has_bundled = repos
+        .repos
+        .iter()
+        .any(|r| r.layer_group == LayerGroup::Bundled);
+
     lines.push(
-        "# Import installed files from each install-* stage (COPY --link for layer independence)"
+        "# Import installed files from install-* stages (COPY --link for layer independence)"
             .to_string(),
     );
-    for repo in &repos.repos {
+
+    // Independent packages get their own COPY --link
+    for repo in &independent {
         lines.push(format!("COPY --link --from=install-{} / /", repo.name));
+    }
+
+    // Bundled packages share one merged layer
+    if has_bundled {
+        lines.push("COPY --link --from=install-bundled / /".to_string());
     }
 }
 
