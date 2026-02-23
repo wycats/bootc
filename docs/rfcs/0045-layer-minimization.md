@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft
+Implemented (2026-02-22)
 
 ## Goal
 
@@ -345,59 +345,46 @@ RUN (rebuilds when any external RPM changes) and the consolidated RUN
 | 1       | `RUN` rpm snapshot                                                                |
 | **~18** | **Total**                                                                         |
 
-## Implementation
+## Implementation Notes
 
-### Phase 1: `COPY --link` + RUN Consolidation
+Implemented 2026-02-22. Key changes to `bkt/src/containerfile.rs`:
 
-Add `--link` to all `COPY --from` instructions in the image stage.
-Fold the 6 optional-feature RUNs and the host-shims RUN into the
-existing consolidated RUN.
+### Generator Functions Added
 
-**Generator changes**:
+- `emit_install_stages()` — Emits `FROM base AS install-{name}` stages
+  for each external RPM. Each stage runs `rpm -i --nodb --noscripts
+--nodeps` to extract files without touching the RPM database.
+  Packages with `opt_path` get `/opt` → `/usr/lib/opt` relocation
+  inline.
 
-- `emit_upstream_copies()`: add `--link` flag
-- `emit_consolidated_run()`: absorb optional feature conditionals
-  and host shim commands
-- `emit_optional_features()`: remove function; emit only `ARG`
-  declarations before the consolidated RUN
-- `emit_image_assembly()`: remove `emit_optional_features()` call
-  and HOST_SHIMS managed section emission
-- HOST_SHIMS: remove as a managed section; fold into consolidated
-  RUN. Use `bkt containerfile generate` to update shims.
+- `emit_install_copies()` — Emits `COPY --link --from=install-{name} / /`
+  for each external RPM. The `--link` flag makes each layer independent.
 
-**Verification**: `bkt containerfile check` passes. Build the image
-and confirm `rpm -qa` output matches the current image.
+- `emit_rpm_db_finalization()` — Emits a single `RUN` that copies all
+  RPMs from dl-\* stages and runs `rpm -i --justdb --nodeps` followed
+  by `ldconfig`. This registers packages in the RPM database after
+  file payloads are in place.
 
-### Phase 2: Per-Package RPM Install Stages
+### Generator Functions Removed
 
-Split external RPMs out of the monolithic `dnf install` into
-per-package install stages using `rpm -i --nodb --noscripts --nodeps`.
+- `emit_rpm_collection()` — No longer needed; RPMs are installed
+  per-package in install-\* stages.
 
-**Generator changes**:
+- `emit_opt_relocation()` — Replaced by data-driven relocation via
+  `opt_path` field in `external-repos.json`.
 
-- `emit_dl_stages()` → `emit_install_stages()`: each dl-\* stage
-  gains a `RUN rpm -i --nodb --noscripts --nodeps` step
-- `emit_rpm_collection()`: remove (no more `COPY --from=dl-* /rpms/`)
-- `emit_image_assembly()`: add per-package `COPY --link --from=install-*`
-  instructions, followed by a DB finalization `RUN`
-- System packages (`curl`, `gh`, `jq`, etc.) remain in a single
-  `RUN dnf install`
+### Manifest Changes
 
-**Verification**: `rpm -qa` output identical. `rpm -V <package>` shows
-no verification failures. Wrapper binaries and `.desktop` files present.
+- `external-repos.json` — Added `opt_path` field to repos that install
+  to `/opt`. Values: `microsoft-edge: "microsoft"`, `1password: "1Password"`.
 
-### Phase 3: Build Stage Consolidation
+- `external-repos.schema.json` — Added `opt_path` as optional string.
 
-Modify multi-output build stages (keyd, whitesur, wrappers) to use
-`DESTDIR=/out` or equivalent staging roots, reducing multiple COPYs
-to a single `COPY --link --from=<stage> /out/ /`.
+### Phase 3 (Build Stage Consolidation) — Deferred
 
-**Generator changes**:
-
-- `emit_script_stages()`: add `DESTDIR=/out` for keyd and whitesur
-- `emit_upstream_copies()`: emit single COPY per consolidated stage
-- `emit_wrapper_build_stage()`: output to `/out/usr/bin/`
-- `emit_wrapper_copies()`: single `COPY --link --from=build-wrappers /out/ /`
+The `DESTDIR=/out` consolidation for keyd, whitesur, and wrappers is
+not yet implemented. Current implementation achieves the O(1) property
+for external RPMs; build stage consolidation is a future optimization.
 
 ## Constraints
 
