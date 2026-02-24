@@ -10,38 +10,28 @@ id = "01kj8zvbe15c0ag9e4tpn3gzqv"
 id = "eliminate-user-manifest-layer-rfc-0052"
 
 [[plan.goals.tasks]]
+id = "convert-commands"
+title = "PER 2: Convert all commands/*.rs to read/write repo manifests (flatpak, extension, gsetting, shim, homebrew, system, status, profile)"
+status = "pending"
+
+[[plan.goals.tasks]]
+id = "convert-subsystem"
+title = "PER 3: Convert subsystem.rs SubsystemContext and trait impls to repo-only"
+status = "pending"
+
+[[plan.goals.tasks]]
+id = "cleanup-merge-code"
+title = "PER 4: Remove load_user/save_user/merged/SYSTEM_PATH from manifest types and dead tests"
+status = "pending"
+
+[[plan.goals.tasks]]
 id = "repo-path-caching"
-title = "Add repo path caching to find_repo_path()"
-status = "pending"
-
-[[plan.goals.tasks]]
-id = "flatpak-repo-read"
-title = "Flatpak: read from repo manifests instead of system+user merge"
-status = "pending"
-
-[[plan.goals.tasks]]
-id = "extension-repo-read"
-title = "Extension: read from repo manifests instead of system+user merge"
-status = "pending"
-
-[[plan.goals.tasks]]
-id = "gsetting-repo-read"
-title = "GSettings: read from repo manifests instead of system+user merge"
-status = "pending"
-
-[[plan.goals.tasks]]
-id = "shim-repo-read"
-title = "Shim: read from repo manifests instead of system+user merge"
-status = "pending"
-
-[[plan.goals.tasks]]
-id = "remove-merge-code"
-title = "Remove load_user/save_user/merged code from all manifest types"
+title = "PER 1: Add repo path caching to find_repo_path()"
 status = "pending"
 
 [[plan.goals.tasks]]
 id = "migrate-command"
-title = "Add bkt migrate manifests command"
+title = "PER 5: Add bkt migrate manifests command"
 status = "pending"
 
 [[plan.goals]]
