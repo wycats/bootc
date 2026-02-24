@@ -79,7 +79,7 @@ ulid = "01KHSEGZG08EN3XAK79490VNSJ"
 [[epochs.phases]]
 id = "01khsejd4ms6zvj1yv6xgbhcsb"
 title = "Layer Independence (RFC-0045)"
-status = "active"
+status = "completed"
 kind = "regular"
 ulid = "01KHSEJD4MS6ZVJ1YV6XGBHCSB"
 
@@ -103,10 +103,27 @@ relation = "related"
 [[epochs.phases]]
 id = "01kj8zvbe15c0ag9e4tpn3gzqv"
 title = "Manifest Architecture (RFC-0052/0053/0054)"
-status = "pending"
-goals = []
+status = "active"
 kind = "regular"
 ulid = "01KJ8ZVBE15C0AG9E4TPN3GZQV"
+
+[[epochs.phases.goals]]
+id = "eliminate-user-manifest-layer-rfc-0052"
+label = "Eliminate user manifest layer (RFC-0052)"
+status = "pending"
+ulid = "01KJ90AC3NRF4PP0EVJ6AHZRP3"
+
+[[epochs.phases.goals]]
+id = "bootstrap-clones-repo-rfc-0053"
+label = "Bootstrap clones repo (RFC-0053)"
+status = "pending"
+ulid = "01KJ90AJTT57T8B8P1A3R71S7T"
+
+[[epochs.phases.goals]]
+id = "eliminate-ephemeral-manifest-and-local-rfc-0054"
+label = "Eliminate ephemeral manifest and --local (RFC-0054)"
+status = "pending"
+ulid = "01KJ90AQP6V9ADVV9Q2BFVZCZA"
 
 [[epochs]]
 id = "01khsgx7xfrxe8q3y878hy24cw"

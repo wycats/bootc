@@ -1,0 +1,85 @@
+# READ-ONLY: Use 'exo' CLI to modify this file.
+# Implementation Plan
+
+[phase]
+id = "01khsejd4ms6zvj1yv6xgbhcsb"
+
+[plan]
+
+[[plan.goals]]
+id = "verify"
+
+[[plan.goals.tasks]]
+id = "verify-rpm-qa"
+title = "Verify rpm -qa output identical to current image"
+status = "pending"
+
+[[plan.goals.tasks]]
+id = "verify-rpm-v"
+title = "Verify rpm -V shows no failures for external packages"
+status = "pending"
+
+[[plan.goals.tasks]]
+id = "verify-wrappers"
+title = "Verify wrapper binaries and .desktop files functional"
+status = "pending"
+
+[[plan.goals.tasks]]
+id = "verify-minimal-transfer"
+title = "Verify single-package bump transfers minimal data"
+status = "pending"
+
+[[plan.goals]]
+id = "per-package-layers"
+
+[[plan.goals.tasks]]
+id = "opt-path-manifest"
+title = "Add opt_path field to external-repos.json"
+status = "completed"
+completed_at = "2026-02-23T02:19:57.898138497+00:00"
+completion_log = "Added opt_path field to ExternalRepo struct and manifest"
+
+[[plan.goals.tasks]]
+id = "emit-install-fn"
+title = "Add emit_install_stages() to containerfile.rs"
+status = "completed"
+completed_at = "2026-02-23T02:20:07.458543540+00:00"
+completion_log = "Added emit_install_stages(), emit_install_copies(), emit_rpm_db_finalization()"
+
+[[plan.goals.tasks]]
+id = "rpm-extract"
+title = "Implement rpm --nodb extraction with /opt relocation"
+status = "completed"
+completed_at = "2026-02-23T02:20:07.527004561+00:00"
+completion_log = "Implemented rpm --nodb --noscripts --nodeps with per-stage /opt relocation"
+
+[[plan.goals.tasks]]
+id = "assembly-copy"
+title = "Wire COPY --link from install stages into assembly"
+status = "completed"
+completed_at = "2026-02-23T02:20:07.632738841+00:00"
+completion_log = "Wired COPY --link --from=install-* into image assembly"
+
+[[plan.goals.tasks]]
+id = "db-final"
+title = "Add rpm --justdb finalization + ldconfig"
+status = "completed"
+completed_at = "2026-02-23T02:20:07.708874099+00:00"
+completion_log = "Added rpm --justdb finalization with ldconfig"
+
+[[plan.goals.tasks]]
+id = "remove-old"
+title = "Remove monolithic dnf install and post-relocation RUN"
+status = "completed"
+completed_at = "2026-02-23T02:20:07.780486272+00:00"
+completion_log = "Removed emit_rpm_collection and emit_opt_relocation, updated cleanup"
+# Goals contain tasks. Use 'exo-add-task' to add tasks to goals.
+
+
+[verification]
+automated = ["Run scripts/verify-phase.sh"]
+manual = []
+
+[meta]
+schema_version = "1.0.0"
+exo_version = "0.1.0"

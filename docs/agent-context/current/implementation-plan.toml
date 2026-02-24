@@ -2,84 +2,86 @@
 # Implementation Plan
 
 [phase]
-id = "01khsejd4ms6zvj1yv6xgbhcsb"
+id = "01kj8zvbe15c0ag9e4tpn3gzqv"
 
 [plan]
 
 [[plan.goals]]
-id = "verify"
+id = "eliminate-user-manifest-layer-rfc-0052"
 
 [[plan.goals.tasks]]
-id = "verify-rpm-qa"
-title = "Verify rpm -qa output identical to current image"
+id = "repo-path-caching"
+title = "Add repo path caching to find_repo_path()"
 status = "pending"
 
 [[plan.goals.tasks]]
-id = "verify-rpm-v"
-title = "Verify rpm -V shows no failures for external packages"
+id = "flatpak-repo-read"
+title = "Flatpak: read from repo manifests instead of system+user merge"
 status = "pending"
 
 [[plan.goals.tasks]]
-id = "verify-wrappers"
-title = "Verify wrapper binaries and .desktop files functional"
+id = "extension-repo-read"
+title = "Extension: read from repo manifests instead of system+user merge"
 status = "pending"
 
 [[plan.goals.tasks]]
-id = "verify-minimal-transfer"
-title = "Verify single-package bump transfers minimal data"
+id = "gsetting-repo-read"
+title = "GSettings: read from repo manifests instead of system+user merge"
+status = "pending"
+
+[[plan.goals.tasks]]
+id = "shim-repo-read"
+title = "Shim: read from repo manifests instead of system+user merge"
+status = "pending"
+
+[[plan.goals.tasks]]
+id = "remove-merge-code"
+title = "Remove load_user/save_user/merged code from all manifest types"
+status = "pending"
+
+[[plan.goals.tasks]]
+id = "migrate-command"
+title = "Add bkt migrate manifests command"
 status = "pending"
 
 [[plan.goals]]
-id = "per-package-layers"
+id = "bootstrap-clones-repo-rfc-0053"
 
 [[plan.goals.tasks]]
-id = "opt-path-manifest"
-title = "Add opt_path field to external-repos.json"
-status = "completed"
-completed_at = "2026-02-23T02:19:57.898138497+00:00"
-completion_log = "Added opt_path field to ExternalRepo struct and manifest"
+id = "bootstrap-clone"
+title = "Add repo clone step to bkt bootstrap"
+status = "pending"
 
 [[plan.goals.tasks]]
-id = "emit-install-fn"
-title = "Add emit_install_stages() to containerfile.rs"
-status = "completed"
-completed_at = "2026-02-23T02:20:07.458543540+00:00"
-completion_log = "Added emit_install_stages(), emit_install_copies(), emit_rpm_db_finalization()"
+id = "bootstrap-system-only"
+title = "Restrict system manifest reads to bootstrap path only"
+status = "pending"
 
 [[plan.goals.tasks]]
-id = "rpm-extract"
-title = "Implement rpm --nodb extraction with /opt relocation"
-status = "completed"
-completed_at = "2026-02-23T02:20:07.527004561+00:00"
-completion_log = "Implemented rpm --nodb --noscripts --nodeps with per-stage /opt relocation"
+id = "bootstrap-cache-path"
+title = "Cache repo path after bootstrap clone"
+status = "pending"
+
+[[plan.goals]]
+id = "eliminate-ephemeral-manifest-and-local-rfc-0054"
 
 [[plan.goals.tasks]]
-id = "assembly-copy"
-title = "Wire COPY --link from install stages into assembly"
-status = "completed"
-completed_at = "2026-02-23T02:20:07.632738841+00:00"
-completion_log = "Wired COPY --link --from=install-* into image assembly"
+id = "remove-ephemeral"
+title = "Remove ephemeral manifest module and --local flag"
+status = "pending"
 
 [[plan.goals.tasks]]
-id = "db-final"
-title = "Add rpm --justdb finalization + ldconfig"
-status = "completed"
-completed_at = "2026-02-23T02:20:07.708874099+00:00"
-completion_log = "Added rpm --justdb finalization with ldconfig"
+id = "remove-local-subcommand"
+title = "Remove bkt local subcommand"
+status = "pending"
 
 [[plan.goals.tasks]]
-id = "remove-old"
-title = "Remove monolithic dnf install and post-relocation RUN"
-status = "completed"
-completed_at = "2026-02-23T02:20:07.780486272+00:00"
-completion_log = "Removed emit_rpm_collection and emit_opt_relocation, updated cleanup"
+id = "capture-writes-repo"
+title = "Make all capture commands write to repo manifests/"
+status = "pending"
 # Goals contain tasks. Use 'exo-add-task' to add tasks to goals.
 
 
 [verification]
 automated = ["Run scripts/verify-phase.sh"]
 manual = []
-
-[meta]
-schema_version = "1.0.0"
-exo_version = "0.1.0"
