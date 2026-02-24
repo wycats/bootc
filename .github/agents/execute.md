@@ -1,28 +1,21 @@
 ---
 description: "Executes detailed plans from users or parent agents, breaking complex tasks into steps and completing them methodically."
-model: GPT-5.2-Codex (vercelAiGateway)
+model: GPT 5.3 Codex (vercel)
 tools:
   [
-    "execute",
-    "read",
-    "edit",
-    "search",
-    "web",
-    "agent",
-    "exosuit.exosuit-context/status",
-    "exosuit.exosuit-context/plan",
-    "exosuit.exosuit-context/phase",
-    "exosuit.exosuit-context/steering",
-    "exosuit.exosuit-context/context",
-    "exosuit.exosuit-context/list-tasks",
-    "exosuit.exosuit-context/rfc-create",
-    "exosuit.exosuit-context/rfc-promote",
-    "exosuit.exosuit-context/rfc-list",
-    "exosuit.exosuit-context/epoch-start",
-    "exosuit.exosuit-context/epoch-finish",
-    "exosuit.exosuit-context/epoch-list",
-    "exosuit.exosuit-context/logs",
-    "todo",
+    execute/testFailure,
+    execute/getTerminalOutput,
+    execute/runTask,
+    execute/createAndRunTask,
+    execute/runInTerminal,
+    execute/runTests,
+    read,
+    agent,
+    edit,
+    search,
+    web,
+    exosuit.exosuit-context/exo-run,
+    todo,
   ]
 ---
 

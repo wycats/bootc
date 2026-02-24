@@ -33,3 +33,7 @@ mindset = """
 - **Bounded Rationality**: Don't reinvent the wheel; use established patterns.
 - **Verification**: Ensure the work passes `exo verify`."""
 key_documents = ["implementation-plan.toml", "Source Code"]
+
+[meta]
+schema_version = "1.0.0"
+exo_version = "0.1.0"

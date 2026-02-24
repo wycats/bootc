@@ -164,6 +164,12 @@ pub enum Commands {
     /// Creates Rust binaries that launch applications under systemd
     /// resource controls (slices). Replaces shell wrapper scripts.
     Wrap(commands::wrap::WrapArgs),
+
+    /// Analyze and reclaim system memory (RAM, swap, GPU, caches)
+    ///
+    /// By default shows what could be reclaimed without taking action.
+    /// Use --apply to actually perform reclamation.
+    Tune(commands::tune::TuneArgs),
 }
 
 impl Commands {
@@ -209,6 +215,7 @@ impl Commands {
             Commands::Containerfile(_) => CommandTarget::Either,
             Commands::Local(_) => CommandTarget::Either,
             Commands::Wrap(_) => CommandTarget::Either,
+            Commands::Tune(_) => CommandTarget::Host, // Reads /proc, /sys for memory/GPU info
         }
     }
 }

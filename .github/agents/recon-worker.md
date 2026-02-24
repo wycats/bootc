@@ -1,31 +1,20 @@
 ---
 description: "Gathers raw information from the codebase for a parent agent. Returns findings without interpretation."
-model: GPT-5.2-Codex (vercel)
+model: GPT 5.3 Codex (vercel)
 tools:
   [
-    "execute/testFailure",
-    "execute/getTerminalOutput",
-    "execute/killTerminal",
-    "execute/runInTerminal",
-    "execute/runTests",
-    "read",
-    "agent",
-    "search",
-    "web",
-    "exosuit.exosuit-context/context",
-    "exosuit.exosuit-context/epoch-finish",
-    "exosuit.exosuit-context/epoch-list",
-    "exosuit.exosuit-context/epoch-start",
-    "exosuit.exosuit-context/list-tasks",
-    "exosuit.exosuit-context/logs",
-    "exosuit.exosuit-context/phase",
-    "exosuit.exosuit-context/plan",
-    "exosuit.exosuit-context/rfc-create",
-    "exosuit.exosuit-context/rfc-list",
-    "exosuit.exosuit-context/rfc-promote",
-    "exosuit.exosuit-context/status",
-    "exosuit.exosuit-context/steering",
-    "todo",
+    execute/getTerminalOutput,
+    execute/runInTerminal,
+    read,
+    agent,
+    search,
+    web,
+    "github/*",
+    exosuit.exosuit-context/exo-run,
+    github.vscode-pull-request-github/issue_fetch,
+    github.vscode-pull-request-github/doSearch,
+    github.vscode-pull-request-github/activePullRequest,
+    github.vscode-pull-request-github/openPullRequest,
   ]
 ---
 

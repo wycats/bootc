@@ -27,5 +27,6 @@ pub mod skel;
 pub mod status;
 pub mod system;
 pub mod try_cmd;
+pub mod tune;
 pub mod upstream;
 pub mod wrap;

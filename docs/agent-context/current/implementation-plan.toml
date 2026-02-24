@@ -79,3 +79,7 @@ completion_log = "Removed emit_rpm_collection and emit_opt_relocation, updated c
 [verification]
 automated = ["Run scripts/verify-phase.sh"]
 manual = []
+
+[meta]
+schema_version = "1.0.0"
+exo_version = "0.1.0"

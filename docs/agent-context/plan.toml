@@ -41,6 +41,7 @@ ulid = "01KHSEJ11VJJFXR3MMDEJK6V1G"
 
 [[epochs.phases.rfcs]]
 id = "0050"
+relation = "related"
 
 [[epochs.phases]]
 id = "01khsej4tg08xsfhsh67d8qvkj"
@@ -67,6 +68,7 @@ rfc = "0050"
 
 [[epochs.phases.rfcs]]
 id = "0050"
+relation = "related"
 
 [[epochs]]
 id = "01khsegzg08en3xak79490vnsj"
@@ -96,6 +98,15 @@ ulid = "01KJ41V0R3P8KMMMTXS19QB5RN"
 
 [[epochs.phases.rfcs]]
 id = "0045"
+relation = "related"
+
+[[epochs.phases]]
+id = "01kj8zvbe15c0ag9e4tpn3gzqv"
+title = "Manifest Architecture (RFC-0052/0053/0054)"
+status = "pending"
+goals = []
+kind = "regular"
+ulid = "01KJ8ZVBE15C0AG9E4TPN3GZQV"
 
 [[epochs]]
 id = "01khsgx7xfrxe8q3y878hy24cw"
@@ -212,6 +223,7 @@ ulid = "01KHSGYM9R4NCN1NC0Z96GKQZ9"
 
 [[epochs.phases.rfcs]]
 id = "0016"
+relation = "related"
 
 [[epochs.phases]]
 id = "01khsgyrymtrst38tt4y7y22jc"
@@ -223,6 +235,7 @@ ulid = "01KHSGYRYMTRST38TT4Y7Y22JC"
 
 [[epochs.phases.rfcs]]
 id = "0007"
+relation = "related"
 
 [[epochs.phases]]
 id = "01khsgyzcvstjmxs5vsc5gh03w"
@@ -234,6 +247,7 @@ ulid = "01KHSGYZCVSTJMXS5VSC5GH03W"
 
 [[epochs.phases.rfcs]]
 id = "0006"
+relation = "related"
 
 [[epochs]]
 id = "01kj3h3ma3xbtnyjsn2kj3pkxy"
@@ -271,3 +285,4 @@ ulid = "01KJ3H4STW4R92QXGRG7BTFG3R"
 
 [[epochs.phases.rfcs]]
 id = "0050"
+relation = "related"

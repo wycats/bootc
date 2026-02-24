@@ -212,5 +212,6 @@ fn main() -> Result<()> {
         Commands::Containerfile(args) => commands::containerfile::run(args, &plan),
         Commands::Local(args) => commands::local::run(args, &plan),
         Commands::Wrap(args) => commands::wrap::execute(args),
+        Commands::Tune(args) => commands::tune::run(args),
     }
 }

@@ -4,7 +4,7 @@
 - **Created**: 2026-01-05
 - **Updated**: 2026-02-20
 - **Depends on**: RFC-0009 (Privileged Operations)
-- **Related**: [RFC-0017](../0017-distrobox-integration.md) (Distrobox Integration)
+- **Related**: [RFC-0017](0017-distrobox-integration.md) (Distrobox Integration)
 - **Absorbs**: RFC-0050 (Persistent Host-Command Helper)
 
 > **✅ This RFC is implemented.**
@@ -22,7 +22,7 @@
 >   - This is the underlying mechanism distrobox uses anyway (via host-spawn → D-Bus)
 > - `BKT_DELEGATED=1` prevents recursion when `bkt` is exported as a distrobox shim
 > - `Status`, `Doctor`, `Profile`, `Base` are **Host** (not Either) — they read system manifests
-> - See [RFC-0017](../0017-distrobox-integration.md) for why `bkt` must be excluded from distrobox exports
+> - See [RFC-0017](0017-distrobox-integration.md) for why `bkt` must be excluded from distrobox exports
 > - **Daemon optimization** (Phase 1 complete): See [Performance Optimization](#performance-optimization-host-command-daemon)
 
 ## Summary

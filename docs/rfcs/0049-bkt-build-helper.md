@@ -56,6 +56,48 @@ RUN bkt-build fetch starship
 | `bkt-build fetch <name>`         | Download, verify, and install an upstream | fetch-starship, fetch-lazygit, etc.  |
 | `bkt-build setup-repos`          | Import GPG keys and write `.repo` files   | 30-line `printf` block in base stage |
 | `bkt-build download-rpms <repo>` | `dnf download` packages for a named repo  | dl-vscode, dl-edge, dl-1password     |
+| `bkt-build lint [containerfile]` | Validate Containerfile for ostree issues  | `scripts/check-ostree-paths`         |
+
+### `bkt-build lint`
+
+Validates a Containerfile for common ostree filesystem mistakes:
+
+```bash
+bkt-build lint Containerfile
+bkt-build lint --fix Containerfile  # Future: auto-fix simple issues
+```
+
+**Checks performed:**
+
+| Check                  | Severity | Description                                                             |
+| ---------------------- | -------- | ----------------------------------------------------------------------- |
+| `/usr/local/bin` usage | Error    | Should use `/usr/bin` (ostree symlinks `/usr/local` to `/var/usrlocal`) |
+| `/opt` usage           | Warning  | Consider `/usr/share` for read-only data                                |
+| `/etc` direct writes   | Warning  | Prefer `/usr/etc` for defaults                                          |
+| Mutable paths in COPY  | Error    | Paths like `/var/lib` won't persist correctly                           |
+
+**Output:**
+
+```
+$ bkt-build lint Containerfile
+ERROR: Line 45: /usr/local/bin found
+       On ostree, /usr/local -> /var/usrlocal (persistent, not updated)
+       Use /usr/bin instead
+
+WARNING: Line 78: /opt/myapp found
+         Consider /usr/share/myapp for read-only application data
+
+1 error, 1 warning
+```
+
+**CI integration:**
+
+```yaml
+- name: Lint Containerfile
+  run: bkt-build lint Containerfile
+```
+
+This replaces `scripts/check-ostree-paths` with a Rust implementation that can be extended with more checks and eventually auto-fix capabilities.
 
 ### How `bkt-build fetch` Works
 
