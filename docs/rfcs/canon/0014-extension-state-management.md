@@ -5,6 +5,11 @@
 - RFC PR: (leave this empty until PR is opened)
 - Tracking Issue: (leave this empty)
 
+> **⚠️ Absorbed by [RFC-0052](../0052-manifest-lifecycle.md).**
+> Extension enable/disable state management is now documented as part of the
+> unified manifest lifecycle in RFC-0052. The system+user manifest merge
+> described in this RFC is eliminated in the new design.
+
 ## Summary
 
 Extend `bkt` extension tracking to properly capture and sync the **enabled/disabled state** of GNOME extensions, not just their presence in the manifest. This ensures that when a user disables an extension via Extension Manager, that state is preserved across `bkt apply` operations.

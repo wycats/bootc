@@ -2,6 +2,11 @@
 
 One-line summary: Track local-only changes in an ephemeral manifest and provide `bkt local` commands to inspect, promote, or clear them.
 
+> **⚠️ Absorbed by [RFC-0054](0054-change-workflow.md).**
+> The `--local` flag and ephemeral manifest are eliminated in RFC-0054.
+> Changes now write directly to the repo's `manifests/` directory, and
+> `git diff` replaces the ephemeral tracking mechanism.
+
 ## Motivation
 
 Users often make quick, local adjustments without immediately creating a PR. These changes need a safe holding area that survives across commands but is not treated as durable system configuration. bkt also needs a way to promote those changes into the normal manifest and PR workflow when the user is ready.

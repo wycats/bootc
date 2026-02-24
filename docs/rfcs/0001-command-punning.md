@@ -6,6 +6,11 @@
 - RFC PR: (leave this empty until PR is opened)
 - Tracking Issue: (leave this empty)
 
+> **⚠️ Partially absorbed by [RFC-0054](0054-change-workflow.md).**
+> The command punning philosophy and PR workflow are consolidated into RFC-0054.
+> The execution context model (`--context`) is not carried forward in RFC-0054
+> and remains documented here.
+
 ## Summary
 
 `bkt` uses command punning: commands mirror familiar tools but do two things at once.

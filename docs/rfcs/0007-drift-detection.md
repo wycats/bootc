@@ -17,6 +17,11 @@
 > | Systemd service state      | ❌ Not started | New domain proposed in this RFC                |
 > | `.bktignore`               | ❌ Not started |                                                |
 
+> **⚠️ Absorbed by [RFC-0052](0052-manifest-lifecycle.md).**
+> The tier model, apply/capture lifecycle, and drift detection concepts from this
+> RFC are consolidated into RFC-0052. The interactive drift resolve, `.bktignore`,
+> and drift monitoring features are not yet carried forward.
+
 ## Summary
 
 This RFC defines **Tier 2 state management** — runtime configuration that lives

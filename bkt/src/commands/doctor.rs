@@ -4,9 +4,11 @@
 
 use crate::command_runner::RealCommandRunner;
 use crate::daemon;
+use crate::manifest::DistroboxManifest;
 use crate::output::Output;
 use crate::pr::run_preflight_checks;
-use anyhow::Result;
+use crate::repo::find_repo_path;
+use anyhow::{Context, Result};
 use clap::Args;
 use std::path::{Path, PathBuf};
 
@@ -15,20 +17,24 @@ pub struct DoctorArgs {
     /// Output format (table, json)
     #[arg(short, long, default_value = "table")]
     format: String,
+
+    /// Attempt to automatically fix known issues
+    #[arg(long)]
+    fix: bool,
 }
 
 pub fn run(args: DoctorArgs) -> Result<()> {
-    let runner = RealCommandRunner;
-    let mut results = run_preflight_checks(&runner)?;
+    if args.fix && args.format == "json" {
+        anyhow::bail!("--fix cannot be used with --format json");
+    }
 
-    // Additional environment readiness checks (not specific to PR workflows).
-    results.push(check_distrobox_shims_path());
-    results.push(check_distrobox_wrappers());
-    results.push(check_cargo_bin_exports());
-    results.push(check_devtools_resolve_to_distrobox("cargo"));
-    results.push(check_devtools_resolve_to_distrobox("node"));
-    results.push(check_devtools_resolve_to_distrobox("pnpm"));
-    results.push(check_daemon_status());
+    let runner = RealCommandRunner;
+    let mut results = collect_results(&runner)?;
+
+    if args.fix {
+        apply_known_fixes(&results)?;
+        results = collect_results(&runner)?;
+    }
 
     if args.format == "json" {
         let json_results: Vec<_> = results
@@ -70,6 +76,124 @@ pub fn run(args: DoctorArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn collect_results(runner: &RealCommandRunner) -> Result<Vec<crate::pr::PreflightResult>> {
+    let mut results = run_preflight_checks(runner)?;
+
+    // Additional environment readiness checks (not specific to PR workflows).
+    results.push(check_distrobox_shims_path());
+    results.push(check_distrobox_wrappers());
+    results.push(check_cargo_bin_exports());
+    results.push(check_devtools_resolve_to_distrobox("cargo"));
+    results.push(check_devtools_resolve_to_distrobox("node"));
+    results.push(check_devtools_resolve_to_distrobox("pnpm"));
+    results.push(check_daemon_status());
+
+    Ok(results)
+}
+
+fn apply_known_fixes(results: &[crate::pr::PreflightResult]) -> Result<()> {
+    let mut has_wrapper_issue = false;
+    let mut has_cargo_export_issue = false;
+
+    for result in results {
+        if result.passed {
+            continue;
+        }
+
+        if result.name == "distrobox wrappers" {
+            has_wrapper_issue = true;
+        }
+        if result.name == "cargo bin exports" {
+            has_cargo_export_issue = true;
+        }
+    }
+
+    if !has_wrapper_issue && !has_cargo_export_issue {
+        Output::info("No auto-fixable doctor issues detected.");
+        return Ok(());
+    }
+
+    if has_wrapper_issue {
+        remove_non_wrapper_files()?;
+    }
+
+    if has_wrapper_issue || has_cargo_export_issue {
+        Output::info("Running `bkt distrobox apply` to regenerate shims...");
+        let current_exe = std::env::current_exe().context("Failed to locate current bkt binary")?;
+        let status = std::process::Command::new(current_exe)
+            .arg("distrobox")
+            .arg("apply")
+            .status()
+            .context("Failed to run `bkt distrobox apply`")?;
+
+        if !status.success() {
+            anyhow::bail!("`bkt distrobox apply` failed while running doctor --fix");
+        }
+    }
+
+    Ok(())
+}
+
+fn remove_non_wrapper_files() -> Result<()> {
+    let Some(home) = home_dir() else {
+        anyhow::bail!("Cannot determine $HOME");
+    };
+
+    let distrobox_dir = home.join(".local/bin/distrobox");
+    if !distrobox_dir.exists() {
+        return Ok(());
+    }
+
+    let files = list_non_wrapper_paths(&distrobox_dir)?;
+    if files.is_empty() {
+        return Ok(());
+    }
+
+    Output::info("Removing non-wrapper files from ~/.local/bin/distrobox...");
+    for path in files {
+        Output::step(format!("Removing {}", path.display()));
+        std::fs::remove_file(&path)
+            .with_context(|| format!("Failed to remove {}", path.display()))?;
+    }
+
+    Ok(())
+}
+
+fn list_non_wrapper_paths(distrobox_dir: &Path) -> Result<Vec<PathBuf>> {
+    let entries = std::fs::read_dir(distrobox_dir)
+        .with_context(|| format!("Cannot read {}", distrobox_dir.display()))?;
+
+    let mut non_wrappers = Vec::new();
+
+    for entry in entries {
+        let entry =
+            entry.with_context(|| format!("Cannot read entry in {}", distrobox_dir.display()))?;
+
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        if !path_has_wrapper_marker(&path) {
+            non_wrappers.push(path);
+        }
+    }
+
+    Ok(non_wrappers)
+}
+
+fn path_has_wrapper_marker(path: &Path) -> bool {
+    let check_result = std::fs::File::open(path).and_then(|mut file| {
+        use std::io::Read;
+        let mut buffer = [0u8; 512];
+        let n = file.read(&mut buffer)?;
+        let content = String::from_utf8_lossy(&buffer[..n]);
+        Ok(content.contains("distrobox_binary"))
+    });
+
+    check_result.unwrap_or(false)
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -279,18 +403,12 @@ fn check_distrobox_wrappers() -> crate::pr::PreflightResult {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| path.display().to_string());
 
-        // Read first 512 bytes to check for marker (avoids loading large binaries)
-        let check_result = std::fs::File::open(&path).and_then(|mut file| {
-            use std::io::Read;
-            let mut buffer = [0u8; 512];
-            let n = file.read(&mut buffer)?;
-            let content = String::from_utf8_lossy(&buffer[..n]);
-            Ok(content.contains("distrobox_binary"))
-        });
-
-        match check_result {
-            Ok(true) => {} // Valid wrapper
-            Ok(false) => non_wrappers.push(file_name),
+        match std::fs::File::open(&path) {
+            Ok(_) => {
+                if !path_has_wrapper_marker(&path) {
+                    non_wrappers.push(file_name);
+                }
+            }
             Err(_) => unreadable.push(file_name),
         }
     }
@@ -322,75 +440,12 @@ fn check_distrobox_wrappers() -> crate::pr::PreflightResult {
 /// the binary lands in ~/.cargo/bin but isn't accessible on the host until
 /// `bkt distrobox apply` creates a shim for it.
 fn check_cargo_bin_exports() -> crate::pr::PreflightResult {
-    let Some(home) = home_dir() else {
-        return fail(
-            "cargo bin exports",
-            "Cannot determine $HOME",
-            "Ensure HOME is set",
-        );
-    };
-
-    let cargo_bin = home.join(".cargo/bin");
-    let shims_dir = home.join(".local/bin/distrobox");
-
-    if !cargo_bin.exists() {
-        return pass(
-            "cargo bin exports",
-            "~/.cargo/bin does not exist (no cargo-installed binaries)",
-        );
-    }
-
-    let entries = match std::fs::read_dir(&cargo_bin) {
-        Ok(e) => e,
+    let missing_shims = match list_missing_cargo_shims() {
+        Ok(missing) => missing,
         Err(e) => {
-            return fail(
-                "cargo bin exports",
-                &format!("Cannot read ~/.cargo/bin: {}", e),
-                "",
-            );
+            return fail("cargo bin exports", &e.to_string(), "");
         }
     };
-
-    // Collect cargo binaries (excluding rustup-managed tools)
-    let rustup_managed = [
-        "cargo",
-        "rustc",
-        "rustdoc",
-        "rust-gdb",
-        "rust-lldb",
-        "rustfmt",
-        "cargo-fmt",
-        "clippy-driver",
-        "cargo-clippy",
-        "rust-analyzer",
-        "cargo-miri",
-        "rls",
-        "rustup",
-    ];
-
-    let mut missing_shims: Vec<String> = Vec::new();
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-
-        // Skip rustup-managed binaries (they're proxies, not real binaries)
-        if rustup_managed.contains(&name) {
-            continue;
-        }
-
-        // Check if a shim exists
-        let shim_path = shims_dir.join(name);
-        if !shim_path.exists() {
-            missing_shims.push(name.to_string());
-        }
-    }
 
     if missing_shims.is_empty() {
         pass(
@@ -407,6 +462,99 @@ fn check_cargo_bin_exports() -> crate::pr::PreflightResult {
             "Run `bkt distrobox apply` to create shims for these binaries",
         )
     }
+}
+
+/// Load the distrobox manifest's `bins.exclude` list for a given container.
+///
+/// Returns an empty vec if the manifest can't be loaded (e.g., not in a repo).
+fn load_bins_exclude() -> Vec<String> {
+    let repo_path = match find_repo_path() {
+        Ok(p) => p,
+        Err(_) => return Vec::new(),
+    };
+
+    let manifest = match DistroboxManifest::load_from_dir(&repo_path) {
+        Ok(m) => m,
+        Err(_) => return Vec::new(),
+    };
+
+    // Use the first container's exclude list (typically "bootc-dev")
+    manifest
+        .containers
+        .values()
+        .next()
+        .map(|c| c.bins.exclude.clone())
+        .unwrap_or_default()
+}
+
+fn list_missing_cargo_shims() -> Result<Vec<String>> {
+    let Some(home) = home_dir() else {
+        anyhow::bail!("Cannot determine $HOME");
+    };
+
+    let cargo_bin = home.join(".cargo/bin");
+    let shims_dir = home.join(".local/bin/distrobox");
+
+    if !cargo_bin.exists() {
+        return Ok(Vec::new());
+    }
+
+    let entries = std::fs::read_dir(&cargo_bin)
+        .with_context(|| format!("Cannot read {}", cargo_bin.display()))?;
+
+    // Rustup-managed binaries are proxies, not real user-installed binaries
+    let rustup_managed = [
+        "cargo",
+        "rustc",
+        "rustdoc",
+        "rust-gdb",
+        "rust-gdbgui",
+        "rust-lldb",
+        "rustfmt",
+        "cargo-fmt",
+        "clippy-driver",
+        "cargo-clippy",
+        "rust-analyzer",
+        "cargo-miri",
+        "rls",
+        "rustup",
+    ];
+
+    // Load manifest exclusions (e.g., bkt ships with the OS image)
+    let excluded = load_bins_exclude();
+
+    let mut missing_shims: Vec<String> = Vec::new();
+
+    for entry in entries {
+        let entry =
+            entry.with_context(|| format!("Cannot read entry in {}", cargo_bin.display()))?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+
+        // Skip rustup-managed binaries
+        if rustup_managed.contains(&name) {
+            continue;
+        }
+
+        // Skip manifest-excluded binaries (e.g., bkt — ships with the OS image)
+        if excluded.iter().any(|e| e == name) {
+            continue;
+        }
+
+        // Check if a shim exists
+        let shim_path = shims_dir.join(name);
+        if !shim_path.exists() {
+            missing_shims.push(name.to_string());
+        }
+    }
+
+    Ok(missing_shims)
 }
 
 /// Check if the bkt daemon is running and connectable.
