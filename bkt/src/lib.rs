@@ -17,8 +17,7 @@
 //!
 //! ## PR Modes
 //!
-//! - Default: Execute locally AND create PR
-//! - `--local`: Execute locally only, skip PR
+//! - Default: Execute locally, no PR
 //! - `--pr-only`: Create PR only, skip local execution
 
 pub mod cli;

@@ -2,8 +2,8 @@
 
 - **Status**: Implemented
 - **Created**: 2026-01-20
-- **Updated**: 2026-02-20
-- **Related**: [RFC-0010](canon/0010-transparent-delegation.md) (Transparent Delegation)
+- **Updated**: 2026-02-23
+- **Related**: [RFC-0010](0010-transparent-delegation.md) (Transparent Delegation)
 
 ## Summary
 
@@ -338,3 +338,24 @@ Generate a Containerfile and ignore `distrobox.ini`. Rejected because:
 - No helper subcommands like `bkt distrobox export add/remove` or `bkt distrobox package add/remove`.
 - No `bkt distrobox status` comparison command.
 - `bkt dev` is still a separate workflow; it does not wrap `bkt distrobox`.
+
+## Future: `bkt distrobox gpg-setup`
+
+One-time setup for GPG signing inside the distrobox container. This replaces `scripts/toolbox-gpg-setup`.
+
+```bash
+bkt distrobox gpg-setup [container-name]
+```
+
+**What it does:**
+
+1. Installs `pinentry-tty` and `gnupg2` in the container
+2. Configures `~/.gnupg/gpg-agent.conf` with `pinentry-program`
+3. Imports GPG keys from the host (if available)
+4. Configures git to use the GPG key for signing
+
+**Why this belongs in bkt:**
+
+- It's a one-time setup that users forget how to do
+- It requires coordination between host and container
+- It's part of the "make distrobox work for development" story

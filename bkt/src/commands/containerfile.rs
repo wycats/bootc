@@ -113,9 +113,12 @@ impl Plannable for ContainerfileSyncCommand {
         let editor = ContainerfileEditor::load(&containerfile_path)?;
 
         // Load manifests (read-only)
-        let manifest = load_merged_manifest()?;
+        let manifest = load_repo_manifest()?;
         let system_config = SystemConfigManifest::load()?;
-        let has_external_rpms = load_has_external_rpms()?;
+
+        // External RPMs are installed in per-package stages (RFC-0050),
+        // not in the final dnf install. So has_external_rpms is always false here.
+        let has_external_rpms = false;
 
         let mut section_updates = Vec::new();
         let mut warnings = Vec::new();
@@ -401,24 +404,9 @@ pub fn run(args: ContainerfileArgs, plan: &ExecutionPlan) -> Result<()> {
 // Helper Functions
 // ============================================================================
 
-/// Load the merged system packages manifest (repo + user)
-fn load_merged_manifest() -> Result<SystemPackagesManifest> {
-    let repo = SystemPackagesManifest::load_repo()?;
-    let user = SystemPackagesManifest::load_user()?;
-    Ok(SystemPackagesManifest::merged(&repo, &user))
-}
-
-/// Load the merged shims manifest (repo + user)
-/// Check whether external-repos.json defines any repos (i.e. external RPMs exist).
-fn load_has_external_rpms() -> Result<bool> {
-    let repo_path = crate::repo::find_repo_path()?;
-    let manifest_path = repo_path.join("manifests").join("external-repos.json");
-    if !manifest_path.exists() {
-        return Ok(false);
-    }
-    let content = std::fs::read_to_string(&manifest_path)?;
-    let manifest: crate::manifest::ExternalReposManifest = serde_json::from_str(&content)?;
-    Ok(!manifest.repos.is_empty())
+/// Load the system packages manifest from the repo.
+fn load_repo_manifest() -> Result<SystemPackagesManifest> {
+    SystemPackagesManifest::load_repo()
 }
 
 fn load_generator_input() -> Result<ContainerfileGeneratorInput> {

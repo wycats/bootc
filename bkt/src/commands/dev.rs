@@ -170,7 +170,7 @@ fn handle_install(
         }
     }
 
-    let mut manifest = ToolboxPackagesManifest::load_user()?;
+    let mut manifest = ToolboxPackagesManifest::load_repo()?;
 
     let mut new_packages = Vec::new();
     let mut already_in_manifest = Vec::new();
@@ -197,7 +197,7 @@ fn handle_install(
         for pkg in &new_packages {
             manifest.add_package(pkg.clone());
         }
-        manifest.save_user()?;
+        manifest.save_repo()?;
         Output::success(format!(
             "Added {} package(s) to toolbox manifest",
             new_packages.len()
@@ -253,7 +253,7 @@ fn handle_remove(
         bail!("No packages specified");
     }
 
-    let mut manifest = ToolboxPackagesManifest::load_user()?;
+    let mut manifest = ToolboxPackagesManifest::load_repo()?;
 
     for pkg in &packages {
         if !plan.dry_run {
@@ -270,7 +270,7 @@ fn handle_remove(
     }
 
     if !plan.dry_run {
-        manifest.save_user()?;
+        manifest.save_repo()?;
     }
 
     // Execute dnf if not manifest-only
@@ -309,7 +309,7 @@ fn remove_via_dnf(packages: &[String], runner: &dyn CommandRunner) -> Result<()>
 // =============================================================================
 
 fn handle_list(format: String, runner: &dyn CommandRunner) -> Result<()> {
-    let manifest = ToolboxPackagesManifest::load_user()?;
+    let manifest = ToolboxPackagesManifest::load_repo()?;
 
     if format == "json" {
         println!("{}", serde_json::to_string_pretty(&manifest)?);
@@ -460,7 +460,7 @@ fn handle_copr_enable(
     plan: &ExecutionPlan,
     runner: &dyn CommandRunner,
 ) -> Result<()> {
-    let mut manifest = ToolboxPackagesManifest::load_user()?;
+    let mut manifest = ToolboxPackagesManifest::load_repo()?;
 
     if manifest
         .copr_repos
@@ -476,7 +476,7 @@ fn handle_copr_enable(
         let mut system = manifest.as_system_manifest();
         system.upsert_copr(CoprRepo::new(name.clone()));
         manifest.update_from(&system);
-        manifest.save_user()?;
+        manifest.save_repo()?;
         Output::success(format!("Added to manifest: {}", name));
     } else {
         Output::dry_run(format!("Would add COPR to manifest: {}", name));
@@ -510,7 +510,7 @@ fn handle_copr_disable(
     plan: &ExecutionPlan,
     runner: &dyn CommandRunner,
 ) -> Result<()> {
-    let mut manifest = ToolboxPackagesManifest::load_user()?;
+    let mut manifest = ToolboxPackagesManifest::load_repo()?;
 
     let in_manifest = manifest.copr_repos.iter().any(|c| c.name == name);
     if !in_manifest {
@@ -522,7 +522,7 @@ fn handle_copr_disable(
         let mut system = manifest.as_system_manifest();
         if system.remove_copr(&name) {
             manifest.update_from(&system);
-            manifest.save_user()?;
+            manifest.save_repo()?;
             Output::success(format!("Removed from manifest: {}", name));
         }
     } else {
@@ -551,7 +551,7 @@ fn handle_copr_disable(
 }
 
 fn handle_copr_list() -> Result<()> {
-    let manifest = ToolboxPackagesManifest::load_user()?;
+    let manifest = ToolboxPackagesManifest::load_repo()?;
 
     if manifest.copr_repos.is_empty() {
         Output::info("No COPR repositories in manifest.");
@@ -659,7 +659,7 @@ fn handle_status(plan: &ExecutionPlan, runner: &dyn CommandRunner) -> Result<()>
     Output::blank();
 
     // Load and display manifest
-    let manifest = ToolboxPackagesManifest::load_user()?;
+    let manifest = ToolboxPackagesManifest::load_repo()?;
 
     if manifest.packages.is_empty() && manifest.groups.is_empty() {
         Output::info("No packages in toolbox manifest.");
@@ -743,7 +743,7 @@ fn handle_status(plan: &ExecutionPlan, runner: &dyn CommandRunner) -> Result<()>
 // =============================================================================
 
 fn handle_diff(plan: &ExecutionPlan, runner: &dyn CommandRunner) -> Result<()> {
-    let manifest = ToolboxPackagesManifest::load_user()?;
+    let manifest = ToolboxPackagesManifest::load_repo()?;
 
     if manifest.packages.is_empty() {
         Output::info("Toolbox manifest is empty.");
@@ -821,7 +821,7 @@ impl Plannable for DevSyncCommand {
     fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
         let runner = ctx.execution_plan().runner();
 
-        let manifest = ToolboxPackagesManifest::load_user()?;
+        let manifest = ToolboxPackagesManifest::load_repo()?;
 
         let mut to_install = Vec::new();
         let mut already_installed = 0;
@@ -923,7 +923,7 @@ impl Plannable for DevCaptureCommand {
         let installed = get_user_installed_packages(runner);
 
         // Load manifest to check what's already tracked
-        let manifest = ToolboxPackagesManifest::load_user()?;
+        let manifest = ToolboxPackagesManifest::load_repo()?;
 
         let mut to_capture = Vec::new();
         let mut already_in_manifest = 0;
@@ -969,7 +969,7 @@ impl Plan for DevCapturePlan {
         }
 
         // Load manifest and add packages
-        let mut manifest = ToolboxPackagesManifest::load_user()?;
+        let mut manifest = ToolboxPackagesManifest::load_repo()?;
 
         for pkg in &self.to_capture {
             if !manifest.find_package(pkg) {
@@ -981,7 +981,7 @@ impl Plan for DevCapturePlan {
         }
 
         // Save the updated manifest
-        manifest.save_user()?;
+        manifest.save_repo()?;
 
         Ok(report)
     }

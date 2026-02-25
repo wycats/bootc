@@ -16,6 +16,9 @@
           "/usr/local/bin/nu",
           "~/.proto/bin/proto"
         ],
+        "exclude": [
+          "bkt"
+        ],
         "to": "~/.local/bin/distrobox"
       },
       "init_hooks": [

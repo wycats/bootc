@@ -135,16 +135,7 @@ fn handle_remove(package: &str, plan: &ExecutionPlan) -> Result<()> {
         None
     };
 
-    let mut repo_manifest = match &repo_path {
-        Some(path) => SystemPackagesManifest::load(&path.join("manifests/system-packages.json"))?,
-        None => {
-            if plan.should_update_local_manifest() {
-                SystemPackagesManifest::load_user()?
-            } else {
-                SystemPackagesManifest::default()
-            }
-        }
-    };
+    let mut repo_manifest = SystemPackagesManifest::load_repo()?;
 
     if !repo_manifest.remove_package(package) {
         Output::info(format!("{} is not in the manifest", package));
@@ -175,11 +166,11 @@ fn handle_remove(package: &str, plan: &ExecutionPlan) -> Result<()> {
 
         let branch = format!("try/{}", sanitize_branch_component(package));
         commit_try_changes(runner, repo_path, &branch, &changed_files, &title, &body)?;
-    } else if plan.should_update_local_manifest() {
+    } else if plan.should_update_manifest() {
         if plan.dry_run {
-            Output::dry_run(format!("Would remove {} from user manifest", package));
+            Output::dry_run(format!("Would remove {} from manifest", package));
         } else {
-            repo_manifest.save_user()?;
+            save_repo_manifest(&repo_manifest)?;
         }
     } else if plan.dry_run {
         Output::dry_run(format!("Would remove {} from manifest", package));
@@ -218,16 +209,7 @@ fn handle_try_install(packages: &[String], plan: &ExecutionPlan) -> Result<()> {
         None
     };
 
-    let mut repo_manifest = match &repo_path {
-        Some(path) => SystemPackagesManifest::load(&path.join("manifests/system-packages.json"))?,
-        None => SystemPackagesManifest::default(),
-    };
-
-    let mut user_manifest = if plan.should_update_local_manifest() {
-        SystemPackagesManifest::load_user()?
-    } else {
-        SystemPackagesManifest::default()
-    };
+    let mut repo_manifest = SystemPackagesManifest::load_repo()?;
 
     let mut new_packages = Vec::new();
     for pkg in packages {
@@ -291,12 +273,12 @@ fn handle_try_install(packages: &[String], plan: &ExecutionPlan) -> Result<()> {
         }
     }
 
-    // Update local manifest if allowed (user manifest).
-    if plan.should_update_local_manifest() && !plan.dry_run {
+    // Update local manifest if allowed (manifest).
+    if plan.should_update_manifest() && !plan.dry_run {
         for pkg in &new_packages {
-            user_manifest.add_package(pkg.clone());
+            repo_manifest.add_package(pkg.clone());
         }
-        user_manifest.save_user()?;
+        save_repo_manifest(&repo_manifest)?;
     }
 
     if plan.should_create_pr() {
@@ -536,6 +518,11 @@ fn parse_size_bytes(value: &str) -> Option<u64> {
     };
 
     Some((value * multiplier) as u64)
+}
+
+fn save_repo_manifest(manifest: &SystemPackagesManifest) -> Result<()> {
+    let repo_path = crate::repo::find_repo_path()?;
+    manifest.save(&repo_path.join(SystemPackagesManifest::PROJECT_PATH))
 }
 
 fn sync_containerfile_sections(

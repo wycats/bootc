@@ -4,8 +4,6 @@
 //! The manifest format is simplified and backend-agnostic.
 
 use crate::command_runner::CommandRunner;
-use crate::context::PrMode;
-use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{AppImageApp, AppImageAppsManifest, GearLeverNativeManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
@@ -131,23 +129,12 @@ pub fn run(args: AppImageArgs, plan: &ExecutionPlan) -> Result<()> {
                 disabled: false,
             };
 
-            if plan.should_update_local_manifest() {
+            if plan.should_update_manifest() {
                 manifest.upsert(app.clone());
                 manifest.save_to_dir(&manifests_dir)?;
                 Output::success(format!("Added AppImage '{}' (github:{})", name, repo));
             } else if plan.dry_run {
                 Output::dry_run(format!("Would add AppImage '{}'", name));
-            }
-
-            // Record ephemeral change if using --local (not in dry-run mode)
-            if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run && !already_exists {
-                let mut ephemeral = EphemeralManifest::load_validated()?;
-                ephemeral.record(EphemeralChange::new(
-                    ChangeDomain::AppImage,
-                    ChangeAction::Add,
-                    &name,
-                ));
-                ephemeral.save()?;
             }
 
             // Sync to GearLever if executing locally
@@ -167,23 +154,12 @@ pub fn run(args: AppImageArgs, plan: &ExecutionPlan) -> Result<()> {
                 return Ok(());
             }
 
-            if plan.should_update_local_manifest() {
+            if plan.should_update_manifest() {
                 manifest.remove(&name);
                 manifest.save_to_dir(&manifests_dir)?;
                 Output::success(format!("Removed AppImage '{}' from manifest", name));
             } else if plan.dry_run {
                 Output::dry_run(format!("Would remove AppImage '{}'", name));
-            }
-
-            // Record ephemeral change if using --local
-            if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run {
-                let mut ephemeral = EphemeralManifest::load_validated()?;
-                ephemeral.record(EphemeralChange::new(
-                    ChangeDomain::AppImage,
-                    ChangeAction::Remove,
-                    &name,
-                ));
-                ephemeral.save()?;
             }
 
             // Remove from GearLever if executing locally

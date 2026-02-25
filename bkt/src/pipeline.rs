@@ -3,7 +3,7 @@
 //! Provides the unified execution model where commands:
 //! 1. Execute locally (unless --pr-only)
 //! 2. Update manifests
-//! 3. Create PR (unless --local)
+//! 3. Create PR (if enabled)
 //!
 //! This is the core infrastructure for Phase 2's command punning philosophy.
 
@@ -42,10 +42,8 @@ impl ExecutionPlan {
 
         let pr_mode = if cli.pr_only {
             PrMode::PrOnly
-        } else if cli.local {
-            PrMode::LocalOnly
         } else {
-            PrMode::Both
+            PrMode::Default
         };
 
         let command_runner: Arc<dyn CommandRunner> = Arc::new(RealCommandRunner);
@@ -99,10 +97,10 @@ impl ExecutionPlan {
         !self.dry_run && self.pr_mode.should_create_pr()
     }
 
-    /// Check if this plan should update local manifests.
+    /// Check if this plan should update manifests.
     ///
-    /// Local manifests are updated unless we're in pr-only mode.
-    pub fn should_update_local_manifest(&self) -> bool {
+    /// Manifests are updated unless we're in pr-only mode.
+    pub fn should_update_manifest(&self) -> bool {
         !self.dry_run && self.pr_mode != PrMode::PrOnly
     }
 
@@ -146,7 +144,7 @@ impl Default for ExecutionPlan {
         let command_runner: Arc<dyn CommandRunner> = Arc::new(RealCommandRunner);
         Self {
             context: ExecutionContext::Host,
-            pr_mode: PrMode::Both,
+            pr_mode: PrMode::Default,
             dry_run: false,
             skip_preflight: false,
             pr_backend: Arc::new(GitHubBackend::new(command_runner.clone())),
@@ -211,7 +209,7 @@ impl ExecutionPlanBuilder {
 
         ExecutionPlan {
             context: self.context.unwrap_or(ExecutionContext::Host),
-            pr_mode: self.pr_mode.unwrap_or(PrMode::Both),
+            pr_mode: self.pr_mode.unwrap_or(PrMode::Default),
             dry_run: self.dry_run,
             skip_preflight: self.skip_preflight,
             pr_backend,
@@ -228,10 +226,10 @@ mod tests {
     fn test_default_plan() {
         let plan = ExecutionPlan::default();
         assert_eq!(plan.context, ExecutionContext::Host);
-        assert_eq!(plan.pr_mode, PrMode::Both);
+        assert_eq!(plan.pr_mode, PrMode::Default);
         assert!(!plan.dry_run);
         assert!(plan.should_execute_locally());
-        assert!(plan.should_create_pr());
+        assert!(!plan.should_create_pr());
     }
 
     #[test]
@@ -242,41 +240,31 @@ mod tests {
     }
 
     #[test]
-    fn test_local_only_mode() {
-        let plan = ExecutionPlanBuilder::new()
-            .pr_mode(PrMode::LocalOnly)
-            .build();
-        assert!(plan.should_execute_locally());
-        assert!(!plan.should_create_pr());
-    }
-
     #[test]
     fn test_dry_run_prevents_all() {
         let plan = ExecutionPlanBuilder::new().dry_run(true).build();
         assert!(!plan.should_execute_locally());
         assert!(!plan.should_create_pr());
-        assert!(!plan.should_update_local_manifest());
+        assert!(!plan.should_update_manifest());
     }
 
     #[test]
-    fn test_should_update_local_manifest() {
-        // Default (Both mode): should update local manifest
+    fn test_should_update_manifest() {
+        // Default mode: should update manifest
         let default_plan = ExecutionPlanBuilder::new().build();
-        assert!(default_plan.should_update_local_manifest());
+        assert!(default_plan.should_update_manifest());
 
-        // LocalOnly mode: should update local manifest
-        let local_plan = ExecutionPlanBuilder::new()
-            .pr_mode(PrMode::LocalOnly)
-            .build();
-        assert!(local_plan.should_update_local_manifest());
+        // Pr mode: should update manifest
+        let pr_plan = ExecutionPlanBuilder::new().pr_mode(PrMode::Pr).build();
+        assert!(pr_plan.should_update_manifest());
 
-        // PrOnly mode: should NOT update local manifest
+        // PrOnly mode: should NOT update manifest
         let pr_only_plan = ExecutionPlanBuilder::new().pr_mode(PrMode::PrOnly).build();
-        assert!(!pr_only_plan.should_update_local_manifest());
+        assert!(!pr_only_plan.should_update_manifest());
 
-        // Dry-run mode: should NOT update local manifest
+        // Dry-run mode: should NOT update manifest
         let dry_run_plan = ExecutionPlanBuilder::new().dry_run(true).build();
-        assert!(!dry_run_plan.should_update_local_manifest());
+        assert!(!dry_run_plan.should_update_manifest());
     }
 
     #[test]
@@ -307,17 +295,17 @@ mod tests {
             .build();
         assert!(!dev_plan.should_create_pr());
 
-        // Even with PrMode::Both, Dev context should not create PRs
+        // Even with PrMode::Pr, Dev context should not create PRs
         let dev_both = ExecutionPlanBuilder::new()
             .context(ExecutionContext::Dev)
-            .pr_mode(PrMode::Both)
+            .pr_mode(PrMode::Pr)
             .build();
         assert!(!dev_both.should_create_pr());
 
         // Host context should still create PRs
         let host_plan = ExecutionPlanBuilder::new()
             .context(ExecutionContext::Host)
-            .pr_mode(PrMode::Both)
+            .pr_mode(PrMode::Pr)
             .build();
         assert!(host_plan.should_create_pr());
     }

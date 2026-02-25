@@ -41,6 +41,7 @@ ulid = "01KHSEJ11VJJFXR3MMDEJK6V1G"
 
 [[epochs.phases.rfcs]]
 id = "0050"
+relation = "related"
 
 [[epochs.phases]]
 id = "01khsej4tg08xsfhsh67d8qvkj"
@@ -67,6 +68,7 @@ rfc = "0050"
 
 [[epochs.phases.rfcs]]
 id = "0050"
+relation = "related"
 
 [[epochs]]
 id = "01khsegzg08en3xak79490vnsj"
@@ -77,7 +79,7 @@ ulid = "01KHSEGZG08EN3XAK79490VNSJ"
 [[epochs.phases]]
 id = "01khsejd4ms6zvj1yv6xgbhcsb"
 title = "Layer Independence (RFC-0045)"
-status = "active"
+status = "completed"
 kind = "regular"
 ulid = "01KHSEJD4MS6ZVJ1YV6XGBHCSB"
 
@@ -96,6 +98,41 @@ ulid = "01KJ41V0R3P8KMMMTXS19QB5RN"
 
 [[epochs.phases.rfcs]]
 id = "0045"
+relation = "related"
+
+[[epochs.phases]]
+id = "01kj8zvbe15c0ag9e4tpn3gzqv"
+title = "Manifest Architecture (RFC-0052/0053/0054)"
+status = "active"
+kind = "regular"
+ulid = "01KJ8ZVBE15C0AG9E4TPN3GZQV"
+
+[[epochs.phases.goals]]
+id = "eliminate-user-manifest-layer-rfc-0052"
+label = "Eliminate user manifest layer (RFC-0052)"
+status = "completed"
+completion_log = "All 5 PERs complete. Repo path caching, 110 call sites converted, 651 lines of dead merge code removed, migrate command added. 286 tests pass."
+ulid = "01KJ90AC3NRF4PP0EVJ6AHZRP3"
+
+[[epochs.phases.goals]]
+id = "bootstrap-clones-repo-rfc-0053"
+label = "Bootstrap clones repo (RFC-0053)"
+status = "completed"
+completion_log = "Bootstrap now clones the repo and caches the path. System manifests are bootstrap-only. All 3 tasks complete."
+ulid = "01KJ90AJTT57T8B8P1A3R71S7T"
+
+[[epochs.phases.goals]]
+id = "eliminate-ephemeral-manifest-and-local-rfc-0054"
+label = "Eliminate ephemeral manifest and --local (RFC-0054)"
+status = "completed"
+completion_log = "All 3 tasks complete. Ephemeral manifest, --local flag, bkt local subcommand removed. PR default flipped. -2013 lines."
+ulid = "01KJ90AQP6V9ADVV9Q2BFVZCZA"
+
+[[epochs.phases.goals]]
+id = "consolidate-copy-link-layers-to-fix-btrfs-hardlink-limit"
+label = "Consolidate COPY --link layers to fix btrfs hardlink limit"
+status = "pending"
+ulid = "01KJB37MC4Y26C8MDPT4K62QFF"
 
 [[epochs]]
 id = "01khsgx7xfrxe8q3y878hy24cw"
@@ -212,6 +249,7 @@ ulid = "01KHSGYM9R4NCN1NC0Z96GKQZ9"
 
 [[epochs.phases.rfcs]]
 id = "0016"
+relation = "related"
 
 [[epochs.phases]]
 id = "01khsgyrymtrst38tt4y7y22jc"
@@ -223,6 +261,7 @@ ulid = "01KHSGYRYMTRST38TT4Y7Y22JC"
 
 [[epochs.phases.rfcs]]
 id = "0007"
+relation = "related"
 
 [[epochs.phases]]
 id = "01khsgyzcvstjmxs5vsc5gh03w"
@@ -234,6 +273,7 @@ ulid = "01KHSGYZCVSTJMXS5VSC5GH03W"
 
 [[epochs.phases.rfcs]]
 id = "0006"
+relation = "related"
 
 [[epochs]]
 id = "01kj3h3ma3xbtnyjsn2kj3pkxy"
@@ -271,3 +311,4 @@ ulid = "01KJ3H4STW4R92QXGRG7BTFG3R"
 
 [[epochs.phases.rfcs]]
 id = "0050"
+relation = "related"

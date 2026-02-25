@@ -1,10 +1,9 @@
 # RFC 0034: Ephemeral System Modifications via usroverlay
 
-- Status: Draft
-- Feature Name: `usroverlay_integration`
-- Start Date: 2026-02-02
-- RFC PR: (leave this empty until PR is opened)
-- Tracking Issue: (leave this empty)
+- **Status**: Draft
+- **Feature Name**: `usroverlay_integration`
+- **Start Date**: 2026-02-02
+- **Updated**: 2026-02-23
 
 ## Summary
 
@@ -19,6 +18,7 @@ This remains future work. No bkt commands exist today for usroverlay.
 - No `bkt admin usroverlay` or `bkt dev install-local` commands exist.
 - The workflow does not currently manage usroverlay or track overlay changes.
 - Users must invoke `rpm-ostree usroverlay` manually if they choose to use it.
+- **Interim solution**: `scripts/install-bkt` builds and installs bkt to `~/.local/bin/bkt` (user-scoped, not usroverlay). This script will be superseded by `bkt dev install-local` once implemented.
 
 ## Goals
 

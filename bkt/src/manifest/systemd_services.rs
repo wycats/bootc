@@ -57,8 +57,8 @@ pub struct SystemdServicesManifest {
 }
 
 impl SystemdServicesManifest {
-    /// System manifest path (baked into image).
-    pub const SYSTEM_PATH: &'static str = "/usr/share/bootc-bootstrap/systemd-services.json";
+    /// Project manifest path (relative to workspace root).
+    pub const PROJECT_PATH: &'static str = "manifests/systemd-services.json";
 
     /// Load a manifest from a path.
     pub fn load(path: &PathBuf) -> Result<Self> {
@@ -97,16 +97,15 @@ impl SystemdServicesManifest {
         Ok(())
     }
 
-    /// Merge system and user manifests (user overrides by service name).
-    pub fn merged(system: &Self, user: &Self) -> Self {
-        let mut services = system.services.clone();
-        for (name, state) in &user.services {
-            services.insert(name.clone(), *state);
-        }
+    /// Load from the repository's manifests directory.
+    pub fn load_repo() -> Result<Self> {
+        let repo = crate::repo::find_repo_path()?;
+        Self::load(&repo.join(Self::PROJECT_PATH))
+    }
 
-        Self {
-            schema: None,
-            services,
-        }
+    /// Save to the repository's manifests directory.
+    pub fn save_repo(&self) -> Result<()> {
+        let repo = crate::repo::find_repo_path()?;
+        self.save(&repo.join(Self::PROJECT_PATH))
     }
 }

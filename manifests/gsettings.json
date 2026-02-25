@@ -2,27 +2,10 @@
   "$schema": "https://wycats.github.io/bootc/gsettings.schema.json",
   "settings": [
     {
-      "schema": "org.gnome.settings-daemon.plugins.power",
-      "key": "sleep-inactive-ac-type",
-      "value": "'nothing'",
-      "comment": "Disable auto-suspend on AC power (keep battery behavior as system default)"
-    },
-    {
-      "schema": "org.gnome.settings-daemon.plugins.power",
-      "key": "sleep-inactive-ac-timeout",
-      "value": "0"
-    },
-    {
       "schema": "org.gnome.desktop.interface",
       "key": "cursor-theme",
       "value": "'Bibata-Modern-Classic'",
       "comment": "Use Bibata Modern Classic cursor theme"
-    },
-    {
-      "schema": "org.gnome.desktop.interface",
-      "key": "icon-theme",
-      "value": "'WhiteSur'",
-      "comment": "Use WhiteSur icon theme"
     },
     {
       "schema": "org.gnome.desktop.interface",
@@ -31,10 +14,10 @@
       "comment": "Use adw-gtk3 for GTK3 apps (matches libadwaita style)"
     },
     {
-      "schema": "org.gnome.shell.keybindings",
-      "key": "toggle-overview",
-      "value": "['<Super>']",
-      "comment": "Ensure Super opens overview (can drift on GNOME updates)"
+      "schema": "org.gnome.desktop.interface",
+      "key": "icon-theme",
+      "value": "'WhiteSur'",
+      "comment": "Use WhiteSur icon theme"
     },
     {
       "schema": "org.gnome.mutter",
@@ -43,16 +26,21 @@
       "comment": "Left Super key triggers overlay (pairs with toggle-overview)"
     },
     {
+      "schema": "org.gnome.settings-daemon.plugins.power",
+      "key": "sleep-inactive-ac-timeout",
+      "value": "0"
+    },
+    {
+      "schema": "org.gnome.settings-daemon.plugins.power",
+      "key": "sleep-inactive-ac-type",
+      "value": "'nothing'",
+      "comment": "Disable auto-suspend on AC power (keep battery behavior as system default)"
+    },
+    {
       "schema": "org.gnome.shell.keybindings",
       "key": "toggle-overview",
       "value": "['<Super>']",
       "comment": "Ensure Super opens overview (can drift on GNOME updates)"
-    },
-    {
-      "schema": "org.gnome.mutter",
-      "key": "overlay-key",
-      "value": "'Super_L'",
-      "comment": "Left Super key triggers overlay (pairs with toggle-overview)"
     }
   ]
 }

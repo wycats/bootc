@@ -3,7 +3,6 @@
 //! Manages Linuxbrew/Homebrew packages on the host system.
 
 use anyhow::{Context, Result};
-use directories::BaseDirs;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -92,8 +91,8 @@ pub struct HomebrewManifest {
 }
 
 impl HomebrewManifest {
-    /// System manifest path (baked into image).
-    pub const SYSTEM_PATH: &'static str = "/usr/share/bootc-bootstrap/homebrew.json";
+    /// Project manifest path (relative to workspace root).
+    pub const PROJECT_PATH: &'static str = "manifests/homebrew.json";
 
     /// Load a manifest from a path.
     pub fn load(path: &PathBuf) -> Result<Self> {
@@ -121,68 +120,16 @@ impl HomebrewManifest {
         Ok(())
     }
 
-    /// Get the user manifest path.
-    pub fn user_path() -> PathBuf {
-        std::env::var("HOME")
-            .ok()
-            .map(|h| PathBuf::from(h).join(".config"))
-            .or_else(|| BaseDirs::new().map(|d| d.config_dir().to_path_buf()))
-            .unwrap_or_else(|| PathBuf::from(".config"))
-            .join("bootc")
-            .join("homebrew.json")
+    /// Load from the repository's manifests directory.
+    pub fn load_repo() -> Result<Self> {
+        let repo = crate::repo::find_repo_path()?;
+        Self::load(&repo.join(Self::PROJECT_PATH))
     }
 
-    /// Load the system manifest.
-    pub fn load_system() -> Result<Self> {
-        Self::load(&PathBuf::from(Self::SYSTEM_PATH))
-    }
-
-    /// Load the user manifest.
-    pub fn load_user() -> Result<Self> {
-        Self::load(&Self::user_path())
-    }
-
-    /// Save the user manifest.
-    pub fn save_user(&self) -> Result<()> {
-        self.save(&Self::user_path())
-    }
-
-    /// Merge system and user manifests (user overrides system).
-    pub fn merged(system: &Self, user: &Self) -> Self {
-        let mut seen = std::collections::HashSet::new();
-        let mut formulae = Vec::new();
-
-        // User formulae take precedence
-        for f in &user.formulae {
-            seen.insert(f.name().to_string());
-            formulae.push(f.clone());
-        }
-
-        // Add system formulae not in user
-        for f in &system.formulae {
-            if !seen.contains(f.name()) {
-                formulae.push(f.clone());
-            }
-        }
-
-        // Sort for consistent output
-        formulae.sort();
-
-        // Merge taps
-        let mut taps: Vec<String> = system
-            .taps
-            .iter()
-            .chain(user.taps.iter())
-            .cloned()
-            .collect();
-        taps.sort();
-        taps.dedup();
-
-        Self {
-            schema: user.schema.clone().or_else(|| system.schema.clone()),
-            formulae,
-            taps,
-        }
+    /// Save to the repository's manifests directory.
+    pub fn save_repo(&self) -> Result<()> {
+        let repo = crate::repo::find_repo_path()?;
+        self.save(&repo.join(Self::PROJECT_PATH))
     }
 
     /// Check if a formula exists.
@@ -256,31 +203,5 @@ mod tests {
         assert_eq!(formula.name(), "lefthook");
         assert_eq!(formula.tap(), None);
         assert_eq!(formula.formula_name(), "lefthook");
-    }
-
-    #[test]
-    fn manifest_merge_combines_formulae() {
-        let mut system = HomebrewManifest::default();
-        system.add("system-pkg");
-
-        let mut user = HomebrewManifest::default();
-        user.add("user-pkg");
-
-        let merged = HomebrewManifest::merged(&system, &user);
-        assert_eq!(merged.formulae.len(), 2);
-        assert!(merged.contains("system-pkg"));
-        assert!(merged.contains("user-pkg"));
-    }
-
-    #[test]
-    fn manifest_merge_deduplicates() {
-        let mut system = HomebrewManifest::default();
-        system.add("shared-pkg");
-
-        let mut user = HomebrewManifest::default();
-        user.add("shared-pkg");
-
-        let merged = HomebrewManifest::merged(&system, &user);
-        assert_eq!(merged.formulae.len(), 1);
     }
 }

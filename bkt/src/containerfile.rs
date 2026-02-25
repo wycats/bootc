@@ -21,6 +21,7 @@
 
 use crate::manifest::ExternalReposManifest;
 use crate::manifest::Shim;
+use crate::manifest::external_repos::LayerGroup;
 use crate::manifest::image_config::{FileCopy, ImageConfigManifest, ImageModule};
 use crate::manifest::system_config::SystemConfigManifest;
 use anyhow::{Context, Result, bail};
@@ -298,6 +299,7 @@ pub fn generate_full_containerfile(input: &ContainerfileGeneratorInput) -> Strin
     emit_base_stage(&mut lines);
     emit_dl_stages(&mut lines, &input.external_repos);
     emit_install_stages(&mut lines, &input.external_repos);
+    emit_bundled_stage(&mut lines, &input.external_repos);
     emit_fetch_stages(&mut lines, &input.upstreams);
     emit_script_stages(&mut lines, &input.upstreams);
     emit_wrapper_build_stage(&mut lines, &input.image_config);
@@ -428,14 +430,56 @@ fn emit_install_stages(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
     }
 }
 
+/// Emit a merged stage for bundled packages (if any exist).
+/// This stage combines outputs from individual install-* stages into one layer.
+fn emit_bundled_stage(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
+    let bundled: Vec<_> = repos
+        .repos
+        .iter()
+        .filter(|r| r.layer_group == LayerGroup::Bundled)
+        .collect();
+
+    if bundled.is_empty() {
+        return;
+    }
+
+    lines.push("".to_string());
+    lines.push(section_header(
+        "Bundled packages merged stage (reduces deployment layer count)",
+    ));
+    lines.push("".to_string());
+    lines.push("FROM scratch AS install-bundled".to_string());
+    for repo in &bundled {
+        lines.push(format!("COPY --from=install-{} / /", repo.name));
+    }
+}
+
 /// Emit COPY --link instructions from install-* stages into final image.
+/// Independent packages get their own layer; bundled packages share one layer.
 fn emit_install_copies(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
+    let independent: Vec<_> = repos
+        .repos
+        .iter()
+        .filter(|r| r.layer_group == LayerGroup::Independent)
+        .collect();
+    let has_bundled = repos
+        .repos
+        .iter()
+        .any(|r| r.layer_group == LayerGroup::Bundled);
+
     lines.push(
-        "# Import installed files from each install-* stage (COPY --link for layer independence)"
+        "# Import installed files from install-* stages (COPY --link for layer independence)"
             .to_string(),
     );
-    for repo in &repos.repos {
+
+    // Independent packages get their own COPY --link
+    for repo in &independent {
         lines.push(format!("COPY --link --from=install-{} / /", repo.name));
+    }
+
+    // Bundled packages share one merged layer
+    if has_bundled {
+        lines.push("COPY --link --from=install-bundled / /".to_string());
     }
 }
 
@@ -522,11 +566,45 @@ fn emit_script_stages(lines: &mut Vec<String>, upstreams: &UpstreamManifest) {
         let stage = script_stage_name(upstream, install);
         let script_lines = script_build_script(install);
 
+        let outputs = upstream_outputs(Some(install));
+
         lines.push(format!("FROM base AS {}", stage));
         lines.push("COPY upstream/manifest.json /tmp/upstream-manifest.json".to_string());
         if let Some(script) = script_lines {
             lines.push("RUN <<'EOF'".to_string());
             lines.extend(script.into_iter());
+
+            // Collect outputs into /out/ for single-layer COPY (RFC-0050)
+            if !outputs.is_empty() {
+                lines.push("# Collect outputs for single-layer COPY".to_string());
+                // Gather unique parent directories
+                let mut parents: Vec<String> = outputs
+                    .iter()
+                    .map(|o| {
+                        if o.ends_with('/') {
+                            format!("/out{}", o)
+                        } else {
+                            let path = std::path::Path::new(o.as_str());
+                            format!(
+                                "/out{}",
+                                path.parent().unwrap_or(std::path::Path::new("/")).display()
+                            )
+                        }
+                    })
+                    .collect();
+                parents.sort();
+                parents.dedup();
+                lines.push(format!("mkdir -p {}", parents.join(" ")));
+
+                for output in &outputs {
+                    if output.ends_with('/') {
+                        lines.push(format!("cp -r {} /out{}", output, output));
+                    } else {
+                        lines.push(format!("cp {} /out{}", output, output));
+                    }
+                }
+            }
+
             lines.push("EOF".to_string());
         } else {
             lines.push(format!("RUN bkt-build fetch {}", upstream.name));
@@ -818,11 +896,9 @@ fn emit_upstream_copies(lines: &mut Vec<String>, upstreams: &UpstreamManifest) {
         let install = upstream.install.as_ref();
         let outputs = upstream_outputs(install);
         let stage = script_stage_name(upstream, install.unwrap());
-        for output in outputs {
-            lines.push(format!(
-                "COPY --link --from={} {} {}",
-                stage, output, output
-            ));
+        if !outputs.is_empty() {
+            // Single-layer COPY from /out/ (outputs collected during build)
+            lines.push(format!("COPY --link --from={} /out/ /", stage));
         }
     }
 }
@@ -882,17 +958,22 @@ fn emit_wrapper_build_stage(lines: &mut Vec<String>, image_config: &ImageConfigM
     ));
     lines.push("".to_string());
     lines.push("FROM rust:slim AS build-wrappers".to_string());
-    lines.push("RUN mkdir -p /out".to_string());
 
+    // Compile wrappers to their final paths under /out/ for single-layer COPY
     for wrapper in &wrappers {
-        // COPY the wrapper source from the tracked wrappers/ directory and compile.
-        // The source files are the single source of truth — generated by `bkt wrap build`.
+        let out_path = format!("/out{}", wrapper.output);
+        let out_dir = std::path::Path::new(out_path.as_str())
+            .parent()
+            .unwrap_or(std::path::Path::new("/out"))
+            .display();
         lines.push(format!(
             "COPY wrappers/{name}/src/main.rs /tmp/{name}.rs",
             name = wrapper.name
         ));
         lines.push(format!(
-            "RUN rustc --edition 2021 -O -o /out/{name} /tmp/{name}.rs",
+            "RUN mkdir -p {dir} && rustc --edition 2021 -O -o {path} /tmp/{name}.rs",
+            dir = out_dir,
+            path = out_path,
             name = wrapper.name
         ));
     }
@@ -909,12 +990,7 @@ fn emit_wrapper_copies(lines: &mut Vec<String>, image_config: &ImageConfigManife
     }
 
     lines.push("# Memory-managed application wrappers (from build-wrappers stage)".to_string());
-    for wrapper in wrappers {
-        lines.push(format!(
-            "COPY --link --from=build-wrappers /out/{} {}",
-            wrapper.name, wrapper.output
-        ));
-    }
+    lines.push("COPY --link --from=build-wrappers /out/ /".to_string());
     lines.push("".to_string());
 }
 

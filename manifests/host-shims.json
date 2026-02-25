@@ -5,22 +5,26 @@
       "name": "bootc"
     },
     {
+      "name": "docker",
+      "host": "podman"
+    },
+    {
+      "name": "flatpak"
+    },
+    {
+      "name": "journalctl"
+    },
+    {
+      "name": "podman"
+    },
+    {
       "name": "rpm-ostree"
     },
     {
       "name": "systemctl"
     },
     {
-      "name": "journalctl"
-    },
-    {
       "name": "ujust"
-    },
-    {
-      "name": "flatpak"
-    },
-    {
-      "name": "podman"
     }
   ]
 }

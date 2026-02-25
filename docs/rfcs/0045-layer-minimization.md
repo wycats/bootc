@@ -4,6 +4,11 @@
 
 Implemented (2026-02-22)
 
+> **Follow-up**: RFC-0050 addresses btrfs hardlink limits by adding
+> configurable layer grouping. The per-package build stages from this
+> RFC are preserved for cache efficiency; only deployment layers are
+> consolidated.
+
 ## Goal
 
 A change to one concern in the manifest should invalidate **O(1)

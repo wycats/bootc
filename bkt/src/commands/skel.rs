@@ -202,7 +202,7 @@ pub fn run(args: SkelArgs, plan: &ExecutionPlan) -> Result<()> {
             }
 
             // Skel add always copies to the repo's skel/ directory (not a manifest)
-            // We don't use should_update_local_manifest because this is a file copy, not manifest update
+            // We don't use should_update_manifest because this is a file copy, not manifest update
             if !plan.dry_run {
                 // Create parent directories if needed
                 if let Some(parent) = dest.parent() {

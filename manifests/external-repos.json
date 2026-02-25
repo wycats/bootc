@@ -6,7 +6,8 @@
       "display_name": "Visual Studio Code",
       "baseurl": "https://packages.microsoft.com/yumrepos/vscode",
       "gpg_key": "https://packages.microsoft.com/keys/microsoft.asc",
-      "packages": ["code", "code-insiders"]
+      "packages": ["code", "code-insiders"],
+      "layer_group": "independent"
     },
     {
       "name": "microsoft-edge",
@@ -14,7 +15,8 @@
       "baseurl": "https://packages.microsoft.com/yumrepos/edge",
       "gpg_key": "https://packages.microsoft.com/keys/microsoft.asc",
       "packages": ["microsoft-edge-stable"],
-      "opt_path": "microsoft"
+      "opt_path": "microsoft",
+      "layer_group": "independent"
     },
     {
       "name": "1password",

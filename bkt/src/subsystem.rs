@@ -6,8 +6,7 @@
 //!
 //! # Key Benefits
 //!
-//! - **Single source of truth**: Manifest loading (with proper system + user merging)
-//!   happens in one place per subsystem
+//! - **Single source of truth**: Manifest loading happens in one place per subsystem
 //! - **Unified enumeration**: The registry provides a single list of all subsystems
 //! - **Reduced duplication**: Commands like `apply` and `capture` can iterate
 //!   over the registry instead of hard-coding subsystem lists
@@ -69,7 +68,7 @@ pub enum SubsystemTier {
 /// A subsystem manages a category of declarative configuration.
 ///
 /// Each subsystem knows how to:
-/// - Load its manifest (with proper system + user merging)
+/// - Load its manifest (repo-only)
 /// - Capture current system state to a manifest
 /// - Sync manifest state to the running system
 ///
@@ -82,10 +81,9 @@ pub enum SubsystemTier {
 ///     fn name(&self) -> &'static str { "GNOME Extensions" }
 ///     fn id(&self) -> &'static str { "extension" }
 ///
-///     fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
-///         let system = GnomeExtensionsManifest::load(&ctx.system_manifest_path("gnome-extensions.json"))?;
-///         let user = GnomeExtensionsManifest::load(&ctx.user_manifest_path("gnome-extensions.json"))?;
-///         Ok(Box::new(GnomeExtensionsManifest::merged(&system, &user)))
+///     fn load_manifest(&self, _ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
+///         let manifest = GnomeExtensionsManifest::load_repo()?;
+///         Ok(Box::new(manifest))
 ///     }
 ///
 ///     fn capture(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
@@ -120,7 +118,7 @@ pub trait Subsystem: Send + Sync {
     /// The lifecycle tier for this subsystem.
     fn tier(&self) -> SubsystemTier;
 
-    /// Load the merged manifest (system defaults + user overrides).
+    /// Load the manifest for this subsystem.
     ///
     /// This is THE canonical way to get the effective manifest.
     /// The merge semantics are defined once here, not scattered across code.
@@ -253,13 +251,11 @@ fn build_drift_report(mut expected: Vec<String>, mut actual: Vec<String>) -> Dri
 /// Context for subsystem manifest loading.
 ///
 /// Provides paths to the various locations where manifests can be found.
-/// Subsystems use this to locate their system and user manifest files.
+/// Subsystems use this to locate their manifest files.
 #[derive(Debug, Clone)]
 pub struct SubsystemContext {
     /// Repository root (where manifests/ lives).
     pub repo_root: PathBuf,
-    /// User config directory (~/.config/bootc/).
-    pub user_config_dir: PathBuf,
     /// System manifest directory (/usr/share/bootc-bootstrap/).
     pub system_manifest_dir: PathBuf,
 }
@@ -267,28 +263,16 @@ pub struct SubsystemContext {
 impl SubsystemContext {
     /// Create a new subsystem context with default paths.
     pub fn new() -> Self {
-        let home = std::env::var("HOME")
-            .ok()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/"));
-
         Self {
             repo_root: std::env::current_dir().unwrap_or_default(),
-            user_config_dir: home.join(".config").join("bootc"),
             system_manifest_dir: PathBuf::from("/usr/share/bootc-bootstrap"),
         }
     }
 
     /// Create a context with a custom repo root.
     pub fn with_repo_root(repo_root: PathBuf) -> Self {
-        let home = std::env::var("HOME")
-            .ok()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/"));
-
         Self {
             repo_root,
-            user_config_dir: home.join(".config").join("bootc"),
             system_manifest_dir: PathBuf::from("/usr/share/bootc-bootstrap"),
         }
     }
@@ -296,11 +280,6 @@ impl SubsystemContext {
     /// Get the path to a system manifest file.
     pub fn system_manifest_path(&self, filename: &str) -> PathBuf {
         self.system_manifest_dir.join(filename)
-    }
-
-    /// Get the path to a user manifest file.
-    pub fn user_manifest_path(&self, filename: &str) -> PathBuf {
-        self.user_config_dir.join(filename)
     }
 
     /// Get the path to a manifest file in the repo.
@@ -570,11 +549,9 @@ impl Subsystem for ExtensionSubsystem {
         SubsystemTier::Convergent
     }
 
-    fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
-        let system =
-            GnomeExtensionsManifest::load(&ctx.system_manifest_path("gnome-extensions.json"))?;
-        let user = GnomeExtensionsManifest::load(&ctx.user_manifest_path("gnome-extensions.json"))?;
-        Ok(Box::new(GnomeExtensionsManifest::merged(&system, &user)))
+    fn load_manifest(&self, _ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
+        let manifest = GnomeExtensionsManifest::load_repo()?;
+        Ok(Box::new(manifest))
     }
 
     fn capture(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
@@ -599,19 +576,16 @@ impl Subsystem for ExtensionSubsystem {
         }
     }
 
-    fn status(&self, ctx: &SubsystemContext) -> Result<Option<Box<dyn SubsystemStatus>>> {
-        let system =
-            GnomeExtensionsManifest::load(&ctx.system_manifest_path("gnome-extensions.json"))?;
-        let user = GnomeExtensionsManifest::load(&ctx.user_manifest_path("gnome-extensions.json"))?;
-        let merged = GnomeExtensionsManifest::merged(&system, &user);
+    fn status(&self, _ctx: &SubsystemContext) -> Result<Option<Box<dyn SubsystemStatus>>> {
+        let manifest = GnomeExtensionsManifest::load_repo()?;
 
         let enabled_extensions: std::collections::HashSet<String> =
             get_enabled_extensions().into_iter().collect();
         let manifest_uuids: std::collections::HashSet<_> =
-            merged.extensions.iter().map(|s| s.id()).collect();
+            manifest.extensions.iter().map(|s| s.id()).collect();
 
-        let total = merged.extensions.len();
-        let synced = merged
+        let total = manifest.extensions.len();
+        let synced = manifest
             .extensions
             .iter()
             .filter(|u| enabled_extensions.contains(u.id()))
@@ -631,13 +605,10 @@ impl Subsystem for ExtensionSubsystem {
         })))
     }
 
-    fn drift(&self, ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
-        let system =
-            GnomeExtensionsManifest::load(&ctx.system_manifest_path("gnome-extensions.json"))?;
-        let user = GnomeExtensionsManifest::load(&ctx.user_manifest_path("gnome-extensions.json"))?;
-        let merged = GnomeExtensionsManifest::merged(&system, &user);
+    fn drift(&self, _ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
+        let manifest = GnomeExtensionsManifest::load_repo()?;
 
-        let expected: Vec<String> = merged
+        let expected: Vec<String> = manifest
             .extensions
             .iter()
             .map(|s| s.id().to_string())
@@ -699,10 +670,9 @@ impl Subsystem for FlatpakSubsystem {
         SubsystemTier::Convergent
     }
 
-    fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
-        let system = FlatpakAppsManifest::load(&ctx.system_manifest_path("flatpak-apps.json"))?;
-        let user = FlatpakAppsManifest::load(&ctx.user_manifest_path("flatpak-apps.json"))?;
-        Ok(Box::new(FlatpakAppsManifest::merged(&system, &user)))
+    fn load_manifest(&self, _ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
+        let manifest = FlatpakAppsManifest::load_repo()?;
+        Ok(Box::new(manifest))
     }
 
     fn capture(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
@@ -727,18 +697,16 @@ impl Subsystem for FlatpakSubsystem {
         }
     }
 
-    fn status(&self, ctx: &SubsystemContext) -> Result<Option<Box<dyn SubsystemStatus>>> {
-        let system = FlatpakAppsManifest::load(&ctx.system_manifest_path("flatpak-apps.json"))?;
-        let user = FlatpakAppsManifest::load(&ctx.user_manifest_path("flatpak-apps.json"))?;
-        let merged = FlatpakAppsManifest::merged(&system, &user);
+    fn status(&self, _ctx: &SubsystemContext) -> Result<Option<Box<dyn SubsystemStatus>>> {
+        let manifest = FlatpakAppsManifest::load_repo()?;
 
         let installed_flatpaks: std::collections::HashSet<String> =
             get_installed_flatpaks().into_iter().map(|f| f.id).collect();
         let manifest_ids: std::collections::HashSet<_> =
-            merged.apps.iter().map(|a| a.id.as_str()).collect();
+            manifest.apps.iter().map(|a| a.id.as_str()).collect();
 
-        let total = merged.apps.len();
-        let synced = merged
+        let total = manifest.apps.len();
+        let synced = manifest
             .apps
             .iter()
             .filter(|a| installed_flatpaks.contains(&a.id))
@@ -758,12 +726,10 @@ impl Subsystem for FlatpakSubsystem {
         })))
     }
 
-    fn drift(&self, ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
-        let system = FlatpakAppsManifest::load(&ctx.system_manifest_path("flatpak-apps.json"))?;
-        let user = FlatpakAppsManifest::load(&ctx.user_manifest_path("flatpak-apps.json"))?;
-        let merged = FlatpakAppsManifest::merged(&system, &user);
+    fn drift(&self, _ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
+        let manifest = FlatpakAppsManifest::load_repo()?;
 
-        let expected: Vec<String> = merged.apps.iter().map(|a| a.id.clone()).collect();
+        let expected: Vec<String> = manifest.apps.iter().map(|a| a.id.clone()).collect();
         let actual: Vec<String> = get_installed_flatpaks().into_iter().map(|f| f.id).collect();
 
         Ok(Some(build_drift_report(expected, actual)))
@@ -869,10 +835,9 @@ impl Subsystem for GsettingSubsystem {
         SubsystemTier::Convergent
     }
 
-    fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
-        let system = GSettingsManifest::load(&ctx.system_manifest_path("gsettings.json"))?;
-        let user = GSettingsManifest::load(&ctx.user_manifest_path("gsettings.json"))?;
-        Ok(Box::new(GSettingsManifest::merged(&system, &user)))
+    fn load_manifest(&self, _ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
+        let manifest = GSettingsManifest::load_repo()?;
+        Ok(Box::new(manifest))
     }
 
     fn capture(&self, _ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
@@ -895,16 +860,14 @@ impl Subsystem for GsettingSubsystem {
         }
     }
 
-    fn status(&self, ctx: &SubsystemContext) -> Result<Option<Box<dyn SubsystemStatus>>> {
-        let system = GSettingsManifest::load(&ctx.system_manifest_path("gsettings.json"))?;
-        let user = GSettingsManifest::load(&ctx.user_manifest_path("gsettings.json"))?;
-        let merged = GSettingsManifest::merged(&system, &user);
+    fn status(&self, _ctx: &SubsystemContext) -> Result<Option<Box<dyn SubsystemStatus>>> {
+        let manifest = GSettingsManifest::load_repo()?;
 
-        let total = merged.settings.len();
+        let total = manifest.settings.len();
         let mut synced = 0;
         let mut pending = 0;
 
-        for s in &merged.settings {
+        for s in &manifest.settings {
             match get_gsetting(&s.schema, &s.key) {
                 Some(current) if current == s.value => synced += 1,
                 Some(_) => pending += 1,
@@ -920,14 +883,12 @@ impl Subsystem for GsettingSubsystem {
         })))
     }
 
-    fn drift(&self, ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
-        let system = GSettingsManifest::load(&ctx.system_manifest_path("gsettings.json"))?;
-        let user = GSettingsManifest::load(&ctx.user_manifest_path("gsettings.json"))?;
-        let merged = GSettingsManifest::merged(&system, &user);
+    fn drift(&self, _ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
+        let manifest = GSettingsManifest::load_repo()?;
 
         let mut report = DriftReport::default();
 
-        for setting in &merged.settings {
+        for setting in &manifest.settings {
             let key = format!("{}.{}", setting.schema, setting.key);
             let expected_entry = format!("{} = {}", key, setting.value);
             report.expected.push(expected_entry);
@@ -1009,11 +970,9 @@ impl Subsystem for SystemdServicesSubsystem {
         SubsystemTier::Convergent
     }
 
-    fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
-        let system =
-            SystemdServicesManifest::load(&ctx.system_manifest_path("systemd-services.json"))?;
-        let user = SystemdServicesManifest::load(&ctx.user_manifest_path("systemd-services.json"))?;
-        Ok(Box::new(SystemdServicesManifest::merged(&system, &user)))
+    fn load_manifest(&self, _ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
+        let manifest = SystemdServicesManifest::load_repo()?;
+        Ok(Box::new(manifest))
     }
 
     fn capture(&self, _ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
@@ -1028,16 +987,13 @@ impl Subsystem for SystemdServicesSubsystem {
         Ok(None)
     }
 
-    fn drift(&self, ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
-        let system =
-            SystemdServicesManifest::load(&ctx.system_manifest_path("systemd-services.json"))?;
-        let user = SystemdServicesManifest::load(&ctx.user_manifest_path("systemd-services.json"))?;
-        let merged = SystemdServicesManifest::merged(&system, &user);
+    fn drift(&self, _ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
+        let manifest = SystemdServicesManifest::load_repo()?;
 
         let manager = SystemdManager::new()?;
         let mut report = DriftReport::default();
 
-        let mut services: Vec<_> = merged.services.iter().collect();
+        let mut services: Vec<_> = manifest.services.iter().collect();
         services.sort_by(|(a, _), (b, _)| a.cmp(b));
 
         for (service, expected_state) in services {
@@ -1117,10 +1073,9 @@ impl Subsystem for ShimSubsystem {
         SubsystemTier::Convergent
     }
 
-    fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
-        let system = ShimsManifest::load(&ctx.system_manifest_path("host-shims.json"))?;
-        let user = ShimsManifest::load(&ctx.user_manifest_path("host-shims.json"))?;
-        Ok(Box::new(ShimsManifest::merged(&system, &user)))
+    fn load_manifest(&self, _ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
+        let manifest = ShimsManifest::load_repo()?;
+        Ok(Box::new(manifest))
     }
 
     fn capture(&self, _ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
@@ -1141,14 +1096,12 @@ impl Subsystem for ShimSubsystem {
         }
     }
 
-    fn status(&self, ctx: &SubsystemContext) -> Result<Option<Box<dyn SubsystemStatus>>> {
-        let system = ShimsManifest::load(&ctx.system_manifest_path("host-shims.json"))?;
-        let user = ShimsManifest::load(&ctx.user_manifest_path("host-shims.json"))?;
-        let merged = ShimsManifest::merged(&system, &user);
+    fn status(&self, _ctx: &SubsystemContext) -> Result<Option<Box<dyn SubsystemStatus>>> {
+        let manifest = ShimsManifest::load_repo()?;
 
         let shims_dir = shims_dir();
-        let total = merged.shims.len();
-        let synced = merged
+        let total = manifest.shims.len();
+        let synced = manifest
             .shims
             .iter()
             .filter(|s| shims_dir.join(&s.name).exists())
@@ -1163,12 +1116,10 @@ impl Subsystem for ShimSubsystem {
         })))
     }
 
-    fn drift(&self, ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
-        let system = ShimsManifest::load(&ctx.system_manifest_path("host-shims.json"))?;
-        let user = ShimsManifest::load(&ctx.user_manifest_path("host-shims.json"))?;
-        let merged = ShimsManifest::merged(&system, &user);
+    fn drift(&self, _ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
+        let manifest = ShimsManifest::load_repo()?;
 
-        let expected: Vec<String> = merged.shims.iter().map(|s| s.name.clone()).collect();
+        let expected: Vec<String> = manifest.shims.iter().map(|s| s.name.clone()).collect();
         let actual = get_installed_shims();
 
         Ok(Some(build_drift_report(expected, actual)))
@@ -1368,10 +1319,9 @@ impl Subsystem for HomebrewSubsystem {
         SubsystemTier::Convergent
     }
 
-    fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
-        let system = HomebrewManifest::load(&ctx.system_manifest_path("homebrew.json"))?;
-        let user = HomebrewManifest::load(&ctx.user_manifest_path("homebrew.json"))?;
-        Ok(Box::new(HomebrewManifest::merged(&system, &user)))
+    fn load_manifest(&self, _ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
+        let manifest = HomebrewManifest::load_repo()?;
+        Ok(Box::new(manifest))
     }
 
     fn capture(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
@@ -1430,11 +1380,9 @@ impl Subsystem for SystemSubsystem {
         SubsystemTier::Atomic
     }
 
-    fn load_manifest(&self, ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
-        let system =
-            SystemPackagesManifest::load(&ctx.system_manifest_path("system-packages.json"))?;
-        let user = SystemPackagesManifest::load(&ctx.user_manifest_path("system-packages.json"))?;
-        Ok(Box::new(SystemPackagesManifest::merged(&system, &user)))
+    fn load_manifest(&self, _ctx: &SubsystemContext) -> Result<Box<dyn Manifest>> {
+        let manifest = SystemPackagesManifest::load_repo()?;
+        Ok(Box::new(manifest))
     }
 
     fn capture(&self, ctx: &PlanContext) -> Result<Option<Box<dyn DynPlan>>> {
@@ -1455,13 +1403,10 @@ impl Subsystem for SystemSubsystem {
         Ok(None)
     }
 
-    fn drift(&self, ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
-        let system =
-            SystemPackagesManifest::load(&ctx.system_manifest_path("system-packages.json"))?;
-        let user = SystemPackagesManifest::load(&ctx.user_manifest_path("system-packages.json"))?;
-        let merged = SystemPackagesManifest::merged(&system, &user);
+    fn drift(&self, _ctx: &SubsystemContext) -> Result<Option<DriftReport>> {
+        let manifest = SystemPackagesManifest::load_repo()?;
 
-        let expected = merged.packages;
+        let expected = manifest.packages;
         let actual = get_layered_packages();
 
         Ok(Some(build_drift_report(expected, actual)))
@@ -1665,7 +1610,6 @@ mod tests {
                 .to_string_lossy()
                 .contains("bootc-bootstrap")
         );
-        assert!(ctx.user_config_dir.to_string_lossy().contains("bootc"));
     }
 
     #[test]

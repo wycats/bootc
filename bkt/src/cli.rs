@@ -28,15 +28,8 @@ pub struct Cli {
     ///
     /// Useful for preparing changes on one machine for another,
     /// or for testing manifest changes in CI before applying.
-    #[arg(long, global = true, conflicts_with = "local")]
+    #[arg(long, global = true)]
     pub pr_only: bool,
-
-    /// Skip PR creation, only execute locally
-    ///
-    /// Useful for temporary installations or testing before committing.
-    /// Changes are recorded in the ephemeral manifest for later promotion.
-    #[arg(long, global = true, conflicts_with = "pr_only")]
-    pub local: bool,
 
     /// Show what would be done without making changes
     #[arg(long, short = 'n', global = true)]
@@ -153,17 +146,20 @@ pub enum Commands {
     /// Manage Containerfile managed sections
     Containerfile(commands::containerfile::ContainerfileArgs),
 
-    /// Manage local-only changes (ephemeral manifest)
-    ///
-    /// View, commit, or clear changes made with --local. These changes
-    /// are tracked for later promotion to a PR.
-    Local(commands::local::LocalArgs),
+    /// Migrate legacy user configuration into the repo
+    Migrate(commands::migrate::MigrateArgs),
 
     /// Generate application wrapper binaries
     ///
     /// Creates Rust binaries that launch applications under systemd
     /// resource controls (slices). Replaces shell wrapper scripts.
     Wrap(commands::wrap::WrapArgs),
+
+    /// Analyze and reclaim system memory (RAM, swap, GPU, caches)
+    ///
+    /// By default shows what could be reclaimed without taking action.
+    /// Use --apply to actually perform reclamation.
+    Tune(commands::tune::TuneArgs),
 }
 
 impl Commands {
@@ -207,8 +203,9 @@ impl Commands {
             Commands::Skel(_) => CommandTarget::Either,
             Commands::BuildInfo(_) => CommandTarget::Either,
             Commands::Containerfile(_) => CommandTarget::Either,
-            Commands::Local(_) => CommandTarget::Either,
+            Commands::Migrate(_) => CommandTarget::Either,
             Commands::Wrap(_) => CommandTarget::Either,
+            Commands::Tune(_) => CommandTarget::Host, // Reads /proc, /sys for memory/GPU info
         }
     }
 }

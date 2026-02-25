@@ -210,7 +210,8 @@ fn main() -> Result<()> {
         Commands::Base(args) => commands::base::run(args, plan.runner()),
         Commands::BuildInfo(args) => commands::build_info::run(args, plan.runner()),
         Commands::Containerfile(args) => commands::containerfile::run(args, &plan),
-        Commands::Local(args) => commands::local::run(args, &plan),
+        Commands::Migrate(args) => commands::migrate::run(args, cli.dry_run),
         Commands::Wrap(args) => commands::wrap::execute(args),
+        Commands::Tune(args) => commands::tune::run(args),
     }
 }

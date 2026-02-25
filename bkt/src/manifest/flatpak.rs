@@ -325,8 +325,8 @@ pub struct FlatpakAppsManifest {
 }
 
 impl FlatpakAppsManifest {
-    /// System manifest path (baked into image).
-    pub const SYSTEM_PATH: &'static str = "/usr/share/bootc-bootstrap/flatpak-apps.json";
+    /// Project manifest path (relative to workspace root).
+    pub const PROJECT_PATH: &'static str = "manifests/flatpak-apps.json";
 
     /// Load a manifest from a path.
     pub fn load(path: &Path) -> Result<Self> {
@@ -353,52 +353,16 @@ impl FlatpakAppsManifest {
         Ok(())
     }
 
-    /// Get the user manifest path.
-    ///
-    /// Respects `$HOME` environment variable for test isolation.
-    pub fn user_path() -> PathBuf {
-        // Prefer $HOME for test isolation, fall back to BaseDirs
-        let config_dir = std::env::var("HOME")
-            .ok()
-            .map(|h| PathBuf::from(h).join(".config"))
-            .or_else(|| BaseDirs::new().map(|d| d.config_dir().to_path_buf()))
-            .unwrap_or_else(|| PathBuf::from(".config"));
-        config_dir.join("bootc").join("flatpak-apps.json")
+    /// Load from the repository's manifests directory.
+    pub fn load_repo() -> Result<Self> {
+        let repo = crate::repo::find_repo_path()?;
+        Self::load(&repo.join(Self::PROJECT_PATH))
     }
 
-    /// Load the system manifest.
-    pub fn load_system() -> Result<Self> {
-        Self::load(&PathBuf::from(Self::SYSTEM_PATH))
-    }
-
-    /// Load the user manifest.
-    pub fn load_user() -> Result<Self> {
-        Self::load(&Self::user_path())
-    }
-
-    /// Save the user manifest.
-    pub fn save_user(&self) -> Result<()> {
-        self.save(&Self::user_path())
-    }
-
-    /// Merge system and user manifests (user overrides system by id).
-    pub fn merged(system: &Self, user: &Self) -> Self {
-        let mut by_id: HashMap<String, FlatpakApp> = HashMap::new();
-
-        // Add system apps first
-        for app in &system.apps {
-            by_id.insert(app.id.clone(), app.clone());
-        }
-
-        // User apps override
-        for app in &user.apps {
-            by_id.insert(app.id.clone(), app.clone());
-        }
-
-        let mut apps: Vec<FlatpakApp> = by_id.into_values().collect();
-        apps.sort_by(|a, b| a.id.cmp(&b.id));
-
-        Self { schema: None, apps }
+    /// Save to the repository's manifests directory.
+    pub fn save_repo(&self) -> Result<()> {
+        let repo = crate::repo::find_repo_path()?;
+        self.save(&repo.join(Self::PROJECT_PATH))
     }
 
     /// Find an app by id.
@@ -447,10 +411,6 @@ pub struct FlatpakRemotesManifest {
 }
 
 impl FlatpakRemotesManifest {
-    /// System manifest path (baked into image).
-    #[allow(dead_code)]
-    pub const SYSTEM_PATH: &'static str = "/usr/share/bootc-bootstrap/flatpak-remotes.json";
-
     /// Load a manifest from a path.
     pub fn load(path: &Path) -> Result<Self> {
         if !path.exists() {
@@ -469,12 +429,6 @@ impl FlatpakRemotesManifest {
             )
         })?;
         Ok(manifest)
-    }
-
-    /// Load the system manifest.
-    #[allow(dead_code)]
-    pub fn load_system() -> Result<Self> {
-        Self::load(&PathBuf::from(Self::SYSTEM_PATH))
     }
 
     /// Load from current working directory (for manifest repos).
@@ -605,38 +559,6 @@ mod tests {
     fn manifest_remove_returns_false_when_not_found() {
         let mut manifest = FlatpakAppsManifest::default();
         assert!(!manifest.remove("nonexistent"));
-    }
-
-    #[test]
-    fn manifest_merged_combines_system_and_user() {
-        let mut system = FlatpakAppsManifest::default();
-        system.apps.push(sample_app("org.gnome.Calculator"));
-
-        let mut user = FlatpakAppsManifest::default();
-        user.apps.push(sample_app("org.custom.App"));
-
-        let merged = FlatpakAppsManifest::merged(&system, &user);
-
-        assert_eq!(merged.apps.len(), 2);
-        assert!(merged.find("org.gnome.Calculator").is_some());
-        assert!(merged.find("org.custom.App").is_some());
-    }
-
-    #[test]
-    fn manifest_merged_user_overrides_system() {
-        let mut system = FlatpakAppsManifest::default();
-        system.apps.push(sample_app("org.gnome.Calculator"));
-
-        let mut user = FlatpakAppsManifest::default();
-        user.apps.push(sample_app_user("org.gnome.Calculator"));
-
-        let merged = FlatpakAppsManifest::merged(&system, &user);
-
-        assert_eq!(merged.apps.len(), 1);
-        assert_eq!(
-            merged.find("org.gnome.Calculator").unwrap().scope,
-            FlatpakScope::User
-        );
     }
 
     #[test]

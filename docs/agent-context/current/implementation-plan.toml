@@ -2,77 +2,118 @@
 # Implementation Plan
 
 [phase]
-id = "01khsejd4ms6zvj1yv6xgbhcsb"
+id = "01kj8zvbe15c0ag9e4tpn3gzqv"
 
 [plan]
 
 [[plan.goals]]
-id = "verify"
+id = "eliminate-user-manifest-layer-rfc-0052"
 
 [[plan.goals.tasks]]
-id = "verify-rpm-qa"
-title = "Verify rpm -qa output identical to current image"
-status = "pending"
+id = "convert-commands"
+title = "PER 2: Convert all commands/*.rs to read/write repo manifests (flatpak, extension, gsetting, shim, homebrew, system, status, profile)"
+status = "completed"
+completed_at = "2026-02-25T00:59:51.731989169+00:00"
+completion_log = "Converted 90 call sites across 11 command files. Added load_repo/save_repo/PROJECT_PATH to 7 manifest types. Net -91 lines."
 
 [[plan.goals.tasks]]
-id = "verify-rpm-v"
-title = "Verify rpm -V shows no failures for external packages"
-status = "pending"
+id = "convert-subsystem"
+title = "PER 3: Convert subsystem.rs SubsystemContext and trait impls to repo-only"
+status = "completed"
+completed_at = "2026-02-25T01:08:18.843855373+00:00"
+completion_log = "Converted 20 merge sites across 7 subsystems. Removed user_config_dir from SubsystemContext. Net -41 lines."
 
 [[plan.goals.tasks]]
-id = "verify-wrappers"
-title = "Verify wrapper binaries and .desktop files functional"
-status = "pending"
+id = "cleanup-merge-code"
+title = "PER 4: Remove load_user/save_user/merged/SYSTEM_PATH from manifest types and dead tests"
+status = "completed"
+completed_at = "2026-02-25T01:23:13.971161717+00:00"
+completion_log = "Removed 651 lines of dead code: SYSTEM_PATH, load_system, load_user, save_user, user_path, merged, merge from 8 manifest modules. 16 merge tests removed. 286 tests pass."
 
 [[plan.goals.tasks]]
-id = "verify-minimal-transfer"
-title = "Verify single-package bump transfers minimal data"
-status = "pending"
+id = "repo-path-caching"
+title = "PER 1: Add repo path caching to find_repo_path()"
+status = "completed"
+completed_at = "2026-02-25T00:08:19.646436341+00:00"
+completion_log = "Implemented three-step fallback: cwd walk-up, cache read, error. Cache at ~/.local/state/bkt/repo-path. Verified working from /tmp."
+
+[[plan.goals.tasks]]
+id = "migrate-command"
+title = "PER 5: Add bkt migrate manifests command"
+status = "completed"
+completed_at = "2026-02-25T01:59:52.176178004+00:00"
+completion_log = "Added bkt migrate manifests command. Handles conflicts, force overwrite, dry-run. Review fix: uses global --dry-run, gates dir creation on !dry_run."
 
 [[plan.goals]]
-id = "per-package-layers"
+id = "bootstrap-clones-repo-rfc-0053"
 
 [[plan.goals.tasks]]
-id = "opt-path-manifest"
-title = "Add opt_path field to external-repos.json"
+id = "bootstrap-clone"
+title = "Add repo clone step to bkt bootstrap"
 status = "completed"
-completed_at = "2026-02-23T02:19:57.898138497+00:00"
-completion_log = "Added opt_path field to ExternalRepo struct and manifest"
+completed_at = "2026-02-25T04:21:39.213179071+00:00"
+completion_log = "Added clone_repo() to bootc-bootstrap script. Clones via gh, caches path."
 
 [[plan.goals.tasks]]
-id = "emit-install-fn"
-title = "Add emit_install_stages() to containerfile.rs"
+id = "bootstrap-system-only"
+title = "Restrict system manifest reads to bootstrap path only"
 status = "completed"
-completed_at = "2026-02-23T02:20:07.458543540+00:00"
-completion_log = "Added emit_install_stages(), emit_install_copies(), emit_rpm_db_finalization()"
+completed_at = "2026-02-25T04:21:45.990191216+00:00"
+completion_log = "System manifests were already only read by bootstrap. No code changes needed — PER 2/3/4 removed all other system manifest reads."
 
 [[plan.goals.tasks]]
-id = "rpm-extract"
-title = "Implement rpm --nodb extraction with /opt relocation"
+id = "bootstrap-cache-path"
+title = "Cache repo path after bootstrap clone"
 status = "completed"
-completed_at = "2026-02-23T02:20:07.527004561+00:00"
-completion_log = "Implemented rpm --nodb --noscripts --nodeps with per-stage /opt relocation"
+completed_at = "2026-02-25T04:21:51.736372842+00:00"
+completion_log = "Cache write implemented in clone_repo(). Cache read already implemented in PER 1 (find_repo_path)."
+
+[[plan.goals]]
+id = "eliminate-ephemeral-manifest-and-local-rfc-0054"
 
 [[plan.goals.tasks]]
-id = "assembly-copy"
-title = "Wire COPY --link from install stages into assembly"
+id = "remove-ephemeral"
+title = "Remove ephemeral manifest module and --local flag"
 status = "completed"
-completed_at = "2026-02-23T02:20:07.632738841+00:00"
-completion_log = "Wired COPY --link --from=install-* into image assembly"
+completed_at = "2026-02-25T03:39:26.000582425+00:00"
+completion_log = "Removed ephemeral.rs (517 lines), local.rs (955 lines), PrMode::LocalOnly/Both, --local flag, ephemeral recording from 6 commands. Flipped default to no-PR. -2013 lines."
 
 [[plan.goals.tasks]]
-id = "db-final"
-title = "Add rpm --justdb finalization + ldconfig"
+id = "remove-local-subcommand"
+title = "Remove bkt local subcommand"
 status = "completed"
-completed_at = "2026-02-23T02:20:07.708874099+00:00"
-completion_log = "Added rpm --justdb finalization with ldconfig"
+completed_at = "2026-02-25T03:39:32.319765812+00:00"
+completion_log = "Removed as part of the ephemeral removal commit."
 
 [[plan.goals.tasks]]
-id = "remove-old"
-title = "Remove monolithic dnf install and post-relocation RUN"
+id = "capture-writes-repo"
+title = "Make all capture commands write to repo manifests/"
 status = "completed"
-completed_at = "2026-02-23T02:20:07.780486272+00:00"
-completion_log = "Removed emit_rpm_collection and emit_opt_relocation, updated cleanup"
+completed_at = "2026-02-25T03:39:38.612369185+00:00"
+completion_log = "Verified: all capture commands already write to repo manifests (converted in PER 2). No additional changes needed."
+
+[[plan.goals]]
+id = "consolidate-copy-link-layers-to-fix-btrfs-hardlink-limit"
+
+[[plan.goals.tasks]]
+id = "consolidate-keyd-build-outputs-into-single-copy-link"
+title = "Consolidate keyd build outputs into single COPY --link"
+status = "in-progress"
+
+[[plan.goals.tasks]]
+id = "consolidate-whitesur-build-outputs-into-single-copy-link"
+title = "Consolidate whitesur build outputs into single COPY --link"
+status = "pending"
+
+[[plan.goals.tasks]]
+id = "consolidate-wrapper-build-outputs-into-single-copy-link"
+title = "Consolidate wrapper build outputs into single COPY --link"
+status = "pending"
+
+[[plan.goals.tasks]]
+id = "verify-total-copy-link-count-is-under-btrfs-limit"
+title = "Verify total COPY --link count is under btrfs limit"
+status = "pending"
 # Goals contain tasks. Use 'exo-add-task' to add tasks to goals.
 
 

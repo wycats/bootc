@@ -106,7 +106,7 @@ fn handle_add(
         ));
     }
 
-    if plan.should_update_local_manifest() {
+    if plan.should_update_manifest() {
         manifest.upsert(entry.clone());
         manifest.save_to_dir(&manifests_dir)?;
         Output::success(format!("Added fetchbin entry '{}'", name));
@@ -149,7 +149,7 @@ fn handle_remove(name: &str, plan: &ExecutionPlan) -> Result<()> {
         }
     };
 
-    if plan.should_update_local_manifest() {
+    if plan.should_update_manifest() {
         manifest.remove(name);
         manifest.save_to_dir(&manifests_dir)?;
         Output::success(format!("Removed '{}' from manifest", name));

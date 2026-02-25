@@ -383,24 +383,24 @@ impl fmt::Display for ExecutionContext {
 /// PR behavior mode for commands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PrMode {
-    /// Default: execute locally AND create PR
+    /// Default: execute locally, no PR
     #[default]
-    Both,
+    Default,
+    /// Execute locally and create PR
+    Pr,
     /// Only create PR, skip local execution (--pr-only)
     PrOnly,
-    /// Only execute locally, skip PR (--local)
-    LocalOnly,
 }
 
 impl PrMode {
     /// Should we execute the local action?
     pub fn should_execute_locally(&self) -> bool {
-        matches!(self, PrMode::Both | PrMode::LocalOnly)
+        matches!(self, PrMode::Default | PrMode::Pr)
     }
 
     /// Should we create a PR?
     pub fn should_create_pr(&self) -> bool {
-        matches!(self, PrMode::Both | PrMode::PrOnly)
+        matches!(self, PrMode::Pr | PrMode::PrOnly)
     }
 }
 
@@ -707,16 +707,16 @@ mod tests {
 
     #[test]
     fn test_pr_mode_should_execute_locally() {
-        assert!(PrMode::Both.should_execute_locally());
+        assert!(PrMode::Default.should_execute_locally());
+        assert!(PrMode::Pr.should_execute_locally());
         assert!(!PrMode::PrOnly.should_execute_locally());
-        assert!(PrMode::LocalOnly.should_execute_locally());
     }
 
     #[test]
     fn test_pr_mode_should_create_pr() {
-        assert!(PrMode::Both.should_create_pr());
+        assert!(!PrMode::Default.should_create_pr());
+        assert!(PrMode::Pr.should_create_pr());
         assert!(PrMode::PrOnly.should_create_pr());
-        assert!(!PrMode::LocalOnly.should_create_pr());
     }
 
     // ─────────────────────────────────────────────────────────────────────

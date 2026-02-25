@@ -301,9 +301,69 @@ apply_all() {
     return 0
   fi
 
+  # Clone the repo so bkt commands can find manifests (RFC-0053).
+  # This is the transition from "system manifests" to "repo is truth."
+  clone_repo || log "repo clone failed (non-fatal; bkt will clone on first PR)"
+
   if [[ -n "$hash" ]]; then
     printf "%s\n" "$hash" > "${state_file}"
     log "Applied successfully (manifest hash ${hash})"
+  fi
+}
+
+clone_repo() {
+  local repo_json="/usr/share/bootc/repo.json"
+  local cache_dir="${XDG_STATE_HOME:-$HOME/.local/state}/bkt"
+  local cache_file="${cache_dir}/repo-path"
+
+  # Skip if repo path is already cached and valid
+  if [[ -f "$cache_file" ]]; then
+    local cached
+    cached="$(<"$cache_file")"
+    if [[ -d "${cached}/manifests" ]]; then
+      log "Repo already cloned at ${cached}"
+      return 0
+    fi
+  fi
+
+  # Read clone coordinates from image-baked repo.json
+  if [[ ! -f "$repo_json" ]]; then
+    log "No repo.json at ${repo_json}; skipping clone"
+    return 1
+  fi
+
+  need_cmd jq || { log "jq not found; skipping repo clone"; return 1; }
+
+  local owner name
+  owner="$(jq -r .owner "$repo_json")"
+  name="$(jq -r .name "$repo_json")"
+
+  if [[ -z "$owner" || -z "$name" ]]; then
+    log "Invalid repo.json; skipping clone"
+    return 1
+  fi
+
+  local clone_target="${HOME}/Code/Config/${name}"
+
+  if [[ -d "${clone_target}/manifests" ]]; then
+    log "Repo exists at ${clone_target}"
+  elif need_cmd gh; then
+    log "Cloning ${owner}/${name} to ${clone_target}..."
+    mkdir -p "$(dirname "$clone_target")"
+    gh repo clone "${owner}/${name}" "$clone_target" -- --depth=1
+  else
+    log "gh CLI not available; skipping clone"
+    return 1
+  fi
+
+  # Cache the path for find_repo_path()
+  if [[ -d "${clone_target}/manifests" ]]; then
+    mkdir -p "$cache_dir"
+    printf "%s" "$clone_target" > "$cache_file"
+    log "Repo path cached at ${cache_file}"
+  else
+    log "Clone target missing manifests/; not caching"
+    return 1
   fi
 }
 

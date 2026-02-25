@@ -196,9 +196,7 @@ fn show_diff(section: Option<&str>, runner: &dyn CommandRunner) -> Result<()> {
     if show_all || section == "flatpak" || section == "fp" {
         Output::subheader("=== FLATPAK DIFF ===");
 
-        let system = FlatpakAppsManifest::load_system()?;
-        let user = FlatpakAppsManifest::load_user().unwrap_or_default();
-        let manifest = FlatpakAppsManifest::merged(&system, &user);
+        let manifest = FlatpakAppsManifest::load_repo().unwrap_or_default();
         let installed = get_installed_flatpaks(runner)?;
 
         let manifest_ids: HashSet<String> = manifest.apps.iter().map(|a| a.id.clone()).collect();
@@ -232,9 +230,7 @@ fn show_diff(section: Option<&str>, runner: &dyn CommandRunner) -> Result<()> {
     if show_all || section == "extension" || section == "ext" {
         Output::subheader("=== EXTENSION DIFF ===");
 
-        let system = GnomeExtensionsManifest::load_system()?;
-        let user = GnomeExtensionsManifest::load_user().unwrap_or_default();
-        let manifest = GnomeExtensionsManifest::merged(&system, &user);
+        let manifest = GnomeExtensionsManifest::load_repo().unwrap_or_default();
         let installed = get_installed_extensions(runner)?;
 
         let manifest_set: HashSet<String> = manifest
@@ -272,9 +268,7 @@ fn show_diff(section: Option<&str>, runner: &dyn CommandRunner) -> Result<()> {
     if show_all || section == "gsetting" || section == "gs" {
         Output::subheader("=== GSETTINGS DIFF ===");
 
-        let system = GSettingsManifest::load_system()?;
-        let user = GSettingsManifest::load_user().unwrap_or_default();
-        let manifest = GSettingsManifest::merged(&system, &user);
+        let manifest = GSettingsManifest::load_repo().unwrap_or_default();
 
         if manifest.settings.is_empty() {
             Output::info("(no gsettings in manifest)");
