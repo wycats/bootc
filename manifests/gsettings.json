@@ -2,11 +2,6 @@
   "$schema": "https://wycats.github.io/bootc/gsettings.schema.json",
   "settings": [
     {
-      "schema": "nonexistent.schema.xyz",
-      "key": "key",
-      "value": "value"
-    },
-    {
       "schema": "org.gnome.desktop.interface",
       "key": "cursor-theme",
       "value": "'Bibata-Modern-Classic'",
@@ -31,12 +26,6 @@
       "comment": "Left Super key triggers overlay (pairs with toggle-overview)"
     },
     {
-      "schema": "org.gnome.mutter",
-      "key": "overlay-key",
-      "value": "'Super_L'",
-      "comment": "Left Super key triggers overlay (pairs with toggle-overview)"
-    },
-    {
       "schema": "org.gnome.settings-daemon.plugins.power",
       "key": "sleep-inactive-ac-timeout",
       "value": "0"
@@ -52,17 +41,6 @@
       "key": "toggle-overview",
       "value": "['<Super>']",
       "comment": "Ensure Super opens overview (can drift on GNOME updates)"
-    },
-    {
-      "schema": "org.gnome.shell.keybindings",
-      "key": "toggle-overview",
-      "value": "['<Super>']",
-      "comment": "Ensure Super opens overview (can drift on GNOME updates)"
-    },
-    {
-      "schema": "org.test.schema",
-      "key": "key",
-      "value": "value"
     }
   ]
 }

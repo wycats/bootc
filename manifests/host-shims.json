@@ -24,9 +24,6 @@
       "name": "systemctl"
     },
     {
-      "name": "test-shim"
-    },
-    {
       "name": "ujust"
     }
   ]

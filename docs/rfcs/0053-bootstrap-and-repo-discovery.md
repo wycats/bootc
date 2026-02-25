@@ -14,7 +14,7 @@
 > | Boot-time capture (apply-boot) | ✅ Implemented | `scripts/bootc-apply` (shell) |
 > | Systemd units | ✅ Implemented | `bootc-bootstrap.service`, `bootc-apply.service` |
 > | Repo discovery (cwd walk-up + cache) | ✅ Implemented | `find_repo_path()` in `repo.rs` |
-> | Repo clone during bootstrap | ❌ Not started | Bootstrap doesn't clone the repo yet |
+> | Repo clone during bootstrap | ✅ Implemented | `clone_repo()` in `bootc-bootstrap` script |
 > | `bkt bootstrap` CLI command | ❌ Not started | Bootstrap is shell scripts, not a bkt command |
 > | `bkt admin apply-boot` CLI command | ❌ Not started | Apply-boot is a shell script |
 

@@ -161,7 +161,7 @@ pub fn find_repo_path() -> Result<PathBuf> {
          {}\n\n\
          To fix this, either:\n  \
          • Run bkt from inside your repo checkout\n  \
-         • Run `bkt bootstrap` to clone and register the repo",
+         • Set BKT_REPO_PATH to your repo root",
         current_dir,
         cache_hint,
     )

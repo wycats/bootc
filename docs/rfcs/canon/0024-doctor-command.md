@@ -1,6 +1,6 @@
 # RFC 0024: Doctor Command
 
-- **Status**: Implemented (core), Proposed (`--fix`)
+- **Status**: Implemented
 - **Created**: 2026-01-25
 - **Updated**: 2026-02-23
 
@@ -82,7 +82,3 @@ Re-checking...
 ## Migration
 
 The `scripts/prune-host-devtools` script is superseded by `bkt doctor --fix`. Once `--fix` is implemented, the script should be removed.
-
-## Known Gaps
-
-- `--fix` flag is not yet implemented.

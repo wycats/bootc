@@ -319,7 +319,7 @@ clone_repo() {
   # Skip if repo path is already cached and valid
   if [[ -f "$cache_file" ]]; then
     local cached
-    cached="$(tr -d '\\n' < "$cache_file")"
+    cached="$(<"$cache_file")"
     if [[ -d "${cached}/manifests" ]]; then
       log "Repo already cloned at ${cached}"
       return 0
@@ -331,6 +331,8 @@ clone_repo() {
     log "No repo.json at ${repo_json}; skipping clone"
     return 1
   fi
+
+  need_cmd jq || { log "jq not found; skipping repo clone"; return 1; }
 
   local owner name
   owner="$(jq -r .owner "$repo_json")"
@@ -355,9 +357,14 @@ clone_repo() {
   fi
 
   # Cache the path for find_repo_path()
-  mkdir -p "$cache_dir"
-  printf "%s" "$clone_target" > "$cache_file"
-  log "Repo path cached at ${cache_file}"
+  if [[ -d "${clone_target}/manifests" ]]; then
+    mkdir -p "$cache_dir"
+    printf "%s" "$clone_target" > "$cache_file"
+    log "Repo path cached at ${cache_file}"
+  else
+    log "Clone target missing manifests/; not caching"
+    return 1
+  fi
 }
 
 case "$cmd" in
