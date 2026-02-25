@@ -1,9 +1,10 @@
 # RFC 0052: Manifest Lifecycle and Repo Source of Truth
 
-- **Status**: Draft
+- **Status**: Implemented
 - **Created**: 2026-02-24
-- **Absorbs**: [RFC-0007](0007-drift-detection.md) (drift detection), [RFC-0014](canon/0014-extension-state-management.md) (extension state management)
-- **Related**: [RFC-0004](0004-bkt-admin.md) (Tier 1), [RFC-0048](0048-subsystem-and-containerfile-unification.md) (subsystem unification), [RFC-0053](0053-bootstrap-and-repo-discovery.md) (bootstrap), [RFC-0054](0054-change-workflow.md) (change workflow)
+- **Updated**: 2026-02-24
+- **Absorbs**: [RFC-0007](../0007-drift-detection.md) (drift detection), [RFC-0014](0014-extension-state-management.md) (extension state management)
+- **Related**: [RFC-0004](../0004-bkt-admin.md) (Tier 1), [RFC-0048](../0048-subsystem-and-containerfile-unification.md) (subsystem unification), [RFC-0053](../0053-bootstrap-and-repo-discovery.md) (bootstrap), [RFC-0054](../0054-change-workflow.md) (change workflow)
 
 ## Summary
 
@@ -45,12 +46,13 @@ architecture.
 
 Two tiers of state share a common workflow but have different lifecycles:
 
-| Tier | State Location | Change Mechanism | Drift Possible? |
-| --- | --- | --- | --- |
-| **Tier 1 (Image-bound)** | Baked into image | PR -> build -> reboot | No (image is deterministic) |
-| **Tier 2 (Runtime)** | Live system state | Immediate | Yes (runtime can diverge) |
+| Tier                     | State Location    | Change Mechanism      | Drift Possible?             |
+| ------------------------ | ----------------- | --------------------- | --------------------------- |
+| **Tier 1 (Image-bound)** | Baked into image  | PR -> build -> reboot | No (image is deterministic) |
+| **Tier 2 (Runtime)**     | Live system state | Immediate             | Yes (runtime can diverge)   |
 
 **Tier 1 (Image-bound)**
+
 - System packages
 - Kernel arguments
 - Systemd presets
@@ -59,6 +61,7 @@ Managed by `bkt system` and `bkt admin`. Changes update manifests and the
 Containerfile, but only take effect after image rebuild and reboot.
 
 **Tier 2 (Runtime)**
+
 - Flatpaks
 - GNOME extensions
 - GSettings
@@ -98,6 +101,7 @@ and writes to the repo manifests directly.
 It is idempotent: running it twice yields the same result.
 
 Tier behavior:
+
 - **Tier 1**: `bkt apply` has no effect — Tier 1 changes are already in the
   manifests and Containerfile, but only take effect after image rebuild and
   reboot. `bkt apply` does not trigger rebuilds.
@@ -117,6 +121,7 @@ This is how reality wins. Manual changes show up in `git diff` and can be
 reviewed.
 
 Capture is the inverse of apply:
+
 - Apply moves system toward manifests.
 - Capture moves manifests toward system.
 
@@ -157,6 +162,7 @@ legacy strings (enabled) and explicit objects:
 - Object with `"enabled": false` -> installed but disabled.
 
 Commands:
+
 - `bkt extension disable` updates the manifest and disables the extension.
 - `bkt extension capture` records enabled/disabled state into the manifest.
 
@@ -166,6 +172,7 @@ All subsystems follow the same architecture and read from repo manifests.
 There is no split between repo-reading and system+user merge subsystems.
 
 Subsystems include (non-exhaustive):
+
 - Tier 1: system packages, kernel arguments, systemd presets
 - Tier 2: flatpak, extension, gsetting, shim, distrobox, appimage, homebrew
 

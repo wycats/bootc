@@ -1,9 +1,22 @@
 # RFC 0053: Bootstrap and Repo Discovery
 
-- **Status**: Draft
+- **Status**: Partially Implemented
 - **Created**: 2026-02-24
+- **Updated**: 2026-02-24
 - **Absorbs**: [RFC-0051](0051-boot-services.md) (boot services)
-- **Related**: [RFC-0052](0052-manifest-lifecycle.md) (manifest lifecycle), [RFC-0054](0054-change-workflow.md) (change workflow)
+- **Related**: [RFC-0052](canon/0052-manifest-lifecycle.md) (manifest lifecycle), [RFC-0054](0054-change-workflow.md) (change workflow)
+
+> **Implementation Status:**
+>
+> | Feature | Status | Notes |
+> |---------|--------|-------|
+> | Bootstrap (flatpak/extensions/gsettings/shims) | ✅ Implemented | `scripts/bootc-bootstrap` (shell) |
+> | Boot-time capture (apply-boot) | ✅ Implemented | `scripts/bootc-apply` (shell) |
+> | Systemd units | ✅ Implemented | `bootc-bootstrap.service`, `bootc-apply.service` |
+> | Repo discovery (cwd walk-up + cache) | ✅ Implemented | `find_repo_path()` in `repo.rs` |
+> | Repo clone during bootstrap | ❌ Not started | Bootstrap doesn't clone the repo yet |
+> | `bkt bootstrap` CLI command | ❌ Not started | Bootstrap is shell scripts, not a bkt command |
+> | `bkt admin apply-boot` CLI command | ❌ Not started | Apply-boot is a shell script |
 
 ## Summary
 
