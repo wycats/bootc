@@ -128,6 +128,12 @@ status = "completed"
 completion_log = "All 3 tasks complete. Ephemeral manifest, --local flag, bkt local subcommand removed. PR default flipped. -2013 lines."
 ulid = "01KJ90AQP6V9ADVV9Q2BFVZCZA"
 
+[[epochs.phases.goals]]
+id = "consolidate-copy-link-layers-to-fix-btrfs-hardlink-limit"
+label = "Consolidate COPY --link layers to fix btrfs hardlink limit"
+status = "pending"
+ulid = "01KJB37MC4Y26C8MDPT4K62QFF"
+
 [[epochs]]
 id = "01khsgx7xfrxe8q3y878hy24cw"
 title = "Housekeeping & Quality"

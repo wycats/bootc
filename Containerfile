@@ -88,6 +88,15 @@ git clone --depth 1 --branch "${ref}" https://github.com/rvaiya/keyd.git /tmp/ke
 make -C /tmp/keyd
 make -C /tmp/keyd PREFIX=/usr FORCE_SYSTEMD=1 install
 rm -rf /tmp/keyd
+# Collect outputs for single-layer COPY
+mkdir -p /out/usr/bin /out/usr/lib/systemd/system /out/usr/share/doc/keyd/ /out/usr/share/keyd/ /out/usr/share/man/man1
+cp /usr/bin/keyd /out/usr/bin/keyd
+cp /usr/bin/keyd-application-mapper /out/usr/bin/keyd-application-mapper
+cp /usr/lib/systemd/system/keyd.service /out/usr/lib/systemd/system/keyd.service
+cp -r /usr/share/keyd/ /out/usr/share/keyd/
+cp /usr/share/man/man1/keyd.1.gz /out/usr/share/man/man1/keyd.1.gz
+cp /usr/share/man/man1/keyd-application-mapper.1.gz /out/usr/share/man/man1/keyd-application-mapper.1.gz
+cp -r /usr/share/doc/keyd/ /out/usr/share/doc/keyd/
 EOF
 
 FROM base AS fetch-whitesur
@@ -102,16 +111,19 @@ dnf install -y git
 git clone --filter=blob:none https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/whitesur-icons
 cd /tmp/whitesur-icons && git checkout "${ref}" && ./install.sh -d /usr/share/icons
 rm -rf /tmp/whitesur-icons
+# Collect outputs for single-layer COPY
+mkdir -p /out/usr/share/icons/WhiteSur-dark/ /out/usr/share/icons/WhiteSur/
+cp -r /usr/share/icons/WhiteSur/ /out/usr/share/icons/WhiteSur/
+cp -r /usr/share/icons/WhiteSur-dark/ /out/usr/share/icons/WhiteSur-dark/
 EOF
 
 # ── Wrapper build stage (parallel, from manifest) ────────────────────────────
 
 FROM rust:slim AS build-wrappers
-RUN mkdir -p /out
 COPY wrappers/vscode-wrapper/src/main.rs /tmp/vscode-wrapper.rs
-RUN rustc --edition 2021 -O -o /out/vscode-wrapper /tmp/vscode-wrapper.rs
+RUN mkdir -p /out/usr/bin && rustc --edition 2021 -O -o /out/usr/bin/code /tmp/vscode-wrapper.rs
 COPY wrappers/msedge-wrapper/src/main.rs /tmp/msedge-wrapper.rs
-RUN rustc --edition 2021 -O -o /out/msedge-wrapper /tmp/msedge-wrapper.rs
+RUN mkdir -p /out/usr/bin && rustc --edition 2021 -O -o /out/usr/bin/microsoft-edge-stable /tmp/msedge-wrapper.rs
 
 # ── Config collector (parallel, FROM scratch) ────────────────────────────────
 FROM scratch AS collect-config
@@ -213,7 +225,6 @@ COPY --link --from=install-bundled / /
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
-    /tmp/rpms/*.rpm \
     curl \
     distrobox \
     fontconfig \
@@ -267,24 +278,16 @@ COPY --link --from=fetch-bibata-cursor /usr/share/icons/Bibata-Modern-Classic/ /
 COPY --link --from=fetch-jetbrains-mono-nerd-font /usr/share/fonts/nerd-fonts/JetBrainsMono/ /usr/share/fonts/nerd-fonts/JetBrainsMono/
 
 # keyd outputs (built from source)
-COPY --link --from=build-keyd /usr/bin/keyd /usr/bin/keyd
-COPY --link --from=build-keyd /usr/bin/keyd-application-mapper /usr/bin/keyd-application-mapper
-COPY --link --from=build-keyd /usr/lib/systemd/system/keyd.service /usr/lib/systemd/system/keyd.service
-COPY --link --from=build-keyd /usr/share/keyd/ /usr/share/keyd/
-COPY --link --from=build-keyd /usr/share/man/man1/keyd.1.gz /usr/share/man/man1/keyd.1.gz
-COPY --link --from=build-keyd /usr/share/man/man1/keyd-application-mapper.1.gz /usr/share/man/man1/keyd-application-mapper.1.gz
-COPY --link --from=build-keyd /usr/share/doc/keyd/ /usr/share/doc/keyd/
+COPY --link --from=build-keyd /out/ /
 
 # WhiteSur icon theme
-COPY --link --from=fetch-whitesur /usr/share/icons/WhiteSur/ /usr/share/icons/WhiteSur/
-COPY --link --from=fetch-whitesur /usr/share/icons/WhiteSur-dark/ /usr/share/icons/WhiteSur-dark/
+COPY --link --from=fetch-whitesur /out/ /
 
 # ── Configuration overlay (from collect-config) ──────────────────────────────
 COPY --link --from=collect-config / /
 
 # Memory-managed application wrappers (from build-wrappers stage)
-COPY --link --from=build-wrappers /out/vscode-wrapper /usr/bin/code
-COPY --link --from=build-wrappers /out/msedge-wrapper /usr/bin/microsoft-edge-stable
+COPY --link --from=build-wrappers /out/ /
 
 
 # Optional host tweaks (off by default)

@@ -91,6 +91,29 @@ title = "Make all capture commands write to repo manifests/"
 status = "completed"
 completed_at = "2026-02-25T03:39:38.612369185+00:00"
 completion_log = "Verified: all capture commands already write to repo manifests (converted in PER 2). No additional changes needed."
+
+[[plan.goals]]
+id = "consolidate-copy-link-layers-to-fix-btrfs-hardlink-limit"
+
+[[plan.goals.tasks]]
+id = "consolidate-keyd-build-outputs-into-single-copy-link"
+title = "Consolidate keyd build outputs into single COPY --link"
+status = "in-progress"
+
+[[plan.goals.tasks]]
+id = "consolidate-whitesur-build-outputs-into-single-copy-link"
+title = "Consolidate whitesur build outputs into single COPY --link"
+status = "pending"
+
+[[plan.goals.tasks]]
+id = "consolidate-wrapper-build-outputs-into-single-copy-link"
+title = "Consolidate wrapper build outputs into single COPY --link"
+status = "pending"
+
+[[plan.goals.tasks]]
+id = "verify-total-copy-link-count-is-under-btrfs-limit"
+title = "Verify total COPY --link count is under btrfs limit"
+status = "pending"
 # Goals contain tasks. Use 'exo-add-task' to add tasks to goals.
 
 
