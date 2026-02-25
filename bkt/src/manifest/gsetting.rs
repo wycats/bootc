@@ -38,6 +38,8 @@ pub struct GSettingsManifest {
 }
 
 impl GSettingsManifest {
+    /// Project manifest path (relative to workspace root).
+    pub const PROJECT_PATH: &'static str = "manifests/gsettings.json";
     /// System manifest path (baked into image).
     pub const SYSTEM_PATH: &'static str = "/usr/share/bootc-bootstrap/gsettings.json";
 
@@ -86,6 +88,12 @@ impl GSettingsManifest {
         Self::load(&PathBuf::from(Self::SYSTEM_PATH))
     }
 
+    /// Load from the repository's manifests directory.
+    pub fn load_repo() -> Result<Self> {
+        let repo = crate::repo::find_repo_path()?;
+        Self::load(&repo.join(Self::PROJECT_PATH))
+    }
+
     /// Load the user manifest.
     pub fn load_user() -> Result<Self> {
         Self::load(&Self::user_path())
@@ -94,6 +102,12 @@ impl GSettingsManifest {
     /// Save the user manifest.
     pub fn save_user(&self) -> Result<()> {
         self.save(&Self::user_path())
+    }
+
+    /// Save to the repository's manifests directory.
+    pub fn save_repo(&self) -> Result<()> {
+        let repo = crate::repo::find_repo_path()?;
+        self.save(&repo.join(Self::PROJECT_PATH))
     }
 
     /// Merge system and user manifests (user overrides by schema+key).

@@ -107,13 +107,10 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
                 validate_gsettings_key(runner, &schema, &key)?;
             }
 
-            let system = GSettingsManifest::load_system()?;
-            let mut user = GSettingsManifest::load_user()?;
+            let mut manifest = GSettingsManifest::load_repo()?;
 
             // Check if already set to same value
-            let existing = system
-                .find(&schema, &key)
-                .or_else(|| user.find(&schema, &key));
+            let existing = manifest.find(&schema, &key);
 
             if plan.should_update_local_manifest() {
                 if let Some(e) = existing {
@@ -123,17 +120,17 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
                             schema, key, value
                         ));
                     } else {
-                        // Update in user manifest
+                        // Update in manifest
                         let setting = GSetting {
                             schema: schema.clone(),
                             key: key.clone(),
                             value: value.clone(),
                             comment,
                         };
-                        user.upsert(setting);
-                        user.save_user()?;
+                        manifest.upsert(setting);
+                        manifest.save_repo()?;
                         Output::success(format!(
-                            "Updated in user manifest: {}.{} = {}",
+                            "Updated in manifest: {}.{} = {}",
                             schema, key, value
                         ));
                     }
@@ -144,10 +141,10 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
                         value: value.clone(),
                         comment,
                     };
-                    user.upsert(setting);
-                    user.save_user()?;
+                    manifest.upsert(setting);
+                    manifest.save_repo()?;
                     Output::success(format!(
-                        "Added to user manifest: {}.{} = {}",
+                        "Added to manifest: {}.{} = {}",
                         schema, key, value
                     ));
                 }
@@ -189,7 +186,7 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
             }
 
             if plan.should_create_pr() {
-                let mut system_manifest = GSettingsManifest::load_system()?;
+                let mut system_manifest = GSettingsManifest::load_repo()?;
                 let setting_for_pr = GSetting {
                     schema: schema.clone(),
                     key: key.clone(),
@@ -209,22 +206,13 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
             }
         }
         GSettingAction::Unset { schema, key } => {
-            let mut user = GSettingsManifest::load_user()?;
-            let system = GSettingsManifest::load_system()?;
-
-            let in_system = system.find(&schema, &key).is_some();
-            if in_system && user.find(&schema, &key).is_none() && !plan.should_create_pr() {
-                Output::info(format!(
-                    "'{}.{}' is in the system manifest; use --pr or --pr-only to remove from source",
-                    schema, key
-                ));
-            }
+            let mut manifest = GSettingsManifest::load_repo()?;
 
             if plan.should_update_local_manifest() {
-                if user.remove(&schema, &key) {
-                    user.save_user()?;
-                    Output::success(format!("Removed from user manifest: {}.{}", schema, key));
-                } else if !in_system {
+                if manifest.remove(&schema, &key) {
+                    manifest.save_repo()?;
+                    Output::success(format!("Removed from manifest: {}.{}", schema, key));
+                } else {
                     Output::warning(format!("Setting not found in manifest: {}.{}", schema, key));
                 }
             } else if plan.dry_run {
@@ -266,7 +254,7 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
             }
 
             if plan.should_create_pr() {
-                let mut system_manifest = GSettingsManifest::load_system()?;
+                let mut system_manifest = GSettingsManifest::load_repo()?;
                 if system_manifest.remove(&schema, &key) {
                     let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
 
@@ -279,16 +267,14 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
                     )?;
                 } else {
                     Output::info(format!(
-                        "'{}.{}' not in system manifest, no PR needed",
+                        "'{}.{}' not in manifest, no PR needed",
                         schema, key
                     ));
                 }
             }
         }
         GSettingAction::List { format } => {
-            let system = GSettingsManifest::load_system()?;
-            let user = GSettingsManifest::load_user()?;
-            let merged = GSettingsManifest::merged(&system, &user);
+            let merged = GSettingsManifest::load_repo()?;
 
             if format == "json" {
                 println!("{}", serde_json::to_string_pretty(&merged)?);
@@ -309,11 +295,7 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
                 Output::separator();
 
                 for setting in &merged.settings {
-                    let source = if user.find(&setting.schema, &setting.key).is_some() {
-                        "user".yellow().to_string()
-                    } else {
-                        "system".dimmed().to_string()
-                    };
+                    let source = "manifest".dimmed().to_string();
                     let current = get_current_value(&setting.schema, &setting.key, runner)
                         .unwrap_or_else(|| "(unset)".to_string());
                     let matches = if current == setting.value {
@@ -333,12 +315,7 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
                 }
 
                 Output::blank();
-                Output::info(format!(
-                    "{} settings ({} system, {} user)",
-                    merged.settings.len(),
-                    system.settings.len(),
-                    user.settings.len()
-                ));
+                Output::info(format!("{} settings in manifest", merged.settings.len()));
             }
         }
         GSettingAction::Apply => {
@@ -444,10 +421,8 @@ impl Plannable for GsettingApplyCommand {
     fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
         let runner = ctx.execution_plan().runner();
 
-        // Load and merge manifests (read-only, no side effects)
-        let system = GSettingsManifest::load_system()?;
-        let user = GSettingsManifest::load_user()?;
-        let merged = GSettingsManifest::merged(&system, &user);
+        // Load manifest (read-only, no side effects)
+        let merged = GSettingsManifest::load_repo()?;
 
         let mut to_apply = Vec::new();
         let mut already_set = 0;
@@ -599,9 +574,7 @@ impl Plannable for GsettingCaptureCommand {
         };
 
         // Load manifests to see what's already tracked
-        let system = GSettingsManifest::load_system()?;
-        let user = GSettingsManifest::load_user()?;
-        let merged = GSettingsManifest::merged(&system, &user);
+        let merged = GSettingsManifest::load_repo()?;
 
         let mut to_capture = Vec::new();
         let mut already_in_manifest = 0;
@@ -653,17 +626,17 @@ impl Plan for GsettingCapturePlan {
     fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
         let mut report = ExecutionReport::new();
 
-        // Load user manifest (we add captured settings there)
-        let mut user = GSettingsManifest::load_user()?;
+        // Load manifest (we add captured settings there)
+        let mut manifest = GSettingsManifest::load_repo()?;
 
         for item in self.to_capture {
             let target = format!("{}.{}", item.setting.schema, item.setting.key);
-            user.upsert(item.setting);
+            manifest.upsert(item.setting);
             report.record_success(Verb::Capture, format!("gsetting:{}", target));
         }
 
         // Save the updated manifest
-        user.save_user()?;
+        manifest.save_repo()?;
 
         Ok(report)
     }

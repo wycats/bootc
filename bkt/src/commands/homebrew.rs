@@ -64,9 +64,9 @@ pub fn run(args: HomebrewArgs, plan: &ExecutionPlan) -> Result<()> {
 // =============================================================================
 
 fn handle_add(formula: &str, ctx: &PlanContext) -> Result<()> {
-    let mut user = HomebrewManifest::load_user()?;
+    let mut manifest = HomebrewManifest::load_repo()?;
 
-    if user.contains(formula) {
+    if manifest.contains(formula) {
         Output::warning(format!("Formula '{}' is already in manifest", formula));
         return Ok(());
     }
@@ -76,8 +76,8 @@ fn handle_add(formula: &str, ctx: &PlanContext) -> Result<()> {
         return Ok(());
     }
 
-    user.add(formula);
-    user.save_user()?;
+    manifest.add(formula);
+    manifest.save_repo()?;
     Output::success(format!("Added '{}' to homebrew manifest", formula));
 
     Ok(())
@@ -88,9 +88,9 @@ fn handle_add(formula: &str, ctx: &PlanContext) -> Result<()> {
 // =============================================================================
 
 fn handle_remove(formula: &str, ctx: &PlanContext) -> Result<()> {
-    let mut user = HomebrewManifest::load_user()?;
+    let mut manifest = HomebrewManifest::load_repo()?;
 
-    if !user.contains(formula) {
+    if !manifest.contains(formula) {
         Output::warning(format!("Formula '{}' is not in manifest", formula));
         return Ok(());
     }
@@ -100,8 +100,8 @@ fn handle_remove(formula: &str, ctx: &PlanContext) -> Result<()> {
         return Ok(());
     }
 
-    user.remove(formula);
-    user.save_user()?;
+    manifest.remove(formula);
+    manifest.save_repo()?;
     Output::success(format!("Removed '{}' from homebrew manifest", formula));
 
     Ok(())
@@ -112,22 +112,20 @@ fn handle_remove(formula: &str, ctx: &PlanContext) -> Result<()> {
 // =============================================================================
 
 fn handle_list(format: &str) -> Result<()> {
-    let system = HomebrewManifest::load_system()?;
-    let user = HomebrewManifest::load_user()?;
-    let merged = HomebrewManifest::merged(&system, &user);
+    let manifest = HomebrewManifest::load_repo()?;
 
     if format == "json" {
-        println!("{}", serde_json::to_string_pretty(&merged)?);
+        println!("{}", serde_json::to_string_pretty(&manifest)?);
         return Ok(());
     }
 
-    if merged.formulae.is_empty() {
+    if manifest.formulae.is_empty() {
         Output::info("No formulae in manifest");
         return Ok(());
     }
 
     Output::header("Homebrew Formulae");
-    for formula in &merged.formulae {
+    for formula in &manifest.formulae {
         if let Some(tap) = formula.tap() {
             println!("  {} (tap: {})", formula.formula_name(), tap);
         } else {
@@ -135,10 +133,10 @@ fn handle_list(format: &str) -> Result<()> {
         }
     }
 
-    if !merged.taps.is_empty() {
+    if !manifest.taps.is_empty() {
         Output::blank();
         Output::header("Taps");
-        for tap in &merged.taps {
+        for tap in &manifest.taps {
             println!("  {}", tap);
         }
     }
@@ -227,9 +225,7 @@ impl Plannable for HomebrewSyncCommand {
     fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
         let runner = ctx.execution_plan().runner();
 
-        let system = HomebrewManifest::load_system()?;
-        let user = HomebrewManifest::load_user()?;
-        let merged = HomebrewManifest::merged(&system, &user);
+        let manifest = HomebrewManifest::load_repo()?;
 
         let installed = get_installed_formulae(runner);
         let installed_taps = get_installed_taps(runner);
@@ -237,7 +233,7 @@ impl Plannable for HomebrewSyncCommand {
         let mut to_install = Vec::new();
         let mut already_installed = 0;
 
-        for formula in &merged.formulae {
+        for formula in &manifest.formulae {
             let name = formula.formula_name();
             if installed.contains(name) {
                 already_installed += 1;
@@ -246,7 +242,7 @@ impl Plannable for HomebrewSyncCommand {
             }
         }
 
-        let taps_to_add: Vec<String> = merged
+        let taps_to_add: Vec<String> = manifest
             .taps
             .iter()
             .filter(|t| !installed_taps.contains(t.as_str()))
@@ -336,9 +332,7 @@ impl Plannable for HomebrewCaptureCommand {
     fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
         let runner = ctx.execution_plan().runner();
 
-        let system = HomebrewManifest::load_system()?;
-        let user = HomebrewManifest::load_user()?;
-        let merged = HomebrewManifest::merged(&system, &user);
+        let manifest = HomebrewManifest::load_repo()?;
 
         // Get explicitly installed formulae (leaves that were requested)
         let installed = get_explicitly_installed_formulae(runner);
@@ -347,7 +341,7 @@ impl Plannable for HomebrewCaptureCommand {
         let mut already_in_manifest = 0;
 
         for formula in installed {
-            if merged.contains(&formula) {
+            if manifest.contains(&formula) {
                 already_in_manifest += 1;
             } else {
                 to_capture.push(formula);
@@ -387,15 +381,15 @@ impl Plan for HomebrewCapturePlan {
 
     fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
         let mut report = ExecutionReport::new();
-        let mut user = HomebrewManifest::load_user()?;
+        let mut manifest = HomebrewManifest::load_repo()?;
 
         for formula in self.to_capture {
-            if user.add(formula.clone()) {
+            if manifest.add(formula.clone()) {
                 report.record_success(Verb::Capture, format!("formula:{}", formula));
             }
         }
 
-        user.save_user()?;
+        manifest.save_repo()?;
 
         Ok(report)
     }

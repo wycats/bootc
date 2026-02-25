@@ -37,6 +37,8 @@ pub struct ShimsManifest {
 }
 
 impl ShimsManifest {
+    /// Project manifest path (relative to workspace root).
+    pub const PROJECT_PATH: &'static str = "manifests/host-shims.json";
     /// System manifest path (baked into image).
     pub const SYSTEM_PATH: &'static str = "/usr/share/bootc-bootstrap/host-shims.json";
 
@@ -102,8 +104,7 @@ impl ShimsManifest {
     /// the manifest from the repo rather than the installed system path.
     pub fn load_repo() -> Result<Self> {
         let repo_path = crate::repo::find_repo_path()?;
-        let manifest_path = repo_path.join("manifests").join("host-shims.json");
-        Self::load(&manifest_path)
+        Self::load(&repo_path.join(Self::PROJECT_PATH))
     }
 
     /// Load the user manifest.

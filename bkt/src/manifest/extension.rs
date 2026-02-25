@@ -71,6 +71,8 @@ impl From<&str> for ExtensionItem {
 }
 
 impl GnomeExtensionsManifest {
+    /// Project manifest path (relative to workspace root).
+    pub const PROJECT_PATH: &'static str = "manifests/gnome-extensions.json";
     /// System manifest path (baked into image).
     pub const SYSTEM_PATH: &'static str = "/usr/share/bootc-bootstrap/gnome-extensions.json";
 
@@ -123,6 +125,12 @@ impl GnomeExtensionsManifest {
         Self::load(&PathBuf::from(Self::SYSTEM_PATH))
     }
 
+    /// Load from the repository's manifests directory.
+    pub fn load_repo() -> Result<Self> {
+        let repo = crate::repo::find_repo_path()?;
+        Self::load(&repo.join(Self::PROJECT_PATH))
+    }
+
     /// Load the user manifest.
     pub fn load_user() -> Result<Self> {
         Self::load(&Self::user_path())
@@ -131,6 +139,12 @@ impl GnomeExtensionsManifest {
     /// Save the user manifest.
     pub fn save_user(&self) -> Result<()> {
         self.save(&Self::user_path())
+    }
+
+    /// Save to the repository's manifests directory.
+    pub fn save_repo(&self) -> Result<()> {
+        let repo = crate::repo::find_repo_path()?;
+        self.save(&repo.join(Self::PROJECT_PATH))
     }
 
     /// Merge another manifest into this one.

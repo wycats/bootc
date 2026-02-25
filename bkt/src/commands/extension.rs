@@ -123,22 +123,21 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
                 validate_gnome_extension(runner, &uuid)?;
             }
 
-            let system = GnomeExtensionsManifest::load_system()?;
-            let mut user = GnomeExtensionsManifest::load_user()?;
+            let mut manifest = GnomeExtensionsManifest::load_repo()?;
 
             // Pre-compute state before any manifest modifications
-            let already_in_manifest = system.contains(&uuid) || user.contains(&uuid);
+            let already_in_manifest = manifest.contains(&uuid);
 
             if plan.should_update_local_manifest() {
                 if already_in_manifest {
                     Output::warning(format!("Extension already in manifest: {}", uuid));
                 } else {
-                    user.add(uuid.clone());
-                    user.save_user()?;
-                    Output::success(format!("Added to user manifest: {}", uuid));
+                    manifest.add(uuid.clone());
+                    manifest.save_repo()?;
+                    Output::success(format!("Added to manifest: {}", uuid));
                 }
             } else if plan.dry_run {
-                Output::dry_run(format!("Would add to user manifest: {}", uuid));
+                Output::dry_run(format!("Would add to manifest: {}", uuid));
             }
 
             // Record ephemeral change if using --local (not in dry-run mode)
@@ -175,9 +174,9 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
             }
 
             if plan.should_create_pr() {
-                let mut system_manifest = GnomeExtensionsManifest::load_system()?;
-                system_manifest.add(uuid.clone());
-                let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
+                let mut repo_manifest = GnomeExtensionsManifest::load_repo()?;
+                repo_manifest.add(uuid.clone());
+                let manifest_content = serde_json::to_string_pretty(&repo_manifest)?;
 
                 plan.maybe_create_pr(
                     "extension",
@@ -189,26 +188,17 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
             }
         }
         ExtensionAction::Remove { uuid } => {
-            let mut user = GnomeExtensionsManifest::load_user()?;
-            let system = GnomeExtensionsManifest::load_system()?;
-
-            let in_system = system.contains(&uuid);
-            if in_system && !user.contains(&uuid) && !plan.should_create_pr() {
-                Output::info(format!(
-                    "'{}' is in the system manifest; use --pr or --pr-only to remove from source",
-                    uuid
-                ));
-            }
+            let mut manifest = GnomeExtensionsManifest::load_repo()?;
 
             if plan.should_update_local_manifest() {
-                if user.remove(&uuid) {
-                    user.save_user()?;
-                    Output::success(format!("Removed from user manifest: {}", uuid));
-                } else if !in_system {
+                if manifest.remove(&uuid) {
+                    manifest.save_repo()?;
+                    Output::success(format!("Removed from manifest: {}", uuid));
+                } else {
                     Output::warning(format!("Extension not found in manifest: {}", uuid));
                 }
             } else if plan.dry_run {
-                Output::dry_run(format!("Would remove from user manifest: {}", uuid));
+                Output::dry_run(format!("Would remove from manifest: {}", uuid));
             }
 
             // Record ephemeral change if using --local (not in dry-run mode)
@@ -237,9 +227,9 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
             }
 
             if plan.should_create_pr() {
-                let mut system_manifest = GnomeExtensionsManifest::load_system()?;
-                if system_manifest.remove(&uuid) {
-                    let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
+                let mut repo_manifest = GnomeExtensionsManifest::load_repo()?;
+                if repo_manifest.remove(&uuid) {
+                    let manifest_content = serde_json::to_string_pretty(&repo_manifest)?;
 
                     plan.maybe_create_pr(
                         "extension",
@@ -249,31 +239,30 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
                         &manifest_content,
                     )?;
                 } else {
-                    Output::info(format!("'{}' not in system manifest, no PR needed", uuid));
+                    Output::info(format!("'{}' not in manifest, no PR needed", uuid));
                 }
             }
         }
         ExtensionAction::Disable { uuid } => {
-            let mut user = GnomeExtensionsManifest::load_user()?;
-            let system = GnomeExtensionsManifest::load_system()?;
+            let mut manifest = GnomeExtensionsManifest::load_repo()?;
 
-            // Check if extension exists in either manifest
-            if !user.contains(&uuid) && !system.contains(&uuid) {
+            // Check if extension exists in manifest
+            if !manifest.contains(&uuid) {
                 Output::warning(format!("Extension '{}' not found in manifest", uuid));
                 return Ok(());
             }
 
             if plan.should_update_local_manifest() {
                 // Convert to disabled object format
-                if user.set_enabled(&uuid, false) {
-                    user.save_user()?;
+                if manifest.set_enabled(&uuid, false) {
+                    manifest.save_repo()?;
                     Output::success(format!("Disabled '{}' in manifest", uuid));
                 } else {
-                    // Not in user manifest, need to add as disabled
-                    user.add_disabled(uuid.clone());
-                    user.save_user()?;
+                    // Not in manifest as object, add as disabled
+                    manifest.add_disabled(uuid.clone());
+                    manifest.save_repo()?;
                     Output::success(format!(
-                        "Added '{}' as disabled (overrides system manifest)",
+                        "Added '{}' as disabled in manifest",
                         uuid
                     ));
                 }
@@ -292,19 +281,18 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
             }
         }
         ExtensionAction::Enable { uuid } => {
-            let mut user = GnomeExtensionsManifest::load_user()?;
-            let system = GnomeExtensionsManifest::load_system()?;
+            let mut manifest = GnomeExtensionsManifest::load_repo()?;
 
-            // Check if extension exists in either manifest
-            if !user.contains(&uuid) && !system.contains(&uuid) {
+            // Check if extension exists in manifest
+            if !manifest.contains(&uuid) {
                 Output::warning(format!("Extension '{}' not found in manifest", uuid));
                 return Ok(());
             }
 
             if plan.should_update_local_manifest() {
                 // Set enabled=true (or remove disabled override)
-                if user.set_enabled(&uuid, true) {
-                    user.save_user()?;
+                if manifest.set_enabled(&uuid, true) {
+                    manifest.save_repo()?;
                     Output::success(format!("Enabled '{}' in manifest", uuid));
                 } else {
                     Output::info(format!("'{}' is already enabled in manifest", uuid));
@@ -327,9 +315,7 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
             }
         }
         ExtensionAction::List { format } => {
-            let system = GnomeExtensionsManifest::load_system()?;
-            let user = GnomeExtensionsManifest::load_user()?;
-            let merged = GnomeExtensionsManifest::merged(&system, &user);
+            let merged = GnomeExtensionsManifest::load_repo()?;
 
             if format == "json" {
                 println!("{}", serde_json::to_string_pretty(&merged)?);
@@ -350,11 +336,7 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
 
                 for item in &merged.extensions {
                     let uuid = item.id();
-                    let source = if user.contains(uuid) {
-                        "user".yellow().to_string()
-                    } else {
-                        "system".dimmed().to_string()
-                    };
+                    let source = "manifest".dimmed().to_string();
                     let status = if is_enabled(uuid, runner) {
                         if item.enabled() {
                             format!("{} enabled", "✓".green())
@@ -374,12 +356,7 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
                 }
 
                 Output::blank();
-                Output::info(format!(
-                    "{} extensions ({} system, {} user)",
-                    merged.extensions.len(),
-                    system.extensions.len(),
-                    user.extensions.len()
-                ));
+                Output::info(format!("{} extensions in manifest", merged.extensions.len()));
             }
         }
         ExtensionAction::Sync => {
@@ -478,10 +455,8 @@ impl Plannable for ExtensionSyncCommand {
     fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
         let runner = ctx.execution_plan().runner();
 
-        // Load and merge manifests (read-only, no side effects)
-        let system = GnomeExtensionsManifest::load_system()?;
-        let user = GnomeExtensionsManifest::load_user()?;
-        let merged = GnomeExtensionsManifest::merged(&system, &user);
+        // Load manifest (read-only, no side effects)
+        let merged = GnomeExtensionsManifest::load_repo()?;
 
         let mut to_enable = Vec::new();
         let mut to_disable = Vec::new();
@@ -722,10 +697,8 @@ impl Plannable for ExtensionCaptureCommand {
         let enabled: std::collections::HashSet<_> =
             get_enabled_extensions(runner).into_iter().collect();
 
-        // Load manifests to see what's already tracked
-        let system = GnomeExtensionsManifest::load_system()?;
-        let user = GnomeExtensionsManifest::load_user()?;
-        let merged = GnomeExtensionsManifest::merged(&system, &user);
+        // Load manifest to see what's already tracked
+        let merged = GnomeExtensionsManifest::load_repo()?;
 
         let mut to_capture = Vec::new();
         let mut already_in_manifest = 0;
@@ -739,7 +712,7 @@ impl Plannable for ExtensionCaptureCommand {
                     already_in_manifest += 1;
                     continue;
                 }
-                // If state differs, we fall through to capture (which will update the user manifest)
+                // If state differs, we fall through to capture (which will update the manifest)
             }
 
             to_capture.push(ExtensionToCapture {
@@ -781,8 +754,8 @@ impl Plan for ExtensionCapturePlan {
     fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
         let mut report = ExecutionReport::new();
 
-        // Load user manifest (we add captured extensions there)
-        let mut user = GnomeExtensionsManifest::load_user()?;
+        // Load manifest (we add captured extensions there)
+        let mut manifest = GnomeExtensionsManifest::load_repo()?;
 
         for ext in self.to_capture {
             let item = if ext.enabled {
@@ -796,7 +769,7 @@ impl Plan for ExtensionCapturePlan {
                 )
             };
 
-            if user.add(item) {
+            if manifest.add(item) {
                 let desc = if ext.enabled {
                     format!("extension:{}", ext.uuid)
                 } else {
@@ -814,7 +787,7 @@ impl Plan for ExtensionCapturePlan {
         }
 
         // Save the updated manifest
-        user.save_user()?;
+        manifest.save_repo()?;
 
         Ok(report)
     }

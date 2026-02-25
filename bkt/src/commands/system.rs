@@ -176,15 +176,14 @@ fn handle_add(
         }
     }
 
-    let system = SystemPackagesManifest::load_system()?;
-    let mut user = SystemPackagesManifest::load_user()?;
+    let mut manifest = SystemPackagesManifest::load_repo()?;
 
     // Track which packages are new
     let mut new_packages = Vec::new();
     let mut already_in_manifest = Vec::new();
 
     for pkg in &packages {
-        if system.find_package(pkg) || user.find_package(pkg) {
+        if manifest.find_package(pkg) {
             already_in_manifest.push(pkg.clone());
         } else {
             new_packages.push(pkg.clone());
@@ -204,11 +203,11 @@ fn handle_add(
     // Update local manifest
     if plan.should_update_local_manifest() {
         for pkg in &new_packages {
-            user.add_package(pkg.clone());
+            manifest.add_package(pkg.clone());
         }
-        user.save_user()?;
+        save_repo_manifest(&manifest)?;
         Output::success(format!(
-            "Added {} package(s) to user manifest",
+            "Added {} package(s) to manifest",
             new_packages.len()
         ));
     } else if plan.dry_run {
@@ -238,14 +237,14 @@ fn handle_add(
 
     // Create PR if needed
     if plan.should_create_pr() && !new_packages.is_empty() {
-        let mut system_manifest = SystemPackagesManifest::load_system()?;
+        let mut repo_manifest = SystemPackagesManifest::load_repo()?;
         for pkg in &new_packages {
-            system_manifest.add_package(pkg.clone());
+            repo_manifest.add_package(pkg.clone());
         }
-        let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
+        let manifest_content = serde_json::to_string_pretty(&repo_manifest)?;
 
         // Sync Containerfile before creating PR so both files are committed together
-        sync_all_containerfile_sections(&system_manifest)?;
+        sync_all_containerfile_sections(&repo_manifest)?;
 
         plan.maybe_create_pr(
             "system",
@@ -270,37 +269,28 @@ fn handle_remove(packages: Vec<String>, plan: &ExecutionPlan) -> Result<()> {
         bail!("No packages specified");
     }
 
-    let system = SystemPackagesManifest::load_system()?;
-    let mut user = SystemPackagesManifest::load_user()?;
+    let mut manifest = SystemPackagesManifest::load_repo()?;
 
     for pkg in &packages {
-        let in_system = system.find_package(pkg);
-        let in_user = user.find_package(pkg);
-
-        if in_system && !in_user && !plan.should_create_pr() {
-            Output::info(format!(
-                "'{}' is only in the system manifest; run without --local to create a PR",
-                pkg
-            ));
-        }
+        let in_manifest = manifest.find_package(pkg);
 
         if plan.should_update_local_manifest() {
-            if user.remove_package(pkg) {
-                Output::success(format!("Removed from user manifest: {}", pkg));
-            } else if !in_system {
+            if manifest.remove_package(pkg) {
+                Output::success(format!("Removed from manifest: {}", pkg));
+            } else {
                 Output::warning(format!("Package not found in manifest: {}", pkg));
             }
         } else if plan.dry_run {
-            if in_user {
-                Output::dry_run(format!("Would remove from user manifest: {}", pkg));
-            } else if !in_system {
+            if in_manifest {
+                Output::dry_run(format!("Would remove from manifest: {}", pkg));
+            } else {
                 Output::dry_run(format!("Package not found in manifest: {}", pkg));
             }
         }
     }
 
     if plan.should_update_local_manifest() {
-        user.save_user()?;
+        save_repo_manifest(&manifest)?;
     }
 
     // Record ephemeral changes if using --local (not in dry-run mode)
@@ -320,20 +310,20 @@ fn handle_remove(packages: Vec<String>, plan: &ExecutionPlan) -> Result<()> {
 
     // Create PR if needed
     if plan.should_create_pr() {
-        let mut system_manifest = SystemPackagesManifest::load_system()?;
+        let mut repo_manifest = SystemPackagesManifest::load_repo()?;
         let mut removed_from_system = Vec::new();
 
         for pkg in &packages {
-            if system_manifest.remove_package(pkg) {
+            if repo_manifest.remove_package(pkg) {
                 removed_from_system.push(pkg.clone());
             }
         }
 
         if !removed_from_system.is_empty() {
-            let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
+            let manifest_content = serde_json::to_string_pretty(&repo_manifest)?;
 
             // Sync Containerfile before creating PR so both files are committed together
-            sync_all_containerfile_sections(&system_manifest)?;
+            sync_all_containerfile_sections(&repo_manifest)?;
 
             plan.maybe_create_pr(
                 "system",
@@ -343,7 +333,7 @@ fn handle_remove(packages: Vec<String>, plan: &ExecutionPlan) -> Result<()> {
                 &manifest_content,
             )?;
         } else {
-            Output::info("No packages to remove from system manifest, no PR needed");
+            Output::info("No packages to remove from manifest, no PR needed");
         }
     }
 
@@ -355,32 +345,26 @@ fn handle_remove(packages: Vec<String>, plan: &ExecutionPlan) -> Result<()> {
 // =============================================================================
 
 fn handle_list(format: String, runner: &dyn CommandRunner) -> Result<()> {
-    let system = SystemPackagesManifest::load_system()?;
-    let user = SystemPackagesManifest::load_user()?;
-    let merged = SystemPackagesManifest::merged(&system, &user);
+    let manifest = SystemPackagesManifest::load_repo()?;
 
     if format == "json" {
-        println!("{}", serde_json::to_string_pretty(&merged)?);
+        println!("{}", serde_json::to_string_pretty(&manifest)?);
         return Ok(());
     }
 
     // Table format
-    if merged.packages.is_empty() && merged.groups.is_empty() && merged.copr_repos.is_empty() {
+    if manifest.packages.is_empty() && manifest.groups.is_empty() && manifest.copr_repos.is_empty() {
         Output::info("No packages in manifest.");
         return Ok(());
     }
 
     // List packages
-    if !merged.packages.is_empty() {
+    if !manifest.packages.is_empty() {
         Output::subheader("PACKAGES:");
         println!("{:<40} SOURCE  INSTALLED", "NAME".cyan());
         Output::separator();
-        for pkg in &merged.packages {
-            let source = if user.find_package(pkg) {
-                "user".yellow().to_string()
-            } else {
-                "system".dimmed().to_string()
-            };
+        for pkg in &manifest.packages {
+            let source = "manifest".dimmed().to_string();
             let installed = if is_package_installed(pkg, runner) {
                 "✓".green().to_string()
             } else {
@@ -392,20 +376,20 @@ fn handle_list(format: String, runner: &dyn CommandRunner) -> Result<()> {
     }
 
     // List groups
-    if !merged.groups.is_empty() {
+    if !manifest.groups.is_empty() {
         Output::subheader("GROUPS:");
-        for group in &merged.groups {
+        for group in &manifest.groups {
             Output::list_item(group);
         }
         Output::blank();
     }
 
     // List COPR repos
-    if !merged.copr_repos.is_empty() {
+    if !manifest.copr_repos.is_empty() {
         Output::subheader("COPR REPOSITORIES:");
         println!("{:<40} ENABLED GPG", "NAME".cyan());
         Output::separator();
-        for copr in &merged.copr_repos {
+        for copr in &manifest.copr_repos {
             let enabled = if copr.enabled {
                 "yes".green().to_string()
             } else {
@@ -423,9 +407,9 @@ fn handle_list(format: String, runner: &dyn CommandRunner) -> Result<()> {
 
     Output::success(format!(
         "{} packages, {} groups, {} COPR repos",
-        merged.packages.len(),
-        merged.groups.len(),
-        merged.copr_repos.len()
+        manifest.packages.len(),
+        manifest.groups.len(),
+        manifest.copr_repos.len()
     ));
 
     Ok(())
@@ -446,13 +430,11 @@ fn handle_copr(action: CoprAction, plan: &ExecutionPlan) -> Result<()> {
 fn handle_copr_enable(name: String, plan: &ExecutionPlan) -> Result<()> {
     plan.validate_domain(CommandDomain::System)?;
 
-    let system = SystemPackagesManifest::load_system()?;
-    let mut user = SystemPackagesManifest::load_user()?;
+    let mut manifest = SystemPackagesManifest::load_repo()?;
 
     // Check if already enabled
-    if system
+    if manifest
         .find_copr(&name)
-        .or_else(|| user.find_copr(&name))
         .is_some_and(|c| c.enabled)
     {
         Output::info(format!("COPR already enabled: {}", name));
@@ -461,9 +443,9 @@ fn handle_copr_enable(name: String, plan: &ExecutionPlan) -> Result<()> {
 
     // Update manifest
     if plan.should_update_local_manifest() {
-        user.upsert_copr(CoprRepo::new(name.clone()));
-        user.save_user()?;
-        Output::success(format!("Added to user manifest: {}", name));
+        manifest.upsert_copr(CoprRepo::new(name.clone()));
+        save_repo_manifest(&manifest)?;
+        Output::success(format!("Added to manifest: {}", name));
     } else if plan.dry_run {
         Output::dry_run(format!("Would add COPR to manifest: {}", name));
     }
@@ -472,13 +454,13 @@ fn handle_copr_enable(name: String, plan: &ExecutionPlan) -> Result<()> {
 
     // Create PR if needed
     if plan.should_create_pr() {
-        let mut system_manifest = SystemPackagesManifest::load_system()?;
-        system_manifest.upsert_copr(CoprRepo::new(name.clone()));
+        let mut repo_manifest = SystemPackagesManifest::load_repo()?;
+        repo_manifest.upsert_copr(CoprRepo::new(name.clone()));
 
         // Sync Containerfile before creating PR so both files are committed together
-        sync_all_containerfile_sections(&system_manifest)?;
+        sync_all_containerfile_sections(&repo_manifest)?;
 
-        let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
+        let manifest_content = serde_json::to_string_pretty(&repo_manifest)?;
 
         plan.maybe_create_pr(
             "copr",
@@ -495,42 +477,33 @@ fn handle_copr_enable(name: String, plan: &ExecutionPlan) -> Result<()> {
 fn handle_copr_disable(name: String, plan: &ExecutionPlan) -> Result<()> {
     plan.validate_domain(CommandDomain::System)?;
 
-    let system = SystemPackagesManifest::load_system()?;
-    let mut user = SystemPackagesManifest::load_user()?;
+    let mut manifest = SystemPackagesManifest::load_repo()?;
 
-    let in_system = system.find_copr(&name).is_some();
-    let in_user = user.find_copr(&name).is_some();
+    let in_manifest = manifest.find_copr(&name).is_some();
 
-    if !in_system && !in_user {
+    if !in_manifest {
         Output::warning(format!("COPR not found in manifest: {}", name));
         return Ok(());
     }
 
-    if in_system && !in_user && !plan.should_create_pr() {
-        Output::info(format!(
-            "'{}' is only in the system manifest; run without --local to create a PR",
-            name
-        ));
-    }
-
     // Update manifest
-    if plan.should_update_local_manifest() && user.remove_copr(&name) {
-        user.save_user()?;
-        Output::success(format!("Removed from user manifest: {}", name));
-    } else if plan.dry_run && in_user {
+    if plan.should_update_local_manifest() && manifest.remove_copr(&name) {
+        save_repo_manifest(&manifest)?;
+        Output::success(format!("Removed from manifest: {}", name));
+    } else if plan.dry_run && in_manifest {
         Output::dry_run(format!("Would remove COPR from manifest: {}", name));
     }
 
     // NOTE: No local execution! COPR is disabled in the image at build time.
 
     // Create PR if needed
-    if plan.should_create_pr() && in_system {
-        let mut system_manifest = SystemPackagesManifest::load_system()?;
-        if system_manifest.remove_copr(&name) {
+    if plan.should_create_pr() && in_manifest {
+        let mut repo_manifest = SystemPackagesManifest::load_repo()?;
+        if repo_manifest.remove_copr(&name) {
             // Sync Containerfile before creating PR so both files are committed together
-            sync_all_containerfile_sections(&system_manifest)?;
+            sync_all_containerfile_sections(&repo_manifest)?;
 
-            let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
+            let manifest_content = serde_json::to_string_pretty(&repo_manifest)?;
             plan.maybe_create_pr(
                 "copr",
                 "disable",
@@ -545,11 +518,9 @@ fn handle_copr_disable(name: String, plan: &ExecutionPlan) -> Result<()> {
 }
 
 fn handle_copr_list() -> Result<()> {
-    let system = SystemPackagesManifest::load_system()?;
-    let user = SystemPackagesManifest::load_user()?;
-    let merged = SystemPackagesManifest::merged(&system, &user);
+    let manifest = SystemPackagesManifest::load_repo()?;
 
-    if merged.copr_repos.is_empty() {
+    if manifest.copr_repos.is_empty() {
         Output::info("No COPR repositories in manifest.");
         return Ok(());
     }
@@ -558,12 +529,8 @@ fn handle_copr_list() -> Result<()> {
     println!("{:<40} {:<8} {:<8} SOURCE", "NAME".cyan(), "ENABLED", "GPG");
     Output::separator();
 
-    for copr in &merged.copr_repos {
-        let source = if user.find_copr(&copr.name).is_some() {
-            "user".yellow().to_string()
-        } else {
-            "system".dimmed().to_string()
-        };
+    for copr in &manifest.copr_repos {
+        let source = "manifest".dimmed().to_string();
         let enabled = if copr.enabled {
             "yes".green().to_string()
         } else {
@@ -590,6 +557,11 @@ fn is_package_installed(pkg: &str, runner: &dyn CommandRunner) -> bool {
         .run_output("rpm", &["-q", pkg], &CommandOptions::default())
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+fn save_repo_manifest(manifest: &SystemPackagesManifest) -> Result<()> {
+    let repo_path = crate::repo::find_repo_path()?;
+    manifest.save(&repo_path.join(SystemPackagesManifest::PROJECT_PATH))
 }
 
 /// Sync the Containerfile sections with the manifest.
@@ -675,9 +647,7 @@ impl Plannable for SystemCaptureCommand {
         let layered = get_layered_packages(runner);
 
         // Load manifest to check what's already tracked
-        let system = SystemPackagesManifest::load_system()?;
-        let user = SystemPackagesManifest::load_user()?;
-        let merged = SystemPackagesManifest::merged(&system, &user);
+        let merged = SystemPackagesManifest::load_repo()?;
 
         let mut to_capture = Vec::new();
         let mut already_in_manifest = 0;
@@ -722,11 +692,11 @@ impl Plan for SystemCapturePlan {
             return Ok(report);
         }
 
-        // Load user manifest and add packages
-        let mut user = SystemPackagesManifest::load_user()?;
+        // Load manifest and add packages
+        let mut manifest = SystemPackagesManifest::load_repo()?;
 
         for pkg in &self.to_capture {
-            if user.add_package(pkg.clone()) {
+            if manifest.add_package(pkg.clone()) {
                 report.record_success(Verb::Capture, format!("package:{}", pkg));
             } else {
                 report.record_success(Verb::Skip, format!("package:{} (already in manifest)", pkg));
@@ -734,7 +704,7 @@ impl Plan for SystemCapturePlan {
         }
 
         // Save the updated manifest
-        user.save_user()?;
+        save_repo_manifest(&manifest)?;
 
         Ok(report)
     }

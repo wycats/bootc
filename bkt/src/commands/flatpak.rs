@@ -170,10 +170,9 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
             let scope: FlatpakScope = scope.parse()?;
 
             // Check if already in manifest
-            let system = FlatpakAppsManifest::load_system()?;
-            let mut user = FlatpakAppsManifest::load_user()?;
+            let mut manifest = FlatpakAppsManifest::load_repo()?;
 
-            let already_exists = system.find(&app_id).is_some() || user.find(&app_id).is_some();
+            let already_exists = manifest.find(&app_id).is_some();
 
             if already_exists {
                 Output::warning(format!("Flatpak already in manifest: {}", app_id));
@@ -186,10 +185,10 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
                     commit: None,
                     overrides: None,
                 };
-                user.upsert(app.clone());
-                user.save_user()?;
+                manifest.upsert(app.clone());
+                manifest.save_repo()?;
                 Output::success(format!(
-                    "Added to user manifest: {} ({}, {})",
+                    "Added to manifest: {} ({}, {})",
                     app_id, remote, scope
                 ));
             } else if plan.dry_run {
@@ -234,7 +233,7 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
 
             // Create PR if needed
             if plan.should_create_pr() && !already_exists {
-                let mut system_manifest = FlatpakAppsManifest::load_system()?;
+                let mut system_manifest = FlatpakAppsManifest::load_repo()?;
                 let app_for_pr = FlatpakApp {
                     id: app_id.clone(),
                     remote: remote.clone(),
@@ -259,29 +258,21 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
             // Validate that flatpak operations are allowed in this context
             plan.validate_domain(CommandDomain::Flatpak)?;
 
-            let mut user = FlatpakAppsManifest::load_user()?;
-            let system = FlatpakAppsManifest::load_system()?;
+            let mut manifest = FlatpakAppsManifest::load_repo()?;
 
-            // Check if it's in system manifest
-            let in_system = system.find(&app_id).is_some();
-            if in_system && user.find(&app_id).is_none() && !plan.should_create_pr() {
-                Output::info(format!(
-                    "'{}' is only in the system manifest; run without --local to create a PR",
-                    app_id
-                ));
-            }
+            let in_manifest = manifest.find(&app_id).is_some();
 
             if plan.should_update_local_manifest() {
-                if user.remove(&app_id) {
-                    user.save_user()?;
-                    Output::success(format!("Removed from user manifest: {}", app_id));
-                } else if !in_system {
+                if manifest.remove(&app_id) {
+                    manifest.save_repo()?;
+                    Output::success(format!("Removed from manifest: {}", app_id));
+                } else {
                     Output::warning(format!("Flatpak not found in manifest: {}", app_id));
                 }
             } else if plan.dry_run {
-                if user.find(&app_id).is_some() {
-                    Output::dry_run(format!("Would remove from user manifest: {}", app_id));
-                } else if !in_system {
+                if in_manifest {
+                    Output::dry_run(format!("Would remove from manifest: {}", app_id));
+                } else {
                     Output::dry_run(format!("Flatpak not found in manifest: {}", app_id));
                 }
             }
@@ -314,7 +305,7 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
 
             // Create PR if needed
             if plan.should_create_pr() {
-                let mut system_manifest = FlatpakAppsManifest::load_system()?;
+                let mut system_manifest = FlatpakAppsManifest::load_repo()?;
                 if system_manifest.remove(&app_id) {
                     let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
 
@@ -326,14 +317,12 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
                         &manifest_content,
                     )?;
                 } else {
-                    Output::info(format!("'{}' not in system manifest, no PR needed", app_id));
+                    Output::info(format!("'{}' not in manifest, no PR needed", app_id));
                 }
             }
         }
         FlatpakAction::List { format } => {
-            let system = FlatpakAppsManifest::load_system()?;
-            let user = FlatpakAppsManifest::load_user()?;
-            let merged = FlatpakAppsManifest::merged(&system, &user);
+            let merged = FlatpakAppsManifest::load_repo()?;
 
             if format == "json" {
                 println!("{}", serde_json::to_string_pretty(&merged)?);
@@ -355,11 +344,7 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
                 Output::separator();
 
                 for app in &merged.apps {
-                    let source = if user.find(&app.id).is_some() {
-                        "user".yellow().to_string()
-                    } else {
-                        "system".dimmed().to_string()
-                    };
+                    let source = "manifest".dimmed().to_string();
                     let installed = if is_installed(&app.id, runner) {
                         "✓".green().to_string()
                     } else {
@@ -372,12 +357,7 @@ pub fn run(args: FlatpakArgs, plan: &ExecutionPlan) -> Result<()> {
                 }
 
                 Output::blank();
-                Output::info(format!(
-                    "{} apps ({} system, {} user)",
-                    merged.apps.len(),
-                    system.apps.len(),
-                    user.apps.len()
-                ));
+                Output::info(format!("{} apps in manifest", merged.apps.len()));
             }
         }
         FlatpakAction::Sync => {
@@ -470,10 +450,8 @@ impl Plannable for FlatpakSyncCommand {
     type Plan = FlatpakSyncPlan;
 
     fn plan(&self, ctx: &PlanContext) -> Result<Self::Plan> {
-        // Load and merge manifests (read-only, no side effects)
-        let system = FlatpakAppsManifest::load_system()?;
-        let user = FlatpakAppsManifest::load_user()?;
-        let merged = FlatpakAppsManifest::merged(&system, &user);
+        // Load manifest (read-only, no side effects)
+        let merged = FlatpakAppsManifest::load_repo()?;
 
         let mut to_install = Vec::new();
         let mut already_installed = 0;
@@ -687,9 +665,7 @@ impl Plannable for FlatpakCaptureCommand {
         let installed = get_installed_flatpaks();
 
         // Load manifests to see what's already tracked
-        let system = FlatpakAppsManifest::load_system()?;
-        let user = FlatpakAppsManifest::load_user()?;
-        let merged = FlatpakAppsManifest::merged(&system, &user);
+        let merged = FlatpakAppsManifest::load_repo()?;
 
         // Load remotes manifest to check for unmanaged remotes
         let remotes = FlatpakRemotesManifest::load_cwd().unwrap_or_default();
@@ -789,16 +765,16 @@ impl Plan for FlatpakCapturePlan {
     fn execute(self, _ctx: &mut ExecuteContext) -> Result<ExecutionReport> {
         let mut report = ExecutionReport::new();
 
-        // Load user manifest (we add captured flatpaks there)
-        let mut user = FlatpakAppsManifest::load_user()?;
+        // Load manifest (we add captured flatpaks there)
+        let mut manifest = FlatpakAppsManifest::load_repo()?;
 
         for item in self.to_capture {
-            user.upsert(item.app.clone());
+            manifest.upsert(item.app.clone());
             report.record_success(Verb::Capture, format!("flatpak:{}", item.app.id));
         }
 
         // Save the updated manifest
-        user.save_user()?;
+        manifest.save_repo()?;
 
         Ok(report)
     }

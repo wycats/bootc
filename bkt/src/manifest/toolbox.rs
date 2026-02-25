@@ -100,9 +100,21 @@ impl ToolboxPackagesManifest {
         Self::load(&Self::user_path())
     }
 
+    /// Load from the repository's manifests directory.
+    pub fn load_repo() -> Result<Self> {
+        let repo = crate::repo::find_repo_path()?;
+        Self::load(&repo.join(Self::PROJECT_PATH))
+    }
+
     /// Save the user manifest.
     pub fn save_user(&self) -> Result<()> {
         self.save(&Self::user_path())
+    }
+
+    /// Save to the repository's manifests directory.
+    pub fn save_repo(&self) -> Result<()> {
+        let repo = crate::repo::find_repo_path()?;
+        self.save(&repo.join(Self::PROJECT_PATH))
     }
 
     /// Convert to SystemPackagesManifest for shared DNF operations.

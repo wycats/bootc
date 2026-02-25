@@ -69,10 +69,8 @@ exec flatpak-spawn --host {quoted} "$@"
 fn sync_shims(dry_run: bool) -> Result<()> {
     let shims_dir = ShimsManifest::shims_dir();
 
-    // Load manifests
-    let system = ShimsManifest::load_system()?;
-    let user = ShimsManifest::load_user()?;
-    let merged = ShimsManifest::merged(&system, &user);
+    // Load manifest
+    let merged = ShimsManifest::load_repo()?;
 
     if !dry_run {
         // Create shims directory
@@ -133,15 +131,17 @@ fn sync_shims(dry_run: bool) -> Result<()> {
 }
 
 /// Determine the source of a shim (system, user, or system+user override).
-fn shim_source(name: &str, system: &ShimsManifest, user: &ShimsManifest) -> &'static str {
-    let in_system = system.find(name).is_some();
-    let in_user = user.find(name).is_some();
-    match (in_system, in_user) {
-        (true, true) => "system+user",
-        (true, false) => "system",
-        (false, true) => "user",
-        (false, false) => "unknown",
+fn shim_source(name: &str, manifest: &ShimsManifest) -> &'static str {
+    if manifest.find(name).is_some() {
+        "manifest"
+    } else {
+        "not in manifest"
     }
+}
+
+fn save_repo_manifest(manifest: &ShimsManifest) -> Result<()> {
+    let repo_path = crate::repo::find_repo_path()?;
+    manifest.save(&repo_path.join(ShimsManifest::PROJECT_PATH))
 }
 
 pub fn run(args: ShimArgs, plan: &ExecutionPlan) -> Result<()> {
@@ -157,12 +157,12 @@ pub fn run(args: ShimArgs, plan: &ExecutionPlan) -> Result<()> {
                 },
             };
 
-            // Load and update user manifest
+            // Load and update manifest
             if plan.should_update_local_manifest() {
-                let mut user = ShimsManifest::load_user()?;
-                let is_update = user.find(&name).is_some();
-                user.upsert(shim);
-                user.save_user()?;
+                let mut manifest = ShimsManifest::load_repo()?;
+                let is_update = manifest.find(&name).is_some();
+                manifest.upsert(shim);
+                save_repo_manifest(&manifest)?;
 
                 if is_update {
                     Output::success(format!("Updated shim: {} -> {}", name, host_cmd));
@@ -192,8 +192,8 @@ pub fn run(args: ShimArgs, plan: &ExecutionPlan) -> Result<()> {
             }
 
             if plan.should_create_pr() {
-                // Load system manifest, add the shim, and create PR
-                let mut system = ShimsManifest::load_system()?;
+                // Load repo manifest, add the shim, and create PR
+                let mut system = ShimsManifest::load_repo()?;
                 let shim_for_pr = Shim {
                     name: name.clone(),
                     host: if host_cmd == name {
@@ -209,25 +209,13 @@ pub fn run(args: ShimArgs, plan: &ExecutionPlan) -> Result<()> {
             }
         }
         ShimAction::Remove { name } => {
-            let system = ShimsManifest::load_system()?;
-            let user = ShimsManifest::load_user()?;
-
-            // Check if it's in system manifest but not user manifest
-            let in_system = system.find(&name).is_some();
-            if in_system && user.find(&name).is_none() && !plan.should_create_pr() {
-                Output::info(format!(
-                    "'{}' is in the system manifest; use --pr or --pr-only to remove from source",
-                    name
-                ));
-            }
-
             if plan.should_update_local_manifest() {
-                let mut user = ShimsManifest::load_user()?;
-                if user.remove(&name) {
-                    user.save_user()?;
+                let mut manifest = ShimsManifest::load_repo()?;
+                if manifest.remove(&name) {
+                    save_repo_manifest(&manifest)?;
                     Output::success(format!("Removed shim: {}", name));
                 } else {
-                    Output::warning(format!("Shim not found in user manifest: {}", name));
+                    Output::warning(format!("Shim not found in manifest: {}", name));
                 }
             } else if plan.dry_run {
                 Output::dry_run(format!("Would remove shim: {}", name));
@@ -252,10 +240,10 @@ pub fn run(args: ShimArgs, plan: &ExecutionPlan) -> Result<()> {
             }
 
             if plan.should_create_pr() {
-                // Load system manifest, remove the shim, and create PR
-                let mut system_manifest = ShimsManifest::load_system()?;
-                if system_manifest.remove(&name) {
-                    let manifest_content = serde_json::to_string_pretty(&system_manifest)?;
+                // Load repo manifest, remove the shim, and create PR
+                let mut repo_manifest = ShimsManifest::load_repo()?;
+                if repo_manifest.remove(&name) {
+                    let manifest_content = serde_json::to_string_pretty(&repo_manifest)?;
 
                     plan.maybe_create_pr(
                         "shim",
@@ -265,14 +253,12 @@ pub fn run(args: ShimArgs, plan: &ExecutionPlan) -> Result<()> {
                         &manifest_content,
                     )?;
                 } else {
-                    Output::info(format!("'{}' not in system manifest, no PR needed", name));
+                    Output::info(format!("'{}' not in manifest, no PR needed", name));
                 }
             }
         }
         ShimAction::List { format } => {
-            let system = ShimsManifest::load_system()?;
-            let user = ShimsManifest::load_user()?;
-            let merged = ShimsManifest::merged(&system, &user);
+            let merged = ShimsManifest::load_repo()?;
 
             if format == "json" {
                 let json = serde_json::to_string_pretty(&merged)?;
@@ -285,11 +271,9 @@ pub fn run(args: ShimArgs, plan: &ExecutionPlan) -> Result<()> {
                     Output::info("(none)");
                 } else {
                     for shim in &merged.shims {
-                        let source = shim_source(&shim.name, &system, &user);
+                        let source = shim_source(&shim.name, &merged);
                         let source_styled = match source {
-                            "user" => source.yellow().to_string(),
-                            "system" => source.dimmed().to_string(),
-                            "system+user" => source.cyan().to_string(),
+                            "manifest" => source.cyan().to_string(),
                             _ => source.to_string(),
                         };
                         if shim.name == shim.host_cmd() {
@@ -354,10 +338,8 @@ impl Plannable for ShimSyncCommand {
     type Plan = ShimSyncPlan;
 
     fn plan(&self, _ctx: &PlanContext) -> Result<Self::Plan> {
-        // Load and merge manifests (read-only, no side effects)
-        let system = ShimsManifest::load_system()?;
-        let user = ShimsManifest::load_user()?;
-        let merged = ShimsManifest::merged(&system, &user);
+        // Load manifest (read-only, no side effects)
+        let merged = ShimsManifest::load_repo()?;
 
         Ok(ShimSyncPlan {
             shims_dir: ShimsManifest::shims_dir(),

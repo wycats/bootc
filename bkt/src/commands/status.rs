@@ -304,9 +304,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     // Gather flatpak status
     let flatpak_status = {
-        let system = FlatpakAppsManifest::load_system().unwrap_or_default();
-        let user = FlatpakAppsManifest::load_user().unwrap_or_default();
-        let merged = FlatpakAppsManifest::merged(&system, &user);
+        let merged = FlatpakAppsManifest::load_repo().unwrap_or_default();
 
         let manifest_ids: std::collections::HashSet<_> =
             merged.apps.iter().map(|a| a.id.as_str()).collect();
@@ -339,9 +337,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     // Gather extension status
     let extension_status = {
-        let system = GnomeExtensionsManifest::load_system().unwrap_or_default();
-        let user = GnomeExtensionsManifest::load_user().unwrap_or_default();
-        let merged = GnomeExtensionsManifest::merged(&system, &user);
+        let merged = GnomeExtensionsManifest::load_repo().unwrap_or_default();
 
         let manifest_uuids: std::collections::HashSet<_> =
             merged.extensions.iter().map(|s| s.id()).collect();
@@ -399,9 +395,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     // Gather gsettings status
     let gsetting_status = {
-        let system = GSettingsManifest::load_system().unwrap_or_default();
-        let user = GSettingsManifest::load_user().unwrap_or_default();
-        let merged = GSettingsManifest::merged(&system, &user);
+        let merged = GSettingsManifest::load_repo().unwrap_or_default();
 
         let total = merged.settings.len();
         let mut applied = 0;
@@ -424,9 +418,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     // Gather shim status
     let shim_status = {
-        let system = ShimsManifest::load_system().unwrap_or_default();
-        let user = ShimsManifest::load_user().unwrap_or_default();
-        let merged = ShimsManifest::merged(&system, &user);
+        let merged = ShimsManifest::load_repo().unwrap_or_default();
 
         let shims_dir = ShimsManifest::shims_dir();
         let total = merged.shims.len();
