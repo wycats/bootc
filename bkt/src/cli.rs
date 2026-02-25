@@ -159,6 +159,9 @@ pub enum Commands {
     /// are tracked for later promotion to a PR.
     Local(commands::local::LocalArgs),
 
+    /// Migrate legacy user configuration into the repo
+    Migrate(commands::migrate::MigrateArgs),
+
     /// Generate application wrapper binaries
     ///
     /// Creates Rust binaries that launch applications under systemd
@@ -214,6 +217,7 @@ impl Commands {
             Commands::BuildInfo(_) => CommandTarget::Either,
             Commands::Containerfile(_) => CommandTarget::Either,
             Commands::Local(_) => CommandTarget::Either,
+            Commands::Migrate(_) => CommandTarget::Either,
             Commands::Wrap(_) => CommandTarget::Either,
             Commands::Tune(_) => CommandTarget::Host, // Reads /proc, /sys for memory/GPU info
         }
