@@ -409,19 +409,6 @@ fn load_repo_manifest() -> Result<SystemPackagesManifest> {
     SystemPackagesManifest::load_repo()
 }
 
-/// Check whether external-repos.json defines any repos (i.e. external RPMs exist).
-/// Check whether external-repos.json defines any repos (i.e. external RPMs exist).
-fn load_has_external_rpms() -> Result<bool> {
-    let repo_path = crate::repo::find_repo_path()?;
-    let manifest_path = repo_path.join("manifests").join("external-repos.json");
-    if !manifest_path.exists() {
-        return Ok(false);
-    }
-    let content = std::fs::read_to_string(&manifest_path)?;
-    let manifest: crate::manifest::ExternalReposManifest = serde_json::from_str(&content)?;
-    Ok(!manifest.repos.is_empty())
-}
-
 fn load_generator_input() -> Result<ContainerfileGeneratorInput> {
     let repo_path = crate::repo::find_repo_path()?;
 
