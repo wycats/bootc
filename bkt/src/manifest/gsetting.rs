@@ -78,7 +78,6 @@ impl GSettingsManifest {
         self.save(&repo.join(Self::PROJECT_PATH))
     }
 
-
     /// Find a setting by schema and key.
     pub fn find(&self, schema: &str, key: &str) -> Option<&GSetting> {
         self.settings
@@ -240,7 +239,6 @@ mod tests {
         let mut manifest = GSettingsManifest::default();
         assert!(!manifest.remove("nonexistent.schema", "key"));
     }
-
 
     #[test]
     fn manifest_serialization_roundtrip() {

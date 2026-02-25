@@ -38,7 +38,10 @@ fn migrate_manifests(dry_run: bool, force: bool) -> Result<()> {
     let manifests_dir = repo_path.join("manifests");
     if !dry_run && !manifests_dir.is_dir() {
         std::fs::create_dir_all(&manifests_dir).with_context(|| {
-            format!("Failed to create manifests directory at {}", manifests_dir.display())
+            format!(
+                "Failed to create manifests directory at {}",
+                manifests_dir.display()
+            )
         })?;
     }
 
@@ -73,10 +76,7 @@ fn migrate_manifests(dry_run: bool, force: bool) -> Result<()> {
                     file_name
                 ));
                 if dry_run {
-                    Output::dry_run(format!(
-                        "Would migrate {} (overwrite repo)",
-                        file_name
-                    ));
+                    Output::dry_run(format!("Would migrate {} (overwrite repo)", file_name));
                     continue;
                 }
                 overwrite_file(&user_file, &repo_file)?;
@@ -132,8 +132,8 @@ fn user_config_dir() -> Result<PathBuf> {
 }
 
 fn list_user_manifests(dir: &Path) -> Result<Vec<PathBuf>> {
-    let entries = std::fs::read_dir(dir)
-        .with_context(|| format!("Cannot read {}", dir.display()))?;
+    let entries =
+        std::fs::read_dir(dir).with_context(|| format!("Cannot read {}", dir.display()))?;
 
     let mut files = Vec::new();
     for entry in entries {
@@ -154,10 +154,8 @@ fn list_user_manifests(dir: &Path) -> Result<Vec<PathBuf>> {
 
 fn overwrite_file(src: &Path, dest: &Path) -> Result<()> {
     if let Err(err) = std::fs::rename(src, dest) {
-        std::fs::copy(src, dest)
-            .with_context(|| format!("Failed to copy {}", src.display()))?;
-        std::fs::remove_file(src)
-            .with_context(|| format!("Failed to remove {}", src.display()))?;
+        std::fs::copy(src, dest).with_context(|| format!("Failed to copy {}", src.display()))?;
+        std::fs::remove_file(src).with_context(|| format!("Failed to remove {}", src.display()))?;
         // Keep the error detail for debugging if rename failed unexpectedly.
         tracing::debug!("rename failed, copied instead: {}", err);
     }
@@ -166,10 +164,8 @@ fn overwrite_file(src: &Path, dest: &Path) -> Result<()> {
 
 fn move_file(src: &Path, dest: &Path) -> Result<()> {
     if let Err(err) = std::fs::rename(src, dest) {
-        std::fs::copy(src, dest)
-            .with_context(|| format!("Failed to copy {}", src.display()))?;
-        std::fs::remove_file(src)
-            .with_context(|| format!("Failed to remove {}", src.display()))?;
+        std::fs::copy(src, dest).with_context(|| format!("Failed to copy {}", src.display()))?;
+        std::fs::remove_file(src).with_context(|| format!("Failed to remove {}", src.display()))?;
         tracing::debug!("rename failed, copied instead: {}", err);
     }
     Ok(())

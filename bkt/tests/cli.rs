@@ -431,7 +431,9 @@ fn extension_add_and_list_integration() {
         .args(["extension", "add", "test@example.com"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Added to manifest: test@example.com"));
+        .stdout(predicate::str::contains(
+            "Added to manifest: test@example.com",
+        ));
     bkt_isolated(&temp)
         .args(["extension", "list"])
         .assert()
@@ -460,7 +462,14 @@ fn gsetting_set_adds_to_manifest() {
     // Setting will be added to manifest even if apply fails
     // Use --force to skip validation in test environment
     bkt_isolated(&temp)
-        .args(["gsetting", "set", "org.test.schema", "key", "value", "--force"])
+        .args([
+            "gsetting",
+            "set",
+            "org.test.schema",
+            "key",
+            "value",
+            "--force",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("Added to manifest"));
@@ -530,14 +539,8 @@ fn dev_install_updates_toolbox_manifest() {
         .assert()
         .success();
 
-    let toolbox_manifest = temp
-        .path()
-        .join("manifests")
-        .join("toolbox-packages.json");
-    let system_manifest = temp
-        .path()
-        .join("manifests")
-        .join("system-packages.json");
+    let toolbox_manifest = temp.path().join("manifests").join("toolbox-packages.json");
+    let system_manifest = temp.path().join("manifests").join("system-packages.json");
 
     let content = std::fs::read_to_string(&toolbox_manifest).unwrap();
     assert!(content.contains("\"gcc\""));
@@ -791,4 +794,3 @@ fn flatpak_add_force_bypasses_validation() {
         .success()
         .stdout(predicate::str::contains("--force"));
 }
-

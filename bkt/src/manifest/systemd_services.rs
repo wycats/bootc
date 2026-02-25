@@ -108,5 +108,4 @@ impl SystemdServicesManifest {
         let repo = crate::repo::find_repo_path()?;
         self.save(&repo.join(Self::PROJECT_PATH))
     }
-
 }

@@ -213,7 +213,6 @@ COPY --link --from=install-bundled / /
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
-    /tmp/rpms/*.rpm \
     curl \
     distrobox \
     fontconfig \
@@ -331,6 +330,8 @@ RUN set -eu; \
     mkdir -p /usr/etc/skel/.local/toolbox/shims /usr/etc/skel/.local/bin; \
     echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBib290YyAiJEAiCg==' | base64 -d \
     > /usr/etc/skel/.local/toolbox/shims/bootc && chmod 0755 /usr/etc/skel/.local/toolbox/shims/bootc && ln -sf ../toolbox/shims/bootc /usr/etc/skel/.local/bin/bootc; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBwb2RtYW4gIiRAIgo=' | base64 -d \
+    > /usr/etc/skel/.local/toolbox/shims/docker && chmod 0755 /usr/etc/skel/.local/toolbox/shims/docker && ln -sf ../toolbox/shims/docker /usr/etc/skel/.local/bin/docker; \
     echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBmbGF0cGFrICIkQCIK' | base64 -d \
     > /usr/etc/skel/.local/toolbox/shims/flatpak && chmod 0755 /usr/etc/skel/.local/toolbox/shims/flatpak && ln -sf ../toolbox/shims/flatpak /usr/etc/skel/.local/bin/flatpak; \
     echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBqb3VybmFsY3RsICIkQCIK' | base64 -d \
@@ -341,6 +342,8 @@ RUN set -eu; \
     > /usr/etc/skel/.local/toolbox/shims/rpm-ostree && chmod 0755 /usr/etc/skel/.local/toolbox/shims/rpm-ostree && ln -sf ../toolbox/shims/rpm-ostree /usr/etc/skel/.local/bin/rpm-ostree; \
     echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCBzeXN0ZW1jdGwgIiRAIgo=' | base64 -d \
     > /usr/etc/skel/.local/toolbox/shims/systemctl && chmod 0755 /usr/etc/skel/.local/toolbox/shims/systemctl && ln -sf ../toolbox/shims/systemctl /usr/etc/skel/.local/bin/systemctl; \
+    echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCB0ZXN0LXNoaW0gIiRAIgo=' | base64 -d \
+    > /usr/etc/skel/.local/toolbox/shims/test-shim && chmod 0755 /usr/etc/skel/.local/toolbox/shims/test-shim && ln -sf ../toolbox/shims/test-shim /usr/etc/skel/.local/bin/test-shim; \
     echo 'IyEvYmluL2Jhc2gKZXhlYyBmbGF0cGFrLXNwYXduIC0taG9zdCB1anVzdCAiJEAiCg==' | base64 -d \
     > /usr/etc/skel/.local/toolbox/shims/ujust && chmod 0755 /usr/etc/skel/.local/toolbox/shims/ujust && ln -sf ../toolbox/shims/ujust /usr/etc/skel/.local/bin/ujust; \
     if [ "${ENABLE_NM_DISABLE_WIFI_POWERSAVE}" = "1" ]; then install -Dpm0644 /usr/share/bootc-optional/NetworkManager/conf.d/default-wifi-powersave-on.conf /etc/NetworkManager/conf.d/default-wifi-powersave-on.conf; fi; \

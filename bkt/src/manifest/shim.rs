@@ -86,7 +86,6 @@ impl ShimsManifest {
         Self::load(&repo_path.join(Self::PROJECT_PATH))
     }
 
-
     /// Find a shim by name.
     pub fn find(&self, name: &str) -> Option<&Shim> {
         self.shims.iter().find(|s| s.name == name)
@@ -208,7 +207,6 @@ mod tests {
         let mut manifest = ShimsManifest::default();
         assert!(!manifest.remove("nonexistent"));
     }
-
 
     #[test]
     fn manifest_serialization_roundtrip() {

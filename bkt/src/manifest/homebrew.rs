@@ -132,7 +132,6 @@ impl HomebrewManifest {
         self.save(&repo.join(Self::PROJECT_PATH))
     }
 
-
     /// Check if a formula exists.
     pub fn contains(&self, name: &str) -> bool {
         self.formulae.iter().any(|f| f.name() == name)
@@ -205,5 +204,4 @@ mod tests {
         assert_eq!(formula.tap(), None);
         assert_eq!(formula.formula_name(), "lefthook");
     }
-
 }

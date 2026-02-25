@@ -107,7 +107,6 @@ impl SystemPackagesManifest {
         Self::load(&repo_path.join(Self::PROJECT_PATH))
     }
 
-
     /// Find a package by name.
     pub fn find_package(&self, name: &str) -> bool {
         self.packages.iter().any(|p| p == name)
@@ -210,7 +209,6 @@ mod tests {
         assert!(manifest.remove_copr("atim/starship"));
         assert!(manifest.find_copr("atim/starship").is_none());
     }
-
 
     #[test]
     fn manifest_load_nonexistent_returns_default() {

@@ -248,9 +248,9 @@ fn collect_status() -> Result<SystemStatus> {
                     .find(|s| s.starts_with("avg10="))
                     .and_then(|s| s.strip_prefix("avg10="))
                     .and_then(|s| s.parse::<f64>().ok())
-                {
-                    status.pressure_avg10 = Some(avg10);
-                }
+            {
+                status.pressure_avg10 = Some(avg10);
+            }
         }
     }
 
@@ -277,17 +277,18 @@ fn collect_status() -> Result<SystemStatus> {
     for compositor in ["gnome-shell", "kwin_wayland", "sway"] {
         if let Ok(output) = Command::new("pgrep").arg("-x").arg(compositor).output()
             && output.status.success()
-                && let Ok(pid_str) = String::from_utf8(output.stdout)
-                    && let Ok(pid) = pid_str.trim().parse::<u32>() {
-                        status.compositor_pid = Some(pid);
-                        status.compositor_name = Some(compositor.to_string());
+            && let Ok(pid_str) = String::from_utf8(output.stdout)
+            && let Ok(pid) = pid_str.trim().parse::<u32>()
+        {
+            status.compositor_pid = Some(pid);
+            status.compositor_name = Some(compositor.to_string());
 
-                        // Get compositor GPU memory from fdinfo
-                        let (vram, gtt) = get_process_gpu_memory(pid);
-                        status.compositor_vram = vram;
-                        status.compositor_gtt = gtt;
-                        break;
-                    }
+            // Get compositor GPU memory from fdinfo
+            let (vram, gtt) = get_process_gpu_memory(pid);
+            status.compositor_vram = vram;
+            status.compositor_gtt = gtt;
+            break;
+        }
     }
 
     Ok(status)
@@ -334,9 +335,10 @@ fn get_process_gpu_memory(pid: u32) -> (u64, u64) {
                             vram_kb += val.parse::<u64>().unwrap_or(0);
                         }
                     } else if let Some(rest) = line.strip_prefix("drm-memory-gtt:")
-                        && let Some(val) = rest.split_whitespace().next() {
-                            gtt_kb += val.parse::<u64>().unwrap_or(0);
-                        }
+                        && let Some(val) = rest.split_whitespace().next()
+                    {
+                        gtt_kb += val.parse::<u64>().unwrap_or(0);
+                    }
                 }
             }
         }
