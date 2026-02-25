@@ -1,7 +1,6 @@
 {
   "$schema": "https://wycats.github.io/bootc/toolbox-packages.schema.json",
-  "packages": [],
-  "groups": [],
-  "excluded": [],
-  "copr_repos": []
+  "packages": [
+    "gcc"
+  ]
 }

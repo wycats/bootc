@@ -16,11 +16,26 @@ use std::os::unix::fs::PermissionsExt;
 /// Clears `XDG_STATE_HOME` so that tests setting `HOME` get proper isolation.
 ///
 /// Tests that modify state (shims, config files, etc.) should create their
-/// own `TempDir` and set `HOME` via `.env("HOME", temp.path())` for isolation.
+/// own `TempDir` and use `bkt_isolated(&temp)` for isolation. The helper
+/// creates a `manifests/` directory inside the temp HOME and sets
+/// `BKT_REPO_PATH` so `find_repo_path()` uses the isolated repo.
 fn bkt() -> Command {
     let mut cmd = cargo_bin_cmd!("bkt");
     cmd.env("BKT_FORCE_HOST", "1");
     cmd.env_remove("XDG_STATE_HOME");
+    cmd
+}
+
+/// Get bkt command with an isolated repo in a temp directory.
+///
+/// Creates `manifests/` inside the temp dir and sets `BKT_REPO_PATH` so
+/// `find_repo_path()` returns the temp dir instead of the real repo.
+fn bkt_isolated(temp: &assert_fs::TempDir) -> Command {
+    // Ensure manifests/ exists so find_repo_path() accepts this as a repo
+    std::fs::create_dir_all(temp.path().join("manifests")).ok();
+    let mut cmd = bkt();
+    cmd.env("HOME", temp.path());
+    cmd.env("BKT_REPO_PATH", temp.path());
     cmd
 }
 
@@ -367,19 +382,12 @@ fn repo_info_succeeds() {
 #[test]
 fn shim_add_and_list_integration() {
     let temp = assert_fs::TempDir::new().unwrap();
-
-    // Set HOME to temp dir so user config goes there
-    let home = temp.path().to_str().unwrap();
-
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .args(["shim", "add", "test-shim"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Added shim: test-shim"));
-
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .args(["shim", "list"])
         .assert()
         .success()
@@ -391,16 +399,11 @@ fn shim_add_and_list_integration() {
 #[test]
 fn shim_add_and_remove_integration() {
     let temp = assert_fs::TempDir::new().unwrap();
-    let home = temp.path().to_str().unwrap();
-
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .args(["shim", "add", "to-remove"])
         .assert()
         .success();
-
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .args(["shim", "remove", "to-remove"])
         .assert()
         .success()
@@ -412,10 +415,7 @@ fn shim_add_and_remove_integration() {
 #[test]
 fn shim_add_with_host_option() {
     let temp = assert_fs::TempDir::new().unwrap();
-    let home = temp.path().to_str().unwrap();
-
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .args(["shim", "add", "docker", "--host", "podman"])
         .assert()
         .success()
@@ -427,17 +427,12 @@ fn shim_add_with_host_option() {
 #[test]
 fn extension_add_and_list_integration() {
     let temp = assert_fs::TempDir::new().unwrap();
-    let home = temp.path().to_str().unwrap();
-
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .args(["extension", "add", "test@example.com"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Added to manifest: test@example.com"));
-
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .args(["extension", "list"])
         .assert()
         .success()
@@ -449,10 +444,7 @@ fn extension_add_and_list_integration() {
 #[test]
 fn extension_remove_nonexistent_shows_message() {
     let temp = assert_fs::TempDir::new().unwrap();
-    let home = temp.path().to_str().unwrap();
-
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .args(["extension", "remove", "nonexistent@example.com"])
         .assert()
         .success()
@@ -464,12 +456,10 @@ fn extension_remove_nonexistent_shows_message() {
 #[test]
 fn gsetting_set_adds_to_manifest() {
     let temp = assert_fs::TempDir::new().unwrap();
-    let home = temp.path().to_str().unwrap();
 
     // Setting will be added to manifest even if apply fails
     // Use --force to skip validation in test environment
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .args(["gsetting", "set", "org.test.schema", "key", "value", "--force"])
         .assert()
         .success()
@@ -481,10 +471,7 @@ fn gsetting_set_adds_to_manifest() {
 #[test]
 fn gsetting_list_shows_empty_when_no_settings() {
     let temp = assert_fs::TempDir::new().unwrap();
-    let home = temp.path().to_str().unwrap();
-
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .args(["gsetting", "list"])
         .assert()
         .success();
@@ -524,7 +511,6 @@ fn dev_help_shows_install_subcommand() {
 #[test]
 fn dev_install_updates_toolbox_manifest() {
     let temp = assert_fs::TempDir::new().unwrap();
-    let home = temp.path().to_str().unwrap();
 
     // Stub `dnf` so the command can run in CI without installing packages.
     let bin_dir = temp.child("bin");
@@ -538,8 +524,7 @@ fn dev_install_updates_toolbox_manifest() {
     let path = std::env::var("PATH").unwrap_or_default();
     let new_path = format!("{}:{}", bin_dir.path().display(), path);
 
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .env("PATH", new_path)
         .args(["--no-delegate", "dev", "install", "--force", "gcc"])
         .assert()
@@ -547,13 +532,11 @@ fn dev_install_updates_toolbox_manifest() {
 
     let toolbox_manifest = temp
         .path()
-        .join(".config")
-        .join("bootc")
+        .join("manifests")
         .join("toolbox-packages.json");
     let system_manifest = temp
         .path()
-        .join(".config")
-        .join("bootc")
+        .join("manifests")
         .join("system-packages.json");
 
     let content = std::fs::read_to_string(&toolbox_manifest).unwrap();
@@ -566,10 +549,7 @@ fn dev_install_updates_toolbox_manifest() {
 #[test]
 fn dev_status_shows_empty_manifest() {
     let temp = assert_fs::TempDir::new().unwrap();
-    let home = temp.path().to_str().unwrap();
-
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .args(["--no-delegate", "dev", "status"])
         .assert()
         .success()
@@ -582,10 +562,7 @@ fn dev_status_shows_empty_manifest() {
 #[test]
 fn dev_diff_shows_empty_manifest() {
     let temp = assert_fs::TempDir::new().unwrap();
-    let home = temp.path().to_str().unwrap();
-
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .args(["--no-delegate", "dev", "diff"])
         .assert()
         .success()
@@ -597,10 +574,7 @@ fn dev_diff_shows_empty_manifest() {
 #[test]
 fn dev_sync_shows_empty_manifest() {
     let temp = assert_fs::TempDir::new().unwrap();
-    let home = temp.path().to_str().unwrap();
-
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .args(["--no-delegate", "dev", "sync"])
         .assert()
         .success()
@@ -776,10 +750,7 @@ fn base_assume_requires_package() {
 #[test]
 fn gsetting_set_rejects_invalid_schema() {
     let temp = assert_fs::TempDir::new().unwrap();
-    let home = temp.path().to_str().unwrap();
-
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .args(["gsetting", "set", "nonexistent.schema.xyz", "key", "value"])
         .assert()
         .failure()
@@ -794,10 +765,7 @@ fn gsetting_set_rejects_invalid_schema() {
 #[test]
 fn gsetting_set_force_bypasses_validation() {
     let temp = assert_fs::TempDir::new().unwrap();
-    let home = temp.path().to_str().unwrap();
-
-    bkt()
-        .env("HOME", home)
+    bkt_isolated(&temp)
         .args([
             "gsetting",
             "set",

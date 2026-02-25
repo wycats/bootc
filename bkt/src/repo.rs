@@ -127,6 +127,14 @@ fn read_cache_from(cache: &std::path::Path) -> Option<PathBuf> {
 /// When found via cwd walk-up, the path is cached so future invocations
 /// from any directory can find the repo.
 pub fn find_repo_path() -> Result<PathBuf> {
+    // Step 0: Explicit override (for testing and CI)
+    if let Ok(explicit) = std::env::var("BKT_REPO_PATH") {
+        let path = PathBuf::from(explicit);
+        if path.join("manifests").is_dir() {
+            return Ok(path);
+        }
+    }
+
     // Step 1: Walk up from cwd
     if let Ok(found) = find_repo_path_from_cwd() {
         write_cache(&found);
