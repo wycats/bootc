@@ -581,7 +581,7 @@ fn emit_script_stages(lines: &mut Vec<String>, upstreams: &UpstreamManifest) {
                 let mut parents: Vec<String> = outputs
                     .iter()
                     .map(|o| {
-                        let p = if o.ends_with('/') {
+                        if o.ends_with('/') {
                             format!("/out{}", o)
                         } else {
                             let path = std::path::Path::new(o.as_str());
@@ -589,8 +589,7 @@ fn emit_script_stages(lines: &mut Vec<String>, upstreams: &UpstreamManifest) {
                                 "/out{}",
                                 path.parent().unwrap_or(std::path::Path::new("/")).display()
                             )
-                        };
-                        p
+                        }
                     })
                     .collect();
                 parents.sort();
