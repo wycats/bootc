@@ -13,10 +13,9 @@ use std::os::unix::fs::PermissionsExt;
 /// Sets `BKT_FORCE_HOST=1` to bypass host delegation, ensuring tests run
 /// deterministically regardless of whether they execute in a container/toolbox.
 ///
-/// Clears `XDG_STATE_HOME` so that tests setting `HOME` get proper isolation
-/// for the ephemeral manifest (which checks `XDG_STATE_HOME` before `HOME`).
+/// Clears `XDG_STATE_HOME` so that tests setting `HOME` get proper isolation.
 ///
-/// Tests that modify state (ephemeral manifest, shims, etc.) should create their
+/// Tests that modify state (shims, config files, etc.) should create their
 /// own `TempDir` and set `HOME` via `.env("HOME", temp.path())` for isolation.
 fn bkt() -> Command {
     let mut cmd = cargo_bin_cmd!("bkt");
@@ -374,7 +373,7 @@ fn shim_add_and_list_integration() {
 
     bkt()
         .env("HOME", home)
-        .args(["shim", "add", "test-shim", "--local"])
+        .args(["shim", "add", "test-shim"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Added shim: test-shim"));
@@ -396,13 +395,13 @@ fn shim_add_and_remove_integration() {
 
     bkt()
         .env("HOME", home)
-        .args(["shim", "add", "to-remove", "--local"])
+        .args(["shim", "add", "to-remove"])
         .assert()
         .success();
 
     bkt()
         .env("HOME", home)
-        .args(["shim", "remove", "to-remove", "--local"])
+        .args(["shim", "remove", "to-remove"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Removed shim: to-remove"));
@@ -417,7 +416,7 @@ fn shim_add_with_host_option() {
 
     bkt()
         .env("HOME", home)
-        .args(["shim", "add", "docker", "--host", "podman", "--local"])
+        .args(["shim", "add", "docker", "--host", "podman"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Added shim: docker"));
@@ -432,12 +431,10 @@ fn extension_add_and_list_integration() {
 
     bkt()
         .env("HOME", home)
-        .args(["extension", "add", "test@example.com", "--local"])
+        .args(["extension", "add", "test@example.com"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Added to user manifest: test@example.com",
-        ));
+        .stdout(predicate::str::contains("Added to manifest: test@example.com"));
 
     bkt()
         .env("HOME", home)
@@ -456,7 +453,7 @@ fn extension_remove_nonexistent_shows_message() {
 
     bkt()
         .env("HOME", home)
-        .args(["extension", "remove", "nonexistent@example.com", "--local"])
+        .args(["extension", "remove", "nonexistent@example.com"])
         .assert()
         .success()
         .stdout(predicate::str::contains("not found"));
@@ -473,18 +470,10 @@ fn gsetting_set_adds_to_manifest() {
     // Use --force to skip validation in test environment
     bkt()
         .env("HOME", home)
-        .args([
-            "gsetting",
-            "set",
-            "org.test.schema",
-            "key",
-            "value",
-            "--force",
-            "--local",
-        ])
+        .args(["gsetting", "set", "org.test.schema", "key", "value", "--force"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Added to user manifest"));
+        .stdout(predicate::str::contains("Added to manifest"));
 
     temp.close().unwrap();
 }
@@ -816,11 +805,10 @@ fn gsetting_set_force_bypasses_validation() {
             "key",
             "value",
             "--force",
-            "--local",
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Added to user manifest"));
+        .stdout(predicate::str::contains("Added to manifest"));
 
     temp.close().unwrap();
 }
@@ -836,243 +824,3 @@ fn flatpak_add_force_bypasses_validation() {
         .stdout(predicate::str::contains("--force"));
 }
 
-// ============================================================================
-// Local command tests
-// ============================================================================
-
-#[test]
-fn local_help_shows_subcommands() {
-    bkt()
-        .args(["local", "--help"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("list"))
-        .stdout(predicate::str::contains("commit"))
-        .stdout(predicate::str::contains("clear"))
-        .stdout(predicate::str::contains("path"));
-}
-
-#[test]
-fn local_list_empty_shows_message() {
-    let temp = assert_fs::TempDir::new().unwrap();
-
-    bkt()
-        .env("HOME", temp.path())
-        .args(["local", "list"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("No local changes tracked"));
-}
-
-#[test]
-fn local_clear_empty_shows_message() {
-    let temp = assert_fs::TempDir::new().unwrap();
-
-    bkt()
-        .env("HOME", temp.path())
-        .args(["local", "clear", "--force"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("No local changes to clear"));
-}
-
-#[test]
-fn local_commit_empty_shows_message() {
-    let temp = assert_fs::TempDir::new().unwrap();
-
-    bkt()
-        .env("HOME", temp.path())
-        .args(["local", "commit"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("No local changes to commit"));
-}
-
-#[test]
-fn local_path_shows_path() {
-    let temp = assert_fs::TempDir::new().unwrap();
-
-    bkt()
-        .env("HOME", temp.path())
-        .args(["local", "path"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(".local/state/bkt/ephemeral.json"));
-}
-
-#[test]
-fn local_list_with_changes() {
-    let temp = assert_fs::TempDir::new().unwrap();
-
-    // First make a local change using shim add
-    let shims_dir = temp.child(".local/toolbox/shims");
-    shims_dir.create_dir_all().unwrap();
-
-    bkt()
-        .env("HOME", temp.path())
-        .args(["shim", "add", "my-shim", "--local"])
-        .assert()
-        .success();
-
-    // Then verify it shows in local list
-    bkt()
-        .env("HOME", temp.path())
-        .args(["local", "list"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("my-shim"))
-        .stdout(predicate::str::contains("shim"));
-}
-
-#[test]
-fn local_list_json_format() {
-    let temp = assert_fs::TempDir::new().unwrap();
-
-    // First make a local change
-    let shims_dir = temp.child(".local/toolbox/shims");
-    shims_dir.create_dir_all().unwrap();
-
-    bkt()
-        .env("HOME", temp.path())
-        .args(["shim", "add", "json-test", "--local"])
-        .assert()
-        .success();
-
-    // Then verify JSON format works
-    bkt()
-        .env("HOME", temp.path())
-        .args(["local", "list", "--format", "json"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("\"identifier\": \"json-test\""))
-        .stdout(predicate::str::contains("\"domain\": \"shim\""));
-}
-
-#[test]
-fn local_clear_removes_changes() {
-    let temp = assert_fs::TempDir::new().unwrap();
-
-    // First make a local change
-    let shims_dir = temp.child(".local/toolbox/shims");
-    shims_dir.create_dir_all().unwrap();
-
-    bkt()
-        .env("HOME", temp.path())
-        .args(["shim", "add", "to-clear", "--local"])
-        .assert()
-        .success();
-
-    // Verify it's tracked
-    bkt()
-        .env("HOME", temp.path())
-        .args(["local", "list"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("to-clear"));
-
-    // Clear it
-    bkt()
-        .env("HOME", temp.path())
-        .args(["local", "clear", "--force"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Cleared"));
-
-    // Verify it's gone
-    bkt()
-        .env("HOME", temp.path())
-        .args(["local", "list"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("No local changes tracked"));
-}
-
-#[test]
-fn local_commit_dry_run_shows_changes() {
-    let temp = assert_fs::TempDir::new().unwrap();
-
-    // First make a local change
-    let shims_dir = temp.child(".local/toolbox/shims");
-    shims_dir.create_dir_all().unwrap();
-
-    bkt()
-        .env("HOME", temp.path())
-        .args(["shim", "add", "commit-test", "--local"])
-        .assert()
-        .success();
-
-    // Dry-run commit should show what would happen
-    bkt()
-        .env("HOME", temp.path())
-        .args(["local", "commit", "--dry-run"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Would commit"))
-        .stdout(predicate::str::contains("commit-test"));
-}
-
-#[test]
-fn local_commit_with_message_dry_run() {
-    let temp = assert_fs::TempDir::new().unwrap();
-
-    // First make a local change
-    let shims_dir = temp.child(".local/toolbox/shims");
-    shims_dir.create_dir_all().unwrap();
-
-    bkt()
-        .env("HOME", temp.path())
-        .args(["shim", "add", "msg-test", "--local"])
-        .assert()
-        .success();
-
-    // Dry-run commit with custom message
-    bkt()
-        .env("HOME", temp.path())
-        .args(["local", "commit", "--dry-run", "-m", "My custom message"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("My custom message"));
-}
-
-#[test]
-fn local_list_domain_filter() {
-    let temp = assert_fs::TempDir::new().unwrap();
-
-    // Make changes in different domains
-    let shims_dir = temp.child(".local/toolbox/shims");
-    shims_dir.create_dir_all().unwrap();
-
-    bkt()
-        .env("HOME", temp.path())
-        .args(["shim", "add", "shim-change", "--local"])
-        .assert()
-        .success();
-
-    // Create extension config directory
-    let config_dir = temp.child(".config/bootc");
-    config_dir.create_dir_all().unwrap();
-
-    bkt()
-        .env("HOME", temp.path())
-        .args(["extension", "add", "filter-ext@test.com", "--local"])
-        .assert()
-        .success();
-
-    // Filter by shim domain should only show shim
-    bkt()
-        .env("HOME", temp.path())
-        .args(["local", "list", "--domain", "shim"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("shim-change"))
-        .stdout(predicate::str::contains("filter-ext").not());
-
-    // Filter by extension domain should only show extension
-    bkt()
-        .env("HOME", temp.path())
-        .args(["local", "list", "--domain", "extension"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("filter-ext"))
-        .stdout(predicate::str::contains("shim-change").not());
-}

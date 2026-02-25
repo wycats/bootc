@@ -390,11 +390,11 @@ Rejected because:
 ## Resolved Questions
 
 1. **Should `bkt extension add` default to enabled or match current state?**
-   
+
    **Resolution**: Default to enabled (string format). Following command-punning principles, `bkt extension add` is for adding new extensions to track, and new extensions are typically added because you want to use them. If you want to capture the current state of an already-installed extension, use `bkt capture`.
 
 2. **Should we support `--enabled-only` flag for capture?**
-   
+
    **Resolution**: No. The purpose of capture is to capture the current state accurately. Capturing "installed but disabled" is valuable information—it means "I have this extension available but choose not to use it." Omitting disabled extensions would lose that intent.
 
 3. **What about per-extension settings (gsettings under the extension's schema)?**

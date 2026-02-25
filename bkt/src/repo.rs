@@ -176,7 +176,10 @@ fn find_repo_path_from_cwd() -> Result<PathBuf> {
         }
     }
 
-    anyhow::bail!("No manifests/ directory found above {}", current_dir.display())
+    anyhow::bail!(
+        "No manifests/ directory found above {}",
+        current_dir.display()
+    )
 }
 
 /// Get the path to the manifests directory.
@@ -308,10 +311,7 @@ mod tests {
         // read_cache_from should return None and clean up the stale file
         let cached = read_cache_from(&cache_file);
         assert!(cached.is_none());
-        assert!(
-            !cache_file.exists(),
-            "stale cache file should be removed"
-        );
+        assert!(!cache_file.exists(), "stale cache file should be removed");
     }
 
     #[test]
@@ -326,7 +326,10 @@ mod tests {
 
         // The temp file should not exist after write
         let tmp_path = tempdir.path().join("bkt").join(".repo-path.tmp");
-        assert!(!tmp_path.exists(), "temp file should be cleaned up by rename");
+        assert!(
+            !tmp_path.exists(),
+            "temp file should be cleaned up by rename"
+        );
 
         // The cache file should have the full path
         let content = std::fs::read_to_string(&cache_file).unwrap();

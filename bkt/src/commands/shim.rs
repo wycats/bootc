@@ -7,8 +7,6 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
-use crate::context::PrMode;
-use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{Shim, ShimsManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
@@ -158,7 +156,7 @@ pub fn run(args: ShimArgs, plan: &ExecutionPlan) -> Result<()> {
             };
 
             // Load and update manifest
-            if plan.should_update_local_manifest() {
+            if plan.should_update_manifest() {
                 let mut manifest = ShimsManifest::load_repo()?;
                 let is_update = manifest.find(&name).is_some();
                 manifest.upsert(shim);
@@ -171,17 +169,6 @@ pub fn run(args: ShimArgs, plan: &ExecutionPlan) -> Result<()> {
                 }
             } else if plan.dry_run {
                 Output::dry_run(format!("Would add shim: {} -> {}", name, host_cmd));
-            }
-
-            // Record ephemeral change if using --local (not in dry-run mode)
-            if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run {
-                let mut ephemeral = EphemeralManifest::load_validated()?;
-                ephemeral.record(EphemeralChange::new(
-                    ChangeDomain::Shim,
-                    ChangeAction::Add,
-                    &name,
-                ));
-                ephemeral.save()?;
             }
 
             // Sync shims to disk (shims are always synced locally, not host-dependent)
@@ -209,7 +196,7 @@ pub fn run(args: ShimArgs, plan: &ExecutionPlan) -> Result<()> {
             }
         }
         ShimAction::Remove { name } => {
-            if plan.should_update_local_manifest() {
+            if plan.should_update_manifest() {
                 let mut manifest = ShimsManifest::load_repo()?;
                 if manifest.remove(&name) {
                     save_repo_manifest(&manifest)?;
@@ -219,17 +206,6 @@ pub fn run(args: ShimArgs, plan: &ExecutionPlan) -> Result<()> {
                 }
             } else if plan.dry_run {
                 Output::dry_run(format!("Would remove shim: {}", name));
-            }
-
-            // Record ephemeral change if using --local (not in dry-run mode)
-            if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run {
-                let mut ephemeral = EphemeralManifest::load_validated()?;
-                ephemeral.record(EphemeralChange::new(
-                    ChangeDomain::Shim,
-                    ChangeAction::Remove,
-                    &name,
-                ));
-                ephemeral.save()?;
             }
 
             // Sync shims to disk

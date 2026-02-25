@@ -1,8 +1,6 @@
 //! GSettings command implementation.
 
 use crate::command_runner::{CommandOptions, CommandRunner};
-use crate::context::PrMode;
-use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{GSetting, GSettingsManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
@@ -112,7 +110,7 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
             // Check if already set to same value
             let existing = manifest.find(&schema, &key);
 
-            if plan.should_update_local_manifest() {
+            if plan.should_update_manifest() {
                 if let Some(e) = existing {
                     if e.value == value {
                         Output::info(format!(
@@ -143,30 +141,13 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
                     };
                     manifest.upsert(setting);
                     manifest.save_repo()?;
-                    Output::success(format!(
-                        "Added to manifest: {}.{} = {}",
-                        schema, key, value
-                    ));
+                    Output::success(format!("Added to manifest: {}.{} = {}", schema, key, value));
                 }
             } else if plan.dry_run {
                 Output::dry_run(format!(
                     "Would set in manifest: {}.{} = {}",
                     schema, key, value
                 ));
-            }
-
-            // Record ephemeral change if using --local (not in dry-run mode)
-            if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run {
-                let mut ephemeral = EphemeralManifest::load_validated()?;
-                ephemeral.record(
-                    EphemeralChange::new(
-                        ChangeDomain::Gsetting,
-                        ChangeAction::Update,
-                        format!("{}.{}", schema, key),
-                    )
-                    .with_metadata("value", &value),
-                );
-                ephemeral.save()?;
             }
 
             // Apply immediately
@@ -208,7 +189,7 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
         GSettingAction::Unset { schema, key } => {
             let mut manifest = GSettingsManifest::load_repo()?;
 
-            if plan.should_update_local_manifest() {
+            if plan.should_update_manifest() {
                 if manifest.remove(&schema, &key) {
                     manifest.save_repo()?;
                     Output::success(format!("Removed from manifest: {}.{}", schema, key));
@@ -217,17 +198,6 @@ pub fn run(args: GSettingArgs, plan: &ExecutionPlan) -> Result<()> {
                 }
             } else if plan.dry_run {
                 Output::dry_run(format!("Would remove from manifest: {}.{}", schema, key));
-            }
-
-            // Record ephemeral change if using --local (not in dry-run mode)
-            if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run {
-                let mut ephemeral = EphemeralManifest::load_validated()?;
-                ephemeral.record(EphemeralChange::new(
-                    ChangeDomain::Gsetting,
-                    ChangeAction::Remove,
-                    format!("{}.{}", schema, key),
-                ));
-                ephemeral.save()?;
             }
 
             // Reset to default

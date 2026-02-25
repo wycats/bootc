@@ -12,27 +12,37 @@ id = "eliminate-user-manifest-layer-rfc-0052"
 [[plan.goals.tasks]]
 id = "convert-commands"
 title = "PER 2: Convert all commands/*.rs to read/write repo manifests (flatpak, extension, gsetting, shim, homebrew, system, status, profile)"
-status = "pending"
+status = "completed"
+completed_at = "2026-02-25T00:59:51.731989169+00:00"
+completion_log = "Converted 90 call sites across 11 command files. Added load_repo/save_repo/PROJECT_PATH to 7 manifest types. Net -91 lines."
 
 [[plan.goals.tasks]]
 id = "convert-subsystem"
 title = "PER 3: Convert subsystem.rs SubsystemContext and trait impls to repo-only"
-status = "pending"
+status = "completed"
+completed_at = "2026-02-25T01:08:18.843855373+00:00"
+completion_log = "Converted 20 merge sites across 7 subsystems. Removed user_config_dir from SubsystemContext. Net -41 lines."
 
 [[plan.goals.tasks]]
 id = "cleanup-merge-code"
 title = "PER 4: Remove load_user/save_user/merged/SYSTEM_PATH from manifest types and dead tests"
-status = "pending"
+status = "completed"
+completed_at = "2026-02-25T01:23:13.971161717+00:00"
+completion_log = "Removed 651 lines of dead code: SYSTEM_PATH, load_system, load_user, save_user, user_path, merged, merge from 8 manifest modules. 16 merge tests removed. 286 tests pass."
 
 [[plan.goals.tasks]]
 id = "repo-path-caching"
 title = "PER 1: Add repo path caching to find_repo_path()"
-status = "pending"
+status = "completed"
+completed_at = "2026-02-25T00:08:19.646436341+00:00"
+completion_log = "Implemented three-step fallback: cwd walk-up, cache read, error. Cache at ~/.local/state/bkt/repo-path. Verified working from /tmp."
 
 [[plan.goals.tasks]]
 id = "migrate-command"
 title = "PER 5: Add bkt migrate manifests command"
-status = "pending"
+status = "completed"
+completed_at = "2026-02-25T01:59:52.176178004+00:00"
+completion_log = "Added bkt migrate manifests command. Handles conflicts, force overwrite, dry-run. Review fix: uses global --dry-run, gates dir creation on !dry_run."
 
 [[plan.goals]]
 id = "bootstrap-clones-repo-rfc-0053"
@@ -58,7 +68,7 @@ id = "eliminate-ephemeral-manifest-and-local-rfc-0054"
 [[plan.goals.tasks]]
 id = "remove-ephemeral"
 title = "Remove ephemeral manifest module and --local flag"
-status = "pending"
+status = "in-progress"
 
 [[plan.goals.tasks]]
 id = "remove-local-subcommand"

@@ -17,9 +17,6 @@
 //! # Add a package to the image (creates PR)
 //! bkt system add virt-manager
 //!
-//! # Add without creating PR (for batch changes)
-//! bkt system add --local virt-manager
-//!
 //! # Capture layered packages to manifest
 //! bkt system capture --apply
 //! ```
@@ -29,7 +26,6 @@ use crate::containerfile::{
     ContainerfileEditor, Section, generate_copr_repos, generate_system_packages,
 };
 use crate::context::CommandDomain;
-use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::manifest::{CoprRepo, SystemPackagesManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
@@ -201,7 +197,7 @@ fn handle_add(
     }
 
     // Update local manifest
-    if plan.should_update_local_manifest() {
+    if plan.should_update_manifest() {
         for pkg in &new_packages {
             manifest.add_package(pkg.clone());
         }
@@ -214,22 +210,6 @@ fn handle_add(
         for pkg in &new_packages {
             Output::dry_run(format!("Would add to manifest: {}", pkg));
         }
-    }
-
-    // Record ephemeral changes if using --local (not in dry-run mode)
-    if plan.pr_mode == crate::context::PrMode::LocalOnly
-        && !plan.dry_run
-        && !new_packages.is_empty()
-    {
-        let mut ephemeral = EphemeralManifest::load_validated()?;
-        for pkg in &new_packages {
-            ephemeral.record(EphemeralChange::new(
-                ChangeDomain::Dnf,
-                ChangeAction::Add,
-                pkg,
-            ));
-        }
-        ephemeral.save()?;
     }
 
     // NOTE: No local execution! System packages are deferred until image rebuild.
@@ -274,7 +254,7 @@ fn handle_remove(packages: Vec<String>, plan: &ExecutionPlan) -> Result<()> {
     for pkg in &packages {
         let in_manifest = manifest.find_package(pkg);
 
-        if plan.should_update_local_manifest() {
+        if plan.should_update_manifest() {
             if manifest.remove_package(pkg) {
                 Output::success(format!("Removed from manifest: {}", pkg));
             } else {
@@ -289,21 +269,8 @@ fn handle_remove(packages: Vec<String>, plan: &ExecutionPlan) -> Result<()> {
         }
     }
 
-    if plan.should_update_local_manifest() {
+    if plan.should_update_manifest() {
         save_repo_manifest(&manifest)?;
-    }
-
-    // Record ephemeral changes if using --local (not in dry-run mode)
-    if plan.pr_mode == crate::context::PrMode::LocalOnly && !plan.dry_run {
-        let mut ephemeral = EphemeralManifest::load_validated()?;
-        for pkg in &packages {
-            ephemeral.record(EphemeralChange::new(
-                ChangeDomain::Dnf,
-                ChangeAction::Remove,
-                pkg,
-            ));
-        }
-        ephemeral.save()?;
     }
 
     // NOTE: No local execution! Removal is deferred until image rebuild.
@@ -353,7 +320,8 @@ fn handle_list(format: String, runner: &dyn CommandRunner) -> Result<()> {
     }
 
     // Table format
-    if manifest.packages.is_empty() && manifest.groups.is_empty() && manifest.copr_repos.is_empty() {
+    if manifest.packages.is_empty() && manifest.groups.is_empty() && manifest.copr_repos.is_empty()
+    {
         Output::info("No packages in manifest.");
         return Ok(());
     }
@@ -433,16 +401,13 @@ fn handle_copr_enable(name: String, plan: &ExecutionPlan) -> Result<()> {
     let mut manifest = SystemPackagesManifest::load_repo()?;
 
     // Check if already enabled
-    if manifest
-        .find_copr(&name)
-        .is_some_and(|c| c.enabled)
-    {
+    if manifest.find_copr(&name).is_some_and(|c| c.enabled) {
         Output::info(format!("COPR already enabled: {}", name));
         return Ok(());
     }
 
     // Update manifest
-    if plan.should_update_local_manifest() {
+    if plan.should_update_manifest() {
         manifest.upsert_copr(CoprRepo::new(name.clone()));
         save_repo_manifest(&manifest)?;
         Output::success(format!("Added to manifest: {}", name));
@@ -487,7 +452,7 @@ fn handle_copr_disable(name: String, plan: &ExecutionPlan) -> Result<()> {
     }
 
     // Update manifest
-    if plan.should_update_local_manifest() && manifest.remove_copr(&name) {
+    if plan.should_update_manifest() && manifest.remove_copr(&name) {
         save_repo_manifest(&manifest)?;
         Output::success(format!("Removed from manifest: {}", name));
     } else if plan.dry_run && in_manifest {

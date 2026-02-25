@@ -116,7 +116,6 @@ impl GnomeExtensionsManifest {
         self.save(&repo.join(Self::PROJECT_PATH))
     }
 
-
     /// Check if an extension exists.
     pub fn contains(&self, uuid: &str) -> bool {
         self.extensions.iter().any(|ext| ext.id() == uuid)
@@ -270,7 +269,6 @@ mod tests {
         assert!(!manifest.remove("nonexistent@example.com"));
     }
 
-
     #[test]
     fn manifest_serialization_roundtrip() {
         let mut manifest = GnomeExtensionsManifest::default();
@@ -326,5 +324,4 @@ mod tests {
         let item = manifest.get("disabled@example.com").unwrap();
         assert!(!item.enabled());
     }
-
 }

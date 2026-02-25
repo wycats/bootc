@@ -10,7 +10,6 @@ pub mod changelog;
 pub mod diff;
 pub mod distrobox;
 pub mod dnf;
-pub mod ephemeral;
 pub mod extension;
 pub mod external_repos;
 pub mod fetchbin;

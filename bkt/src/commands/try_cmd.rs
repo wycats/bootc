@@ -166,7 +166,7 @@ fn handle_remove(package: &str, plan: &ExecutionPlan) -> Result<()> {
 
         let branch = format!("try/{}", sanitize_branch_component(package));
         commit_try_changes(runner, repo_path, &branch, &changed_files, &title, &body)?;
-    } else if plan.should_update_local_manifest() {
+    } else if plan.should_update_manifest() {
         if plan.dry_run {
             Output::dry_run(format!("Would remove {} from manifest", package));
         } else {
@@ -274,7 +274,7 @@ fn handle_try_install(packages: &[String], plan: &ExecutionPlan) -> Result<()> {
     }
 
     // Update local manifest if allowed (manifest).
-    if plan.should_update_local_manifest() && !plan.dry_run {
+    if plan.should_update_manifest() && !plan.dry_run {
         for pkg in &new_packages {
             repo_manifest.add_package(pkg.clone());
         }

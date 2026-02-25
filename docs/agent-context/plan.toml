@@ -110,7 +110,8 @@ ulid = "01KJ8ZVBE15C0AG9E4TPN3GZQV"
 [[epochs.phases.goals]]
 id = "eliminate-user-manifest-layer-rfc-0052"
 label = "Eliminate user manifest layer (RFC-0052)"
-status = "pending"
+status = "completed"
+completion_log = "All 5 PERs complete. Repo path caching, 110 call sites converted, 651 lines of dead merge code removed, migrate command added. 286 tests pass."
 ulid = "01KJ90AC3NRF4PP0EVJ6AHZRP3"
 
 [[epochs.phases.goals]]

@@ -365,7 +365,6 @@ impl FlatpakAppsManifest {
         self.save(&repo.join(Self::PROJECT_PATH))
     }
 
-
     /// Find an app by id.
     pub fn find(&self, id: &str) -> Option<&FlatpakApp> {
         self.apps.iter().find(|a| a.id == id)
@@ -412,7 +411,6 @@ pub struct FlatpakRemotesManifest {
 }
 
 impl FlatpakRemotesManifest {
-
     /// Load a manifest from a path.
     pub fn load(path: &Path) -> Result<Self> {
         if !path.exists() {
@@ -432,7 +430,6 @@ impl FlatpakRemotesManifest {
         })?;
         Ok(manifest)
     }
-
 
     /// Load from current working directory (for manifest repos).
     pub fn load_cwd() -> Result<Self> {
@@ -563,7 +560,6 @@ mod tests {
         let mut manifest = FlatpakAppsManifest::default();
         assert!(!manifest.remove("nonexistent"));
     }
-
 
     #[test]
     fn manifest_serialization_roundtrip() {

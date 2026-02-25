@@ -1,9 +1,7 @@
 //! GNOME extension command implementation.
 
 use crate::command_runner::{CommandOptions, CommandRunner};
-use crate::context::PrMode;
 use crate::manifest::GnomeExtensionsManifest;
-use crate::manifest::ephemeral::{ChangeAction, ChangeDomain, EphemeralChange, EphemeralManifest};
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
 use crate::plan::{
@@ -128,7 +126,7 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
             // Pre-compute state before any manifest modifications
             let already_in_manifest = manifest.contains(&uuid);
 
-            if plan.should_update_local_manifest() {
+            if plan.should_update_manifest() {
                 if already_in_manifest {
                     Output::warning(format!("Extension already in manifest: {}", uuid));
                 } else {
@@ -138,17 +136,6 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
                 }
             } else if plan.dry_run {
                 Output::dry_run(format!("Would add to manifest: {}", uuid));
-            }
-
-            // Record ephemeral change if using --local (not in dry-run mode)
-            if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run && !already_in_manifest {
-                let mut ephemeral = EphemeralManifest::load_validated()?;
-                ephemeral.record(EphemeralChange::new(
-                    ChangeDomain::Extension,
-                    ChangeAction::Add,
-                    &uuid,
-                ));
-                ephemeral.save()?;
             }
 
             // Enable if installed
@@ -190,7 +177,7 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
         ExtensionAction::Remove { uuid } => {
             let mut manifest = GnomeExtensionsManifest::load_repo()?;
 
-            if plan.should_update_local_manifest() {
+            if plan.should_update_manifest() {
                 if manifest.remove(&uuid) {
                     manifest.save_repo()?;
                     Output::success(format!("Removed from manifest: {}", uuid));
@@ -199,17 +186,6 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
                 }
             } else if plan.dry_run {
                 Output::dry_run(format!("Would remove from manifest: {}", uuid));
-            }
-
-            // Record ephemeral change if using --local (not in dry-run mode)
-            if plan.pr_mode == PrMode::LocalOnly && !plan.dry_run {
-                let mut ephemeral = EphemeralManifest::load_validated()?;
-                ephemeral.record(EphemeralChange::new(
-                    ChangeDomain::Extension,
-                    ChangeAction::Remove,
-                    &uuid,
-                ));
-                ephemeral.save()?;
             }
 
             // Disable if enabled
@@ -252,7 +228,7 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
                 return Ok(());
             }
 
-            if plan.should_update_local_manifest() {
+            if plan.should_update_manifest() {
                 // Convert to disabled object format
                 if manifest.set_enabled(&uuid, false) {
                     manifest.save_repo()?;
@@ -261,10 +237,7 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
                     // Not in manifest as object, add as disabled
                     manifest.add_disabled(uuid.clone());
                     manifest.save_repo()?;
-                    Output::success(format!(
-                        "Added '{}' as disabled in manifest",
-                        uuid
-                    ));
+                    Output::success(format!("Added '{}' as disabled in manifest", uuid));
                 }
             } else if plan.dry_run {
                 Output::dry_run(format!("Would disable '{}' in manifest", uuid));
@@ -289,7 +262,7 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
                 return Ok(());
             }
 
-            if plan.should_update_local_manifest() {
+            if plan.should_update_manifest() {
                 // Set enabled=true (or remove disabled override)
                 if manifest.set_enabled(&uuid, true) {
                     manifest.save_repo()?;
@@ -356,7 +329,10 @@ pub fn run(args: ExtensionArgs, plan: &ExecutionPlan) -> Result<()> {
                 }
 
                 Output::blank();
-                Output::info(format!("{} extensions in manifest", merged.extensions.len()));
+                Output::info(format!(
+                    "{} extensions in manifest",
+                    merged.extensions.len()
+                ));
             }
         }
         ExtensionAction::Sync => {

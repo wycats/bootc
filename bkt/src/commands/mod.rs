@@ -18,7 +18,6 @@ pub mod fetchbin;
 pub mod flatpak;
 pub mod gsetting;
 pub mod homebrew;
-pub mod local;
 pub mod migrate;
 pub mod profile;
 pub mod repo;
