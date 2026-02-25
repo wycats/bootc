@@ -6,8 +6,7 @@
 //!
 //! # Key Benefits
 //!
-//! - **Single source of truth**: Manifest loading (with proper system + user merging)
-//!   happens in one place per subsystem
+//! - **Single source of truth**: Manifest loading happens in one place per subsystem
 //! - **Unified enumeration**: The registry provides a single list of all subsystems
 //! - **Reduced duplication**: Commands like `apply` and `capture` can iterate
 //!   over the registry instead of hard-coding subsystem lists
@@ -119,7 +118,7 @@ pub trait Subsystem: Send + Sync {
     /// The lifecycle tier for this subsystem.
     fn tier(&self) -> SubsystemTier;
 
-    /// Load the merged manifest (system defaults + user overrides).
+    /// Load the manifest for this subsystem.
     ///
     /// This is THE canonical way to get the effective manifest.
     /// The merge semantics are defined once here, not scattered across code.
@@ -252,7 +251,7 @@ fn build_drift_report(mut expected: Vec<String>, mut actual: Vec<String>) -> Dri
 /// Context for subsystem manifest loading.
 ///
 /// Provides paths to the various locations where manifests can be found.
-/// Subsystems use this to locate their system and user manifest files.
+/// Subsystems use this to locate their manifest files.
 #[derive(Debug, Clone)]
 pub struct SubsystemContext {
     /// Repository root (where manifests/ lives).

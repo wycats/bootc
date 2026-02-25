@@ -1,7 +1,6 @@
 //! GNOME extension manifest types.
 
 use anyhow::{Context, Result};
-use directories::BaseDirs;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -73,8 +72,6 @@ impl From<&str> for ExtensionItem {
 impl GnomeExtensionsManifest {
     /// Project manifest path (relative to workspace root).
     pub const PROJECT_PATH: &'static str = "manifests/gnome-extensions.json";
-    /// System manifest path (baked into image).
-    pub const SYSTEM_PATH: &'static str = "/usr/share/bootc-bootstrap/gnome-extensions.json";
 
     /// Load a manifest from a path.
     pub fn load(path: &PathBuf) -> Result<Self> {
@@ -107,38 +104,10 @@ impl GnomeExtensionsManifest {
         Ok(())
     }
 
-    /// Get the user manifest path.
-    ///
-    /// Respects `$HOME` environment variable for test isolation.
-    pub fn user_path() -> PathBuf {
-        // Prefer $HOME for test isolation, fall back to BaseDirs
-        let config_dir = std::env::var("HOME")
-            .ok()
-            .map(|h| PathBuf::from(h).join(".config"))
-            .or_else(|| BaseDirs::new().map(|d| d.config_dir().to_path_buf()))
-            .unwrap_or_else(|| PathBuf::from(".config"));
-        config_dir.join("bootc").join("gnome-extensions.json")
-    }
-
-    /// Load the system manifest.
-    pub fn load_system() -> Result<Self> {
-        Self::load(&PathBuf::from(Self::SYSTEM_PATH))
-    }
-
     /// Load from the repository's manifests directory.
     pub fn load_repo() -> Result<Self> {
         let repo = crate::repo::find_repo_path()?;
         Self::load(&repo.join(Self::PROJECT_PATH))
-    }
-
-    /// Load the user manifest.
-    pub fn load_user() -> Result<Self> {
-        Self::load(&Self::user_path())
-    }
-
-    /// Save the user manifest.
-    pub fn save_user(&self) -> Result<()> {
-        self.save(&Self::user_path())
     }
 
     /// Save to the repository's manifests directory.
@@ -147,32 +116,6 @@ impl GnomeExtensionsManifest {
         self.save(&repo.join(Self::PROJECT_PATH))
     }
 
-    /// Merge another manifest into this one.
-    pub fn merge(&mut self, other: GnomeExtensionsManifest) {
-        let mut seen = std::collections::HashMap::new();
-
-        // Index existing extensions
-        for ext in self.extensions.drain(..) {
-            seen.insert(ext.id().to_string(), ext);
-        }
-
-        // Merge incoming extensions (override existing)
-        for ext in other.extensions {
-            seen.insert(ext.id().to_string(), ext);
-        }
-
-        // Rebuild list sorted by ID
-        let mut extensions: Vec<ExtensionItem> = seen.into_values().collect();
-        extensions.sort_by(|a, b| a.id().cmp(b.id()));
-        self.extensions = extensions;
-    }
-
-    /// Merge system and user manifests (union, sorted).
-    pub fn merged(system: &Self, user: &Self) -> Self {
-        let mut cloned = system.clone();
-        cloned.merge(user.clone());
-        cloned
-    }
 
     /// Check if an extension exists.
     pub fn contains(&self, uuid: &str) -> bool {
@@ -327,49 +270,6 @@ mod tests {
         assert!(!manifest.remove("nonexistent@example.com"));
     }
 
-    #[test]
-    fn manifest_merged_combines_extensions() {
-        let mut system = GnomeExtensionsManifest::default();
-        system.add("system-ext@example.com");
-
-        let mut user = GnomeExtensionsManifest::default();
-        user.add("user-ext@example.com");
-
-        let merged = GnomeExtensionsManifest::merged(&system, &user);
-
-        assert_eq!(merged.extensions.len(), 2);
-        assert!(merged.contains("system-ext@example.com"));
-        assert!(merged.contains("user-ext@example.com"));
-    }
-
-    #[test]
-    fn manifest_merged_deduplicates() {
-        let mut system = GnomeExtensionsManifest::default();
-        system.add("shared@example.com");
-
-        let mut user = GnomeExtensionsManifest::default();
-        user.add("shared@example.com");
-
-        let merged = GnomeExtensionsManifest::merged(&system, &user);
-
-        assert_eq!(merged.extensions.len(), 1);
-    }
-
-    #[test]
-    fn manifest_merged_is_sorted() {
-        let mut system = GnomeExtensionsManifest::default();
-        system.add("z@example.com");
-
-        let mut user = GnomeExtensionsManifest::default();
-        user.add("a@example.com");
-
-        let merged = GnomeExtensionsManifest::merged(&system, &user);
-
-        assert_eq!(
-            merged.list(),
-            vec!["a@example.com".to_string(), "z@example.com".to_string()]
-        );
-    }
 
     #[test]
     fn manifest_serialization_roundtrip() {
@@ -427,46 +327,4 @@ mod tests {
         assert!(!item.enabled());
     }
 
-    #[test]
-    fn manifest_user_disabled_overrides_system_enabled() {
-        // System manifest has extension as plain UUID (enabled by default)
-        let mut system = GnomeExtensionsManifest::default();
-        system.add("burn-my-windows@schneegans.github.com");
-
-        // Verify system thinks it's enabled
-        assert!(
-            system
-                .get("burn-my-windows@schneegans.github.com")
-                .unwrap()
-                .enabled()
-        );
-
-        // User manifest has same extension explicitly disabled
-        let mut user = GnomeExtensionsManifest::default();
-        user.add(ExtensionItem::Object(ExtensionConfig {
-            id: "burn-my-windows@schneegans.github.com".to_string(),
-            enabled: false,
-        }));
-
-        // Verify user thinks it's disabled
-        assert!(
-            !user
-                .get("burn-my-windows@schneegans.github.com")
-                .unwrap()
-                .enabled()
-        );
-
-        // Merge: user should override system
-        let merged = GnomeExtensionsManifest::merged(&system, &user);
-
-        // Should still have exactly one entry
-        assert_eq!(merged.extensions.len(), 1);
-
-        // Critical: merged result should be DISABLED (user overrides system)
-        let merged_item = merged.get("burn-my-windows@schneegans.github.com").unwrap();
-        assert!(
-            !merged_item.enabled(),
-            "User disabled state should override system enabled state"
-        );
-    }
 }

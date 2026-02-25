@@ -59,8 +59,6 @@ pub struct SystemdServicesManifest {
 impl SystemdServicesManifest {
     /// Project manifest path (relative to workspace root).
     pub const PROJECT_PATH: &'static str = "manifests/systemd-services.json";
-    /// System manifest path (baked into image).
-    pub const SYSTEM_PATH: &'static str = "/usr/share/bootc-bootstrap/systemd-services.json";
 
     /// Load a manifest from a path.
     pub fn load(path: &PathBuf) -> Result<Self> {
@@ -111,16 +109,4 @@ impl SystemdServicesManifest {
         self.save(&repo.join(Self::PROJECT_PATH))
     }
 
-    /// Merge system and user manifests (user overrides by service name).
-    pub fn merged(system: &Self, user: &Self) -> Self {
-        let mut services = system.services.clone();
-        for (name, state) in &user.services {
-            services.insert(name.clone(), *state);
-        }
-
-        Self {
-            schema: None,
-            services,
-        }
-    }
 }

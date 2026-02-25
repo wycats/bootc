@@ -1,10 +1,8 @@
 //! GSettings manifest types.
 
 use anyhow::{Context, Result};
-use directories::BaseDirs;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -40,8 +38,6 @@ pub struct GSettingsManifest {
 impl GSettingsManifest {
     /// Project manifest path (relative to workspace root).
     pub const PROJECT_PATH: &'static str = "manifests/gsettings.json";
-    /// System manifest path (baked into image).
-    pub const SYSTEM_PATH: &'static str = "/usr/share/bootc-bootstrap/gsettings.json";
 
     /// Load a manifest from a path.
     pub fn load(path: &PathBuf) -> Result<Self> {
@@ -70,38 +66,10 @@ impl GSettingsManifest {
         Ok(())
     }
 
-    /// Get the user manifest path.
-    ///
-    /// Respects `$HOME` environment variable for test isolation.
-    pub fn user_path() -> PathBuf {
-        // Prefer $HOME for test isolation, fall back to BaseDirs
-        let config_dir = std::env::var("HOME")
-            .ok()
-            .map(|h| PathBuf::from(h).join(".config"))
-            .or_else(|| BaseDirs::new().map(|d| d.config_dir().to_path_buf()))
-            .unwrap_or_else(|| PathBuf::from(".config"));
-        config_dir.join("bootc").join("gsettings.json")
-    }
-
-    /// Load the system manifest.
-    pub fn load_system() -> Result<Self> {
-        Self::load(&PathBuf::from(Self::SYSTEM_PATH))
-    }
-
     /// Load from the repository's manifests directory.
     pub fn load_repo() -> Result<Self> {
         let repo = crate::repo::find_repo_path()?;
         Self::load(&repo.join(Self::PROJECT_PATH))
-    }
-
-    /// Load the user manifest.
-    pub fn load_user() -> Result<Self> {
-        Self::load(&Self::user_path())
-    }
-
-    /// Save the user manifest.
-    pub fn save_user(&self) -> Result<()> {
-        self.save(&Self::user_path())
     }
 
     /// Save to the repository's manifests directory.
@@ -110,25 +78,6 @@ impl GSettingsManifest {
         self.save(&repo.join(Self::PROJECT_PATH))
     }
 
-    /// Merge system and user manifests (user overrides by schema+key).
-    pub fn merged(system: &Self, user: &Self) -> Self {
-        let mut by_key: HashMap<String, GSetting> = HashMap::new();
-
-        for setting in &system.settings {
-            by_key.insert(setting.unique_key(), setting.clone());
-        }
-        for setting in &user.settings {
-            by_key.insert(setting.unique_key(), setting.clone());
-        }
-
-        let mut settings: Vec<GSetting> = by_key.into_values().collect();
-        settings.sort_by_key(|a| a.unique_key());
-
-        Self {
-            schema: None,
-            settings,
-        }
-    }
 
     /// Find a setting by schema and key.
     pub fn find(&self, schema: &str, key: &str) -> Option<&GSetting> {
@@ -292,59 +241,6 @@ mod tests {
         assert!(!manifest.remove("nonexistent.schema", "key"));
     }
 
-    #[test]
-    fn manifest_merged_combines_settings() {
-        let mut system = GSettingsManifest::default();
-        system
-            .settings
-            .push(sample_setting("system.schema", "key", "sys-val"));
-
-        let mut user = GSettingsManifest::default();
-        user.settings
-            .push(sample_setting("user.schema", "key", "user-val"));
-
-        let merged = GSettingsManifest::merged(&system, &user);
-
-        assert_eq!(merged.settings.len(), 2);
-        assert!(merged.find("system.schema", "key").is_some());
-        assert!(merged.find("user.schema", "key").is_some());
-    }
-
-    #[test]
-    fn manifest_merged_user_overrides_system() {
-        let mut system = GSettingsManifest::default();
-        system
-            .settings
-            .push(sample_setting("shared.schema", "key", "system-value"));
-
-        let mut user = GSettingsManifest::default();
-        user.settings
-            .push(sample_setting("shared.schema", "key", "user-value"));
-
-        let merged = GSettingsManifest::merged(&system, &user);
-
-        assert_eq!(merged.settings.len(), 1);
-        assert_eq!(
-            merged.find("shared.schema", "key").unwrap().value,
-            "user-value"
-        );
-    }
-
-    #[test]
-    fn manifest_merged_is_sorted() {
-        let mut system = GSettingsManifest::default();
-        system
-            .settings
-            .push(sample_setting("z.schema", "key", "val"));
-
-        let mut user = GSettingsManifest::default();
-        user.settings.push(sample_setting("a.schema", "key", "val"));
-
-        let merged = GSettingsManifest::merged(&system, &user);
-
-        assert_eq!(merged.settings[0].schema, "a.schema");
-        assert_eq!(merged.settings[1].schema, "z.schema");
-    }
 
     #[test]
     fn manifest_serialization_roundtrip() {

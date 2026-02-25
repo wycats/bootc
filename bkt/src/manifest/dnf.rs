@@ -1,7 +1,6 @@
 //! System packages (DNF/RPM) manifest types.
 
 use anyhow::{Context, Result};
-use directories::BaseDirs;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -61,8 +60,6 @@ pub struct SystemPackagesManifest {
 impl SystemPackagesManifest {
     /// Project manifest path (relative to workspace root).
     pub const PROJECT_PATH: &'static str = "manifests/system-packages.json";
-    /// System manifest path (baked into image).
-    pub const SYSTEM_PATH: &'static str = "/usr/share/bootc-bootstrap/system-packages.json";
 
     /// Load a manifest from a path.
     pub fn load(path: &PathBuf) -> Result<Self> {
@@ -101,23 +98,6 @@ impl SystemPackagesManifest {
         Ok(())
     }
 
-    /// Get the user manifest path.
-    ///
-    /// Respects `$HOME` environment variable for test isolation.
-    pub fn user_path() -> PathBuf {
-        let config_dir = std::env::var("HOME")
-            .ok()
-            .map(|h| PathBuf::from(h).join(".config"))
-            .or_else(|| BaseDirs::new().map(|d| d.config_dir().to_path_buf()))
-            .unwrap_or_else(|| PathBuf::from(".config"));
-        config_dir.join("bootc").join("system-packages.json")
-    }
-
-    /// Load the system manifest.
-    pub fn load_system() -> Result<Self> {
-        Self::load(&PathBuf::from(Self::SYSTEM_PATH))
-    }
-
     /// Load from the repository's manifests directory.
     ///
     /// For Containerfile generation and other operations that need
@@ -127,49 +107,6 @@ impl SystemPackagesManifest {
         Self::load(&repo_path.join(Self::PROJECT_PATH))
     }
 
-    /// Load the user manifest.
-    pub fn load_user() -> Result<Self> {
-        Self::load(&Self::user_path())
-    }
-
-    /// Save the user manifest.
-    pub fn save_user(&self) -> Result<()> {
-        self.save(&Self::user_path())
-    }
-
-    /// Merge system and user manifests.
-    pub fn merged(system: &Self, user: &Self) -> Self {
-        let mut packages: Vec<String> = system.packages.clone();
-        packages.extend(user.packages.clone());
-        packages.sort();
-        packages.dedup();
-
-        let mut groups: Vec<String> = system.groups.clone();
-        groups.extend(user.groups.clone());
-        groups.sort();
-        groups.dedup();
-
-        let mut excluded: Vec<String> = system.excluded.clone();
-        excluded.extend(user.excluded.clone());
-        excluded.sort();
-        excluded.dedup();
-
-        let mut copr_repos: Vec<CoprRepo> = system.copr_repos.clone();
-        for user_copr in &user.copr_repos {
-            if !copr_repos.iter().any(|c| c.name == user_copr.name) {
-                copr_repos.push(user_copr.clone());
-            }
-        }
-        copr_repos.sort_by(|a, b| a.name.cmp(&b.name));
-
-        Self {
-            schema: None,
-            packages,
-            groups,
-            excluded,
-            copr_repos,
-        }
-    }
 
     /// Find a package by name.
     pub fn find_package(&self, name: &str) -> bool {
@@ -274,30 +211,6 @@ mod tests {
         assert!(manifest.find_copr("atim/starship").is_none());
     }
 
-    #[test]
-    fn manifest_merged_combines_packages() {
-        let mut system = SystemPackagesManifest::default();
-        system.add_package("htop".to_string());
-
-        let mut user = SystemPackagesManifest::default();
-        user.add_package("neovim".to_string());
-
-        let merged = SystemPackagesManifest::merged(&system, &user);
-        assert_eq!(merged.packages, vec!["htop", "neovim"]);
-    }
-
-    #[test]
-    fn manifest_merged_deduplicates() {
-        let mut system = SystemPackagesManifest::default();
-        system.add_package("htop".to_string());
-
-        let mut user = SystemPackagesManifest::default();
-        user.add_package("htop".to_string());
-        user.add_package("neovim".to_string());
-
-        let merged = SystemPackagesManifest::merged(&system, &user);
-        assert_eq!(merged.packages, vec!["htop", "neovim"]);
-    }
 
     #[test]
     fn manifest_load_nonexistent_returns_default() {

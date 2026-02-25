@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 use directories::BaseDirs;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -39,8 +38,6 @@ pub struct ShimsManifest {
 impl ShimsManifest {
     /// Project manifest path (relative to workspace root).
     pub const PROJECT_PATH: &'static str = "manifests/host-shims.json";
-    /// System manifest path (baked into image).
-    pub const SYSTEM_PATH: &'static str = "/usr/share/bootc-bootstrap/host-shims.json";
 
     /// Load a manifest from a path.
     pub fn load(path: &PathBuf) -> Result<Self> {
@@ -67,19 +64,6 @@ impl ShimsManifest {
         Ok(())
     }
 
-    /// Get the user manifest path.
-    ///
-    /// Respects `$HOME` environment variable for test isolation.
-    pub fn user_path() -> PathBuf {
-        // Prefer $HOME for test isolation, fall back to BaseDirs
-        let config_dir = std::env::var("HOME")
-            .ok()
-            .map(|h| PathBuf::from(h).join(".config"))
-            .or_else(|| BaseDirs::new().map(|d| d.config_dir().to_path_buf()))
-            .unwrap_or_else(|| PathBuf::from(".config"));
-        config_dir.join("bootc").join("host-shims.json")
-    }
-
     /// Get the shims directory path.
     ///
     /// Respects `$HOME` environment variable for test isolation.
@@ -93,11 +77,6 @@ impl ShimsManifest {
         home.join(".local").join("toolbox").join("shims")
     }
 
-    /// Load the system manifest.
-    pub fn load_system() -> Result<Self> {
-        Self::load(&PathBuf::from(Self::SYSTEM_PATH))
-    }
-
     /// Load from the repository's manifests directory.
     ///
     /// This is used for containerfile generation where we need to read
@@ -107,38 +86,6 @@ impl ShimsManifest {
         Self::load(&repo_path.join(Self::PROJECT_PATH))
     }
 
-    /// Load the user manifest.
-    pub fn load_user() -> Result<Self> {
-        Self::load(&Self::user_path())
-    }
-
-    /// Save the user manifest.
-    pub fn save_user(&self) -> Result<()> {
-        self.save(&Self::user_path())
-    }
-
-    /// Merge system and user manifests (user overrides system by name).
-    pub fn merged(system: &Self, user: &Self) -> Self {
-        let mut by_name: HashMap<String, Shim> = HashMap::new();
-
-        // Add system shims first
-        for shim in &system.shims {
-            by_name.insert(shim.name.clone(), shim.clone());
-        }
-
-        // User shims override
-        for shim in &user.shims {
-            by_name.insert(shim.name.clone(), shim.clone());
-        }
-
-        let mut shims: Vec<Shim> = by_name.into_values().collect();
-        shims.sort_by(|a, b| a.name.cmp(&b.name));
-
-        Self {
-            schema: None,
-            shims,
-        }
-    }
 
     /// Find a shim by name.
     pub fn find(&self, name: &str) -> Option<&Shim> {
@@ -262,50 +209,6 @@ mod tests {
         assert!(!manifest.remove("nonexistent"));
     }
 
-    #[test]
-    fn manifest_merged_combines_system_and_user() {
-        let mut system = ShimsManifest::default();
-        system.shims.push(sample_shim("podman"));
-        system.shims.push(sample_shim("flatpak"));
-
-        let mut user = ShimsManifest::default();
-        user.shims.push(sample_shim("custom"));
-
-        let merged = ShimsManifest::merged(&system, &user);
-
-        assert_eq!(merged.shims.len(), 3);
-        assert!(merged.find("podman").is_some());
-        assert!(merged.find("flatpak").is_some());
-        assert!(merged.find("custom").is_some());
-    }
-
-    #[test]
-    fn manifest_merged_user_overrides_system() {
-        let mut system = ShimsManifest::default();
-        system.shims.push(sample_shim("podman"));
-
-        let mut user = ShimsManifest::default();
-        user.shims.push(sample_shim_with_host("podman", "docker"));
-
-        let merged = ShimsManifest::merged(&system, &user);
-
-        assert_eq!(merged.shims.len(), 1);
-        assert_eq!(merged.find("podman").unwrap().host_cmd(), "docker");
-    }
-
-    #[test]
-    fn manifest_merged_result_is_sorted() {
-        let mut system = ShimsManifest::default();
-        system.shims.push(sample_shim("zsh"));
-
-        let mut user = ShimsManifest::default();
-        user.shims.push(sample_shim("bash"));
-
-        let merged = ShimsManifest::merged(&system, &user);
-
-        let names: Vec<_> = merged.shims.iter().map(|s| s.name.as_str()).collect();
-        assert_eq!(names, vec!["bash", "zsh"]);
-    }
 
     #[test]
     fn manifest_serialization_roundtrip() {

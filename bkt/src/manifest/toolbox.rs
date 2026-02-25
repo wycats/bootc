@@ -6,7 +6,6 @@
 
 use super::dnf::{CoprRepo, SystemPackagesManifest};
 use anyhow::{Context, Result};
-use directories::BaseDirs;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -82,33 +81,10 @@ impl ToolboxPackagesManifest {
         Ok(())
     }
 
-    /// Get the user manifest path.
-    ///
-    /// Toolbox manifest is stored in user config only (no system manifest).
-    /// Respects `$HOME` environment variable for test isolation.
-    pub fn user_path() -> PathBuf {
-        let config_dir = std::env::var("HOME")
-            .ok()
-            .map(|h| PathBuf::from(h).join(".config"))
-            .or_else(|| BaseDirs::new().map(|d| d.config_dir().to_path_buf()))
-            .unwrap_or_else(|| PathBuf::from(".config"));
-        config_dir.join("bootc").join("toolbox-packages.json")
-    }
-
-    /// Load the user manifest.
-    pub fn load_user() -> Result<Self> {
-        Self::load(&Self::user_path())
-    }
-
     /// Load from the repository's manifests directory.
     pub fn load_repo() -> Result<Self> {
         let repo = crate::repo::find_repo_path()?;
         Self::load(&repo.join(Self::PROJECT_PATH))
-    }
-
-    /// Save the user manifest.
-    pub fn save_user(&self) -> Result<()> {
-        self.save(&Self::user_path())
     }
 
     /// Save to the repository's manifests directory.
