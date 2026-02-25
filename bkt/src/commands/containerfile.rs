@@ -115,7 +115,10 @@ impl Plannable for ContainerfileSyncCommand {
         // Load manifests (read-only)
         let manifest = load_repo_manifest()?;
         let system_config = SystemConfigManifest::load()?;
-        let has_external_rpms = load_has_external_rpms()?;
+
+        // External RPMs are installed in per-package stages (RFC-0050),
+        // not in the final dnf install. So has_external_rpms is always false here.
+        let has_external_rpms = false;
 
         let mut section_updates = Vec::new();
         let mut warnings = Vec::new();
