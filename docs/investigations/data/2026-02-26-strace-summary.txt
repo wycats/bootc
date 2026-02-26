@@ -1,0 +1,27 @@
+# strace summary from bootc upgrade failure (2026-02-25)
+# Command: sudo /tmp/strace -ff -e trace=link,linkat -o /tmp/bootc-trace bootc upgrade
+# 65 trace files produced
+
+## Large layers (>1000 linkat calls)
+PID 182602: 21840 linkat calls, 0 xattrs links to 40/a6050fa7c302...
+PID 182676: 170542 linkat calls, 1 xattrs links to 40/a6050fa7c302...
+PID 202914: 452120 linkat calls, 65535 xattrs links to 40/a6050fa7c302...
+
+## Last 10 linkat calls before failure (PID 202914)
+linkat(21, "fe/bee9385ba901fdb22f578be6caee4456f93546e42c0a3b0913e62daa781148.file", 39, "544bf4bb6661ed94b159af746605fd2bd184871f0245e330e364515a437724.file", 0) = 0
+linkat(21, "40/a6050fa7c302b1ddd48335ab09bd70f106a0a91d7a011b24c6e4673e6a4a5f.file", 39, "544bf4bb6661ed94b159af746605fd2bd184871f0245e330e364515a437724.file-xattrs-link", 0) = 0
+linkat(21, "da/e856c37c059bb4856c7b8bf1822325e2915f8b0450cba8b5f23d499a35fc93.file", 39, "54bc60bccbc436dd192b3208c8cc435a05c56e1c246fc59582bbf6c6cf4a8a.file", 0) = 0
+linkat(21, "40/a6050fa7c302b1ddd48335ab09bd70f106a0a91d7a011b24c6e4673e6a4a5f.file", 39, "54bc60bccbc436dd192b3208c8cc435a05c56e1c246fc59582bbf6c6cf4a8a.file-xattrs-link", 0) = 0
+linkat(21, "99/b070cc65474c84e26b22698ba0acb68b6ac9917b69572354927f1bbcd63b32.file", 39, "54ca40f9480e6218203037c40f4de4b65afc30dc26774e4eed46e6f9749dca.file", 0) = 0
+linkat(21, "40/a6050fa7c302b1ddd48335ab09bd70f106a0a91d7a011b24c6e4673e6a4a5f.file", 39, "54ca40f9480e6218203037c40f4de4b65afc30dc26774e4eed46e6f9749dca.file-xattrs-link", 0) = 0
+linkat(21, "f8/266ceeb64d0ef1346cb54d415d468ead625e717ca63763c9a27ecc290fa148.file", 39, "54e6dc1e5c743ee1c9b509f0219c718d7bf80d693cee07b39da6256e8b0071.file", 0) = 0
+linkat(21, "40/a6050fa7c302b1ddd48335ab09bd70f106a0a91d7a011b24c6e4673e6a4a5f.file", 39, "54e6dc1e5c743ee1c9b509f0219c718d7bf80d693cee07b39da6256e8b0071.file-xattrs-link", 0) = 0
+linkat(21, "f3/4b80ffc11d00120d03d111df7e56b23f062c6e0dbf4abe15c49ec45bc3dc97.file", 39, "5596856829e61c684d0f66f3d203e0197f1dd0ab81c7f6f821b66de70c0187.file", 0) = 0
+linkat(21, "40/a6050fa7c302b1ddd48335ab09bd70f106a0a91d7a011b24c6e4673e6a4a5f.file", 39, "5596856829e61c684d0f66f3d203e0197f1dd0ab81c7f6f821b66de70c0187.file-xattrs-link", 0) = -1 EMLINK (Too many links)
+
+## xattrs object content
+
+00000000: 7365 6375 7269 7479 2e73 656c 696e 7578  security.selinux
+00000010: 0073 7973 7465 6d5f 753a 6f62 6a65 6374  .system_u:object
+00000020: 5f72 3a75 7372 5f74 3a73 3000 112d       _r:usr_t:s0..-
+# 46 bytes: SELinux label system_u:object_r:usr_t:s0
