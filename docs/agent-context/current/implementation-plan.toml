@@ -98,22 +98,30 @@ id = "consolidate-copy-link-layers-to-fix-btrfs-hardlink-limit"
 [[plan.goals.tasks]]
 id = "consolidate-keyd-build-outputs-into-single-copy-link"
 title = "Consolidate keyd build outputs into single COPY --link"
-status = "in-progress"
+status = "completed"
+completed_at = "2026-02-26T23:19:31.443664243+00:00"
+completion_log = "Already done: keyd outputs collected to /out/ in build stage, single COPY --from in collect-outputs"
 
 [[plan.goals.tasks]]
 id = "consolidate-whitesur-build-outputs-into-single-copy-link"
 title = "Consolidate whitesur build outputs into single COPY --link"
-status = "pending"
+status = "completed"
+completed_at = "2026-02-26T23:19:31.600815494+00:00"
+completion_log = "Already done: whitesur outputs collected to /out/, single COPY --from in collect-outputs"
 
 [[plan.goals.tasks]]
 id = "consolidate-wrapper-build-outputs-into-single-copy-link"
 title = "Consolidate wrapper build outputs into single COPY --link"
-status = "pending"
+status = "completed"
+completed_at = "2026-02-26T23:19:31.721246406+00:00"
+completion_log = "Already done: wrappers compile to /out/usr/bin/, single COPY --from in collect-outputs"
 
 [[plan.goals.tasks]]
 id = "verify-total-copy-link-count-is-under-btrfs-limit"
 title = "Verify total COPY --link count is under btrfs limit"
-status = "pending"
+status = "completed"
+completed_at = "2026-02-26T23:19:31.862345953+00:00"
+completion_log = "Verified: removed --link from install stages (PR #138), bootc upgrade succeeds. See docs/investigations/2026-02-26-btrfs-xattrs-hardlink-limit.md"
 
 [[plan.goals.tasks]]
 id = "redesign-wrapper-build-cargo-generated-source-ci-check"

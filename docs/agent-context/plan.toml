@@ -134,6 +134,14 @@ label = "Consolidate COPY --link layers to fix btrfs hardlink limit"
 status = "pending"
 ulid = "01KJB37MC4Y26C8MDPT4K62QFF"
 
+[[epochs.phases]]
+id = "01kje40epfnq8rrc0c8d999dqd"
+title = "Multi-Machine Support (Mac VM)"
+status = "pending"
+goals = []
+kind = "regular"
+ulid = "01KJE40EPFNQ8RRC0C8D999DQD"
+
 [[epochs]]
 id = "01khsgx7xfrxe8q3y878hy24cw"
 title = "Housekeeping & Quality"
