@@ -324,3 +324,13 @@ created_at = "2026-02-26T22:57:00.637Z"
 source = "user"
 tags = []
 related_tasks = []
+
+[[ideas]]
+id = "22e014bb-3bc2-4acf-88de-74737ade1c2b"
+title = "PR workflow gap: need bkt status to show uncommitted manifest changes, and bkt pr to batch-submit them. Current state has no prompting or tooling for the commit/PR step after manifest changes."
+description = ""
+status = "new"
+created_at = "2026-02-26T22:59:59.113Z"
+source = "user"
+tags = []
+related_tasks = []
