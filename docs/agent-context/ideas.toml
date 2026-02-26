@@ -1,3 +1,7 @@
+[meta]
+schema_version = "1.0.0"
+exo_version = "0.1.0"
+
 [[ideas]]
 id = "bc00284e-c4b5-48a7-9e67-cc338c1f0ae3"
 title = "bkt init - New distribution scaffolding"
@@ -291,6 +295,32 @@ source = "user"
 tags = ["decision"]
 related_tasks = []
 
-[meta]
-schema_version = "1.0.0"
-exo_version = "0.1.0"
+[[ideas]]
+id = "97d34e1a-5a2c-474f-8afb-23c99a5459ec"
+title = "Wrapper build system: use cargo, generated-and-checked, no hand-editing (see RFC-0047)"
+description = ""
+status = "new"
+created_at = "2026-02-26T22:57:00.364Z"
+source = "user"
+tags = []
+related_tasks = []
+
+[[ideas]]
+id = "7b6462f5-4048-4935-bd4b-cab8b95fe3b9"
+title = "Multi-machine support: Mac VM (Fedora Silverblue ARM in VMware Fusion), per-machine manifests, variants"
+description = ""
+status = "new"
+created_at = "2026-02-26T22:57:00.500Z"
+source = "user"
+tags = []
+related_tasks = []
+
+[[ideas]]
+id = "76bf481e-9d9d-4355-a73b-990287130114"
+title = "Add --pr flag to CLI (RFC-0054 gap: default is no-PR but no way to opt into PR creation)"
+description = ""
+status = "new"
+created_at = "2026-02-26T22:57:00.637Z"
+source = "user"
+tags = []
+related_tasks = []

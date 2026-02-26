@@ -114,6 +114,11 @@ status = "pending"
 id = "verify-total-copy-link-count-is-under-btrfs-limit"
 title = "Verify total COPY --link count is under btrfs limit"
 status = "pending"
+
+[[plan.goals.tasks]]
+id = "redesign-wrapper-build-cargo-generated-source-ci-check"
+title = "Redesign wrapper build: cargo, generated source, CI check"
+status = "pending"
 # Goals contain tasks. Use 'exo-add-task' to add tasks to goals.
 
 
