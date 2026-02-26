@@ -231,10 +231,10 @@ FROM base AS image
 # No kernel arguments configured
 # === END KERNEL_ARGUMENTS ===
 
-# Import installed files from install-* stages (COPY --link for layer independence)
-COPY --link --from=install-code / /
-COPY --link --from=install-microsoft-edge / /
-COPY --link --from=install-bundled / /
+# Import installed files from install-* stages (no --link to avoid xattrs hardlink limit)
+COPY --from=install-code / /
+COPY --from=install-microsoft-edge / /
+COPY --from=install-bundled / /
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \

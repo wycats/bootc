@@ -469,18 +469,19 @@ fn emit_install_copies(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
         .any(|r| r.layer_group == LayerGroup::Bundled);
 
     lines.push(
-        "# Import installed files from install-* stages (COPY --link for layer independence)"
+        "# Import installed files from install-* stages (no --link to avoid xattrs hardlink limit)"
             .to_string(),
     );
 
-    // Independent packages get their own COPY --link
+    // No --link: each COPY merges into the previous layer, keeping total
+    // OCI layer count low. This avoids the btrfs 65,535 hardlink limit
+    // for shared xattrs objects during ostree import.
     for repo in &independent {
-        lines.push(format!("COPY --link --from=install-{} / /", repo.name));
+        lines.push(format!("COPY --from=install-{} / /", repo.name));
     }
 
-    // Bundled packages share one merged layer
     if has_bundled {
-        lines.push("COPY --link --from=install-bundled / /".to_string());
+        lines.push("COPY --from=install-bundled / /".to_string());
     }
 }
 
