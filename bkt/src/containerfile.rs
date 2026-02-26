@@ -740,16 +740,14 @@ fn emit_consolidated_run(
     }
 }
 
-/// Emit ARG-gated optional feature conditionals in the image stage.
-///
-/// Each optional feature gets its own ARG + RUN if [...] block because
-/// the ARG must precede the RUN that references it.
 /// Emit the `FROM scratch AS collect-outputs` stage.
 ///
-/// Gathers upstream fetch/build outputs, config, and wrappers into a single
-/// stage so the final image can import them with one COPY instruction.
-/// This reduces the OCI layer count to stay under btrfs hardlink limits
-/// in containers/storage.
+/// Gathers upstream fetch/build outputs, config, and wrappers into a
+/// collector stage. The final image imports the result with a single
+/// `COPY --from=collect-outputs / /`, producing one OCI layer regardless
+/// of how many COPY instructions the collector stage contains internally.
+/// This reduces the total OCI layer count to stay under btrfs hardlink
+/// limits in containers/storage.
 fn emit_collect_outputs(
     lines: &mut Vec<String>,
     upstreams: &UpstreamManifest,
@@ -757,7 +755,7 @@ fn emit_collect_outputs(
 ) {
     lines.push("".to_string());
     lines.push(section_header(
-        "Output collector (merges upstream + config + wrappers into single layer)",
+        "Output collector (imported as single layer by final image)",
     ));
     lines.push("FROM scratch AS collect-outputs".to_string());
     lines.push("".to_string());
@@ -841,11 +839,11 @@ fn emit_image_assembly(lines: &mut Vec<String>, input: &ContainerfileGeneratorIn
     emit_cleanup(lines);
     lines.push("".to_string());
 
-    // Import all upstream outputs, config, and wrappers in a single layer.
-    // These are gathered into collect-outputs to minimize OCI layer count
-    // (btrfs hardlink limit in containers/storage).
+    // Import all upstream outputs, config, and wrappers as one OCI layer.
+    // The collect-outputs stage gathers them; this COPY produces a single
+    // layer in the final image, reducing total OCI layer count.
     lines.push(section_header(
-        "Upstream outputs + config + wrappers (single layer)",
+        "Upstream outputs + config + wrappers (from collect-outputs)",
     ));
     lines.push("COPY --from=collect-outputs / /".to_string());
     lines.push("".to_string());

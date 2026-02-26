@@ -207,7 +207,7 @@ COPY system/etc/systemd/oomd.conf.d/10-bootc-tuning.conf /etc/systemd/oomd.conf.
 COPY skel/.config/nushell/config.nu /etc/skel/.config/nushell/config.nu
 COPY skel/.config/nushell/env.nu /etc/skel/.config/nushell/env.nu
 
-# ── Output collector (merges upstream + config + wrappers into single layer) ─
+# ── Output collector (imported as single layer by final image) ───────────────
 FROM scratch AS collect-outputs
 
 COPY --from=fetch-starship /usr/bin/starship /usr/bin/starship
@@ -282,7 +282,7 @@ RUN set -eu; \
 # Clean up build-time artifacts (no longer needed after package install)
 RUN rm -rf /tmp/external-repos.json /usr/bin/bkt-build
 
-# ── Upstream outputs + config + wrappers (single layer) ──────────────────────
+# ── Upstream outputs + config + wrappers (from collect-outputs) ──────────────
 COPY --from=collect-outputs / /
 
 
