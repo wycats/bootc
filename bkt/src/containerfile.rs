@@ -304,6 +304,7 @@ pub fn generate_full_containerfile(input: &ContainerfileGeneratorInput) -> Strin
     emit_script_stages(&mut lines, &input.upstreams);
     emit_wrapper_build_stage(&mut lines, &input.image_config);
     emit_collect_config(&mut lines, &input.image_config);
+    emit_collect_outputs(&mut lines, &input.upstreams, &input.image_config);
     emit_image_assembly(&mut lines, input);
 
     let mut result = lines.join("\n");
@@ -739,10 +740,67 @@ fn emit_consolidated_run(
     }
 }
 
-/// Emit ARG-gated optional feature conditionals in the image stage.
+/// Emit the `FROM scratch AS collect-outputs` stage.
 ///
-/// Each optional feature gets its own ARG + RUN if [...] block because
-/// the ARG must precede the RUN that references it.
+/// Gathers upstream fetch/build outputs, config, and wrappers into a
+/// collector stage. The final image imports the result with a single
+/// `COPY --from=collect-outputs / /`, producing one OCI layer regardless
+/// of how many COPY instructions the collector stage contains internally.
+/// This reduces the total OCI layer count to stay under btrfs hardlink
+/// limits in containers/storage.
+fn emit_collect_outputs(
+    lines: &mut Vec<String>,
+    upstreams: &UpstreamManifest,
+    image_config: &ImageConfigManifest,
+) {
+    lines.push("".to_string());
+    lines.push(section_header(
+        "Output collector (imported as single layer by final image)",
+    ));
+    lines.push("FROM scratch AS collect-outputs".to_string());
+    lines.push("".to_string());
+
+    // Upstream fetch outputs (binary/archive)
+    let fetch_upstreams = ordered_upstreams(upstreams, |u| {
+        matches!(
+            u.install,
+            Some(InstallConfig::Binary { .. }) | Some(InstallConfig::Archive { .. })
+        )
+    });
+    for upstream in &fetch_upstreams {
+        let install = upstream.install.as_ref();
+        let outputs = upstream_outputs(install);
+        for output in outputs {
+            lines.push(format!(
+                "COPY --from=fetch-{} {} {}",
+                upstream.name, output, output
+            ));
+        }
+    }
+
+    // Upstream script/build outputs (collected in /out/)
+    let script_upstreams = ordered_upstreams(upstreams, |u| {
+        matches!(u.install, Some(InstallConfig::Script { .. }))
+    });
+    for upstream in &script_upstreams {
+        let install = upstream.install.as_ref();
+        let outputs = upstream_outputs(install);
+        let stage = script_stage_name(upstream, install.unwrap());
+        if !outputs.is_empty() {
+            lines.push(format!("COPY --from={} /out/ /", stage));
+        }
+    }
+
+    // Static config from collect-config
+    lines.push("COPY --from=collect-config / /".to_string());
+
+    // Wrapper binaries
+    let wrappers = image_config.wrappers();
+    if !wrappers.is_empty() {
+        lines.push("COPY --from=build-wrappers /out/ /".to_string());
+    }
+}
+
 fn emit_image_assembly(lines: &mut Vec<String>, input: &ContainerfileGeneratorInput) {
     lines.push("".to_string());
     lines.push(section_header("Final image assembly"));
@@ -781,18 +839,14 @@ fn emit_image_assembly(lines: &mut Vec<String>, input: &ContainerfileGeneratorIn
     emit_cleanup(lines);
     lines.push("".to_string());
 
-    emit_upstream_copies(lines, &input.upstreams);
-    lines.push("".to_string());
-
-    // Import all static config from the parallel collect-config stage
+    // Import all upstream outputs, config, and wrappers as one OCI layer.
+    // The collect-outputs stage gathers them; this COPY produces a single
+    // layer in the final image, reducing total OCI layer count.
     lines.push(section_header(
-        "Configuration overlay (from collect-config)",
+        "Upstream outputs + config + wrappers (from collect-outputs)",
     ));
-    lines.push("COPY --link --from=collect-config / /".to_string());
+    lines.push("COPY --from=collect-outputs / /".to_string());
     lines.push("".to_string());
-
-    // Memory-managed application wrappers (built Rust binaries)
-    emit_wrapper_copies(lines, &input.image_config);
 
     // Optional feature ARGs must precede the consolidated RUN
     let mut header_emitted = false;
@@ -853,54 +907,6 @@ fn emit_cleanup(lines: &mut Vec<String>) {
     );
     // Note: /tmp/rpms is cleaned up in install stages and db finalization
     lines.push("RUN rm -rf /tmp/external-repos.json /usr/bin/bkt-build".to_string());
-}
-
-fn emit_upstream_copies(lines: &mut Vec<String>, upstreams: &UpstreamManifest) {
-    lines.push(section_header("COPY upstream outputs into final image"));
-    lines.push("".to_string());
-
-    let fetch_upstreams = ordered_upstreams(upstreams, |u| {
-        matches!(
-            u.install,
-            Some(InstallConfig::Binary { .. }) | Some(InstallConfig::Archive { .. })
-        )
-    });
-
-    for upstream in &fetch_upstreams {
-        let install = upstream.install.as_ref();
-        let outputs = upstream_outputs(install);
-        for output in outputs {
-            lines.push(format!(
-                "COPY --link --from=fetch-{} {} {}",
-                upstream.name, output, output
-            ));
-        }
-    }
-
-    let script_upstreams = ordered_upstreams(upstreams, |u| {
-        matches!(u.install, Some(InstallConfig::Script { .. }))
-    });
-    if !script_upstreams.is_empty() {
-        lines.push("".to_string());
-    }
-
-    for (idx, upstream) in script_upstreams.into_iter().enumerate() {
-        if idx > 0 {
-            lines.push("".to_string());
-        }
-
-        if let Some(comment) = script_output_comment(upstream) {
-            lines.push(format!("# {}", comment));
-        }
-
-        let install = upstream.install.as_ref();
-        let outputs = upstream_outputs(install);
-        let stage = script_stage_name(upstream, install.unwrap());
-        if !outputs.is_empty() {
-            // Single-layer COPY from /out/ (outputs collected during build)
-            lines.push(format!("COPY --link --from={} /out/ /", stage));
-        }
-    }
 }
 
 fn emit_copy_files(lines: &mut Vec<String>, files: &[FileCopy]) {
@@ -979,21 +985,6 @@ fn emit_wrapper_build_stage(lines: &mut Vec<String>, image_config: &ImageConfigM
     }
 }
 
-/// Emit COPY instructions for memory-managed application wrappers.
-///
-/// Copies the compiled wrapper binaries from the build-wrappers stage
-/// into their final locations in the image.
-fn emit_wrapper_copies(lines: &mut Vec<String>, image_config: &ImageConfigManifest) {
-    let wrappers = image_config.wrappers();
-    if wrappers.is_empty() {
-        return;
-    }
-
-    lines.push("# Memory-managed application wrappers (from build-wrappers stage)".to_string());
-    lines.push("COPY --link --from=build-wrappers /out/ /".to_string());
-    lines.push("".to_string());
-}
-
 fn ordered_upstreams<F>(upstreams: &UpstreamManifest, predicate: F) -> Vec<&Upstream>
 where
     F: Fn(&Upstream) -> bool,
@@ -1060,14 +1051,6 @@ fn opt_symlink_entries(repos: &ExternalReposManifest) -> Vec<String> {
         .iter()
         .filter_map(|repo| repo.opt_path.clone())
         .collect()
-}
-
-fn script_output_comment(upstream: &Upstream) -> Option<&'static str> {
-    match upstream.name.as_str() {
-        "keyd" => Some("keyd outputs (built from source)"),
-        "whitesur-icons" => Some("WhiteSur icon theme"),
-        _ => None,
-    }
 }
 
 /// Generate the SYSTEM_PACKAGES section content from a manifest.

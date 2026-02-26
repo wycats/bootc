@@ -207,6 +207,19 @@ COPY system/etc/systemd/oomd.conf.d/10-bootc-tuning.conf /etc/systemd/oomd.conf.
 COPY skel/.config/nushell/config.nu /etc/skel/.config/nushell/config.nu
 COPY skel/.config/nushell/env.nu /etc/skel/.config/nushell/env.nu
 
+# ── Output collector (imported as single layer by final image) ───────────────
+FROM scratch AS collect-outputs
+
+COPY --from=fetch-starship /usr/bin/starship /usr/bin/starship
+COPY --from=fetch-lazygit /usr/bin/lazygit /usr/bin/lazygit
+COPY --from=fetch-getnf /usr/bin/getnf /usr/bin/getnf
+COPY --from=fetch-bibata-cursor /usr/share/icons/Bibata-Modern-Classic/ /usr/share/icons/Bibata-Modern-Classic/
+COPY --from=fetch-jetbrains-mono-nerd-font /usr/share/fonts/nerd-fonts/JetBrainsMono/ /usr/share/fonts/nerd-fonts/JetBrainsMono/
+COPY --from=build-keyd /out/ /
+COPY --from=fetch-whitesur /out/ /
+COPY --from=collect-config / /
+COPY --from=build-wrappers /out/ /
+
 # ── Final image assembly ─────────────────────────────────────────────────────
 FROM base AS image
 
@@ -269,25 +282,8 @@ RUN set -eu; \
 # Clean up build-time artifacts (no longer needed after package install)
 RUN rm -rf /tmp/external-repos.json /usr/bin/bkt-build
 
-# ── COPY upstream outputs into final image ───────────────────────────────────
-
-COPY --link --from=fetch-starship /usr/bin/starship /usr/bin/starship
-COPY --link --from=fetch-lazygit /usr/bin/lazygit /usr/bin/lazygit
-COPY --link --from=fetch-getnf /usr/bin/getnf /usr/bin/getnf
-COPY --link --from=fetch-bibata-cursor /usr/share/icons/Bibata-Modern-Classic/ /usr/share/icons/Bibata-Modern-Classic/
-COPY --link --from=fetch-jetbrains-mono-nerd-font /usr/share/fonts/nerd-fonts/JetBrainsMono/ /usr/share/fonts/nerd-fonts/JetBrainsMono/
-
-# keyd outputs (built from source)
-COPY --link --from=build-keyd /out/ /
-
-# WhiteSur icon theme
-COPY --link --from=fetch-whitesur /out/ /
-
-# ── Configuration overlay (from collect-config) ──────────────────────────────
-COPY --link --from=collect-config / /
-
-# Memory-managed application wrappers (from build-wrappers stage)
-COPY --link --from=build-wrappers /out/ /
+# ── Upstream outputs + config + wrappers (from collect-outputs) ──────────────
+COPY --from=collect-outputs / /
 
 
 # Optional host tweaks (off by default)
