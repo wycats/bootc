@@ -50,13 +50,13 @@ fn main() {
             .unwrap_or(0)
     );
 
-    // Launch via systemd-run
-    // For scopes, systemd-run becomes the parent process and waits for the child.
-    // We spawn() and exit immediately, letting systemd-run be reparented to init.
-    // This gives us fire-and-forget behavior while still getting the scope.
-    match std::process::Command::new("systemd-run")
+    // Launch via systemd-run --scope, which places the child in a systemd
+    // scope unit under the target slice. exec() replaces this process entirely,
+    // so there are no orphaned file descriptors or terminal output bleed.
+    let err = std::process::Command::new("systemd-run")
         .args([
             "--user",
+            "--quiet",
             "--slice=app-vscode.slice",
             "--scope",
             &format!("--unit={}", unit_name),
@@ -66,18 +66,10 @@ fn main() {
             target,
         ])
         .args(std::env::args().skip(1))
-        .spawn()
-    {
-        Ok(_) => {
-            // Successfully spawned - exit immediately.
-            // systemd-run will be reparented to init and manage the scope.
-            std::process::exit(0);
-        }
-        Err(e) => {
-            eprintln!("Failed to spawn systemd-run: {}", e);
-            std::process::exit(1);
-        }
-    }
+        .exec();
+
+    eprintln!("Failed to exec systemd-run: {}", err);
+    std::process::exit(1);
 }
 
 fn find_remote_cli() -> Option<String> {

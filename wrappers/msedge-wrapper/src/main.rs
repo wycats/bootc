@@ -43,6 +43,7 @@ fn main() {
     let err = std::process::Command::new("systemd-run")
         .args([
             "--user",
+            "--quiet",
             "--slice=app-msedge.slice",
             "--scope",
             &format!("--unit={}", unit_name),
