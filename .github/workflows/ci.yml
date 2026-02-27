@@ -174,6 +174,43 @@ jobs:
           fi
           echo "✓ Containerfile is up to date"
 
+  check-wrappers-current:
+    name: Check wrapper source is current
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: bkt
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bkt -> target
+          shared-key: rust-ci
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build bkt
+        run: cargo build --release
+
+      - name: Check wrapper source freshness
+        working-directory: .
+        run: |
+          echo "Checking if wrapper source matches manifest config..."
+          if ! ./bkt/target/release/bkt wrap check; then
+            echo ""
+            echo "::error::Wrapper source is out of sync with manifest!"
+            echo "Run: bkt wrap generate"
+            exit 1
+          fi
+          echo "✓ Wrapper source is up to date"
+
   validate-containerfile:
     name: Validate Containerfile syntax
     runs-on: ubuntu-latest
