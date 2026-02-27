@@ -21,41 +21,24 @@ pub struct WrapArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum WrapAction {
-    /// Generate a wrapper binary for an application
-    Generate(GenerateArgs),
+    /// Generate wrapper source files from manifest config
+    ///
+    /// Reads wrapper definitions from image-config.json and writes
+    /// the corresponding Rust source files to wrappers/*/src/main.rs.
+    /// Does not compile — the Containerfile handles compilation via rustc.
+    Generate,
 
-    /// Build all wrappers defined in the manifest
+    /// Build all wrappers locally via cargo (dev convenience)
     Build,
+
+    /// Check that committed wrapper source matches manifest config
+    ///
+    /// Exits with code 1 if any wrapper source file is out of sync.
+    /// Used by CI to enforce that generated source is always current.
+    Check,
 
     /// List configured wrappers
     List,
-}
-
-#[derive(Debug, Args)]
-pub struct GenerateArgs {
-    /// Name of the wrapper (used for unit naming and identification)
-    #[arg(long)]
-    pub name: String,
-
-    /// Path to the actual binary to wrap
-    #[arg(long)]
-    pub target: String,
-
-    /// systemd slice to run under (e.g., app-vscode.slice)
-    #[arg(long)]
-    pub slice: String,
-
-    /// Output path for the generated binary
-    #[arg(long)]
-    pub output: String,
-
-    /// Enable VS Code remote-cli passthrough detection
-    #[arg(long, default_value = "false")]
-    pub remote_cli: bool,
-
-    /// Description for the systemd scope
-    #[arg(long)]
-    pub description: Option<String>,
 }
 
 /// Configuration for a wrapper, as stored in the manifest
@@ -159,6 +142,7 @@ fn main() {{
     let err = std::process::Command::new("systemd-run")
         .args([
             "--user",
+            "--quiet",
             "--slice={slice}",
             "--scope",
             &format!("--unit={{}}", unit_name),
@@ -250,30 +234,93 @@ strip = true
 /// Execute the wrap command
 pub fn execute(args: WrapArgs) -> Result<()> {
     match args.action {
-        WrapAction::Generate(gen_args) => execute_generate(gen_args),
+        WrapAction::Generate => execute_generate(),
         WrapAction::Build => execute_build(),
+        WrapAction::Check => execute_check(),
         WrapAction::List => execute_list(),
     }
 }
 
-fn execute_generate(args: GenerateArgs) -> Result<()> {
-    let config = WrapperConfig {
-        name: args.name,
-        target: args.target,
-        slice: args.slice,
-        output: args.output,
-        remote_cli: args.remote_cli,
-        description: args.description,
-    };
-
+fn execute_generate() -> Result<()> {
     let repo_root = find_repo_path()?;
     let wrappers_dir = repo_root.join("wrappers");
+    let configs = load_wrapper_configs(&repo_root)?;
 
-    config.build(&wrappers_dir)?;
+    if configs.is_empty() {
+        Output::info("No wrappers configured in image-config.json");
+        return Ok(());
+    }
 
-    Output::success(format!("Wrapper built: wrappers/bin/{}", config.name));
+    for config in &configs {
+        let source = config.generate_source();
+        let source_path = wrappers_dir.join(&config.name).join("src").join("main.rs");
+        fs::create_dir_all(source_path.parent().unwrap())?;
+        fs::write(&source_path, &source)
+            .with_context(|| format!("Failed to write {}", source_path.display()))?;
+        Output::info(format!("Generated wrappers/{}/src/main.rs", config.name));
+    }
 
+    Output::success(format!("Generated source for {} wrapper(s)", configs.len()));
     Ok(())
+}
+
+fn execute_check() -> Result<()> {
+    let repo_root = find_repo_path()?;
+    let wrappers_dir = repo_root.join("wrappers");
+    let configs = load_wrapper_configs(&repo_root)?;
+
+    if configs.is_empty() {
+        Output::info("No wrappers configured in image-config.json");
+        return Ok(());
+    }
+
+    let mut all_match = true;
+
+    for config in &configs {
+        let expected = config.generate_source();
+        let source_path = wrappers_dir.join(&config.name).join("src").join("main.rs");
+
+        let current = match fs::read_to_string(&source_path) {
+            Ok(content) => content,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                Output::error(format!("Missing: wrappers/{}/src/main.rs", config.name));
+                all_match = false;
+                continue;
+            }
+            Err(e) => {
+                return Err(e).context(format!(
+                    "Failed to read wrappers/{}/src/main.rs",
+                    config.name
+                ));
+            }
+        };
+
+        if expected != current {
+            Output::error(format!("Out of sync: wrappers/{}/src/main.rs", config.name));
+            let exp_lines: Vec<&str> = expected.lines().collect();
+            let cur_lines: Vec<&str> = current.lines().collect();
+            let diff_count = exp_lines
+                .iter()
+                .zip(cur_lines.iter())
+                .filter(|(a, b)| a != b)
+                .count();
+            let len_diff = (exp_lines.len() as i64 - cur_lines.len() as i64).abs();
+            Output::info(format!(
+                "  {} line(s) differ, {} line(s) length difference",
+                diff_count, len_diff
+            ));
+            all_match = false;
+        }
+    }
+
+    if all_match {
+        Output::success("All wrapper source files are in sync with manifests.");
+        Ok(())
+    } else {
+        Output::error("Wrapper source has drifted from manifests.");
+        Output::info("Run `bkt wrap generate` to regenerate.");
+        std::process::exit(1);
+    }
 }
 
 fn execute_build() -> Result<()> {
@@ -344,6 +391,7 @@ mod tests {
         assert!(source.contains("systemd-run"));
         assert!(source.contains("app-test.slice"));
         assert!(source.contains("/usr/bin/test"));
+        assert!(source.contains("\"--quiet\""));
         assert!(!source.contains("VSCODE_IPC_HOOK_CLI"));
     }
 

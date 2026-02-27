@@ -11,8 +11,9 @@ fn already_in_slice(slice: &str) -> bool {
 }
 
 fn main() {
+
     // Re-entry guard: if already running inside our target slice, exec directly.
-    // Without this, VS Code's child processes (which re-invoke /usr/bin/code)
+    // Without this, child processes that re-invoke the wrapper binary
     // would each create a new systemd-run scope, causing an infinite loop.
     if already_in_slice("app-vscode.slice") {
         let err = std::process::Command::new("/usr/share/code/bin/code")
@@ -41,8 +42,7 @@ fn main() {
     }
 
     // Generate unique unit name
-    let unit_name = format!(
-        "vscode-wrapper-{}-{}",
+    let unit_name = format!("vscode-wrapper-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -50,9 +50,7 @@ fn main() {
             .unwrap_or(0)
     );
 
-    // Launch via systemd-run --scope, which places the child in a systemd
-    // scope unit under the target slice. exec() replaces this process entirely,
-    // so there are no orphaned file descriptors or terminal output bleed.
+    // Launch via systemd-run
     let err = std::process::Command::new("systemd-run")
         .args([
             "--user",
@@ -82,3 +80,4 @@ fn find_remote_cli() -> Option<String> {
     }
     None
 }
+

@@ -11,6 +11,7 @@ fn already_in_slice(slice: &str) -> bool {
 }
 
 fn main() {
+
     // Re-entry guard: if already running inside our target slice, exec directly.
     // Without this, child processes that re-invoke the wrapper binary
     // would each create a new systemd-run scope, causing an infinite loop.
@@ -30,8 +31,7 @@ fn main() {
     }
 
     // Generate unique unit name
-    let unit_name = format!(
-        "msedge-wrapper-{}-{}",
+    let unit_name = format!("msedge-wrapper-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -58,3 +58,4 @@ fn main() {
     eprintln!("Failed to exec systemd-run: {}", err);
     std::process::exit(1);
 }
+
