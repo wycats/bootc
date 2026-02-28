@@ -8,14 +8,6 @@
       "gpg_key": "https://packages.microsoft.com/keys/microsoft.asc",
       "packages": ["code", "code-insiders"],
       "layer_group": "independent"
-    },
-    {
-      "name": "1password",
-      "display_name": "1Password Stable Channel",
-      "baseurl": "https://downloads.1password.com/linux/rpm/stable/$basearch",
-      "gpg_key": "https://downloads.1password.com/linux/keys/1password.asc",
-      "packages": ["1password", "1password-cli"],
-      "opt_path": "1Password"
     }
   ]
 }

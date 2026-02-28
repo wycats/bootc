@@ -18,28 +18,14 @@ FROM base AS dl-code
 ARG CACHE_EPOCH_CODE=0
 RUN bkt-build download-rpms code
 
-FROM base AS dl-1password
-ARG CACHE_EPOCH_1PASSWORD=0
-RUN bkt-build download-rpms 1password
-
 # ── RPM install stages (per-package extraction with /opt relocation) ─────────
 
 FROM base AS install-code
 COPY --from=dl-code /rpms/ /tmp/rpms/
 RUN rpm -i --nodb --noscripts --nodeps /tmp/rpms/*.rpm && rm -rf /tmp/rpms
 
-FROM base AS install-1password
-COPY --from=dl-1password /rpms/ /tmp/rpms/
-RUN set -eu; \
-    rpm -i --nodb --noscripts --nodeps /tmp/rpms/*.rpm; \
-    mkdir -p /usr/lib/opt; \
-    if [ -d /opt/1Password ]; then cp -a /opt/1Password/. /usr/lib/opt/1Password/; rm -rf /opt/1Password; fi; \
-    rm -rf /tmp/rpms
-
-# ── Bundled packages merged stage (reduces deployment layer count) ───────────
-
-FROM scratch AS install-bundled
-COPY --from=install-1password / /
+# NOTE: 1Password desktop app is x86_64-only. Use 1password-cli via dnf or
+# the macOS 1Password app with browser extension for password management.
 
 # ── Upstream fetch stages (parallel, each installs one upstream entry) ───────
 
@@ -207,7 +193,6 @@ FROM base AS image
 
 # Import installed files from install-* stages (no --link to avoid xattrs hardlink limit)
 COPY --from=install-code / /
-COPY --from=install-bundled / /
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
@@ -236,20 +221,12 @@ RUN dnf install -y \
 # No systemd units configured
 # === END SYSTEMD_UNITS ===
 
-# Create systemd tmpfiles rule to symlink /var/opt contents from /usr/lib/opt
-RUN printf '%s\n' \
-    '# Symlink /opt contents from immutable /usr/lib/opt' \
-    'L+ /var/opt/1Password - - - - /usr/lib/opt/1Password' \
-    >/usr/lib/tmpfiles.d/bootc-opt.conf
-
 # Finalize RPM database for external packages
 COPY --from=dl-code /rpms/ /tmp/rpms-code/
-COPY --from=dl-1password /rpms/ /tmp/rpms-1password/
 RUN set -eu; \
     rpm -i --justdb --nodeps /tmp/rpms-code/*.rpm; \
-    rpm -i --justdb --nodeps /tmp/rpms-1password/*.rpm; \
     ldconfig; \
-    rm -rf /tmp/rpms-code /tmp/rpms-1password
+    rm -rf /tmp/rpms-code
 
 # Clean up build-time artifacts (no longer needed after package install)
 RUN rm -rf /tmp/external-repos.json /usr/bin/bkt-build
