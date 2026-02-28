@@ -44,7 +44,7 @@ COPY --from=install-1password / /
 # ── Upstream fetch stages (parallel, each installs one upstream entry) ───────
 
 FROM base AS fetch-starship
-RUN curl -fsSL "https://github.com/starship/starship/releases/download/v1.24.1/starship-aarch64-unknown-linux-gnu.tar.gz" | tar xz -C /usr/bin/
+RUN curl -fsSL "https://github.com/starship/starship/releases/download/v1.24.1/starship-aarch64-unknown-linux-musl.tar.gz" | tar xz -C /usr/bin/
 
 FROM base AS fetch-lazygit
 RUN curl -fsSL "https://github.com/jesseduffield/lazygit/releases/download/v0.57.0/lazygit_0.57.0_Linux_arm64.tar.gz" | tar xz -C /usr/bin/ lazygit
