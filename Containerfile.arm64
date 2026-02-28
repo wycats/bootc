@@ -5,7 +5,7 @@ FROM scratch AS tools
 COPY scripts/bkt-build /bkt-build
 
 # ── Base stage (repos configured) ────────────────────────────────────────────
-FROM quay.io/fedora-ostree-desktops/silverblue:41 AS base
+FROM quay.io/fedora-ostree-desktops/silverblue:43 AS base
 COPY --from=tools /bkt-build /usr/bin/bkt-build
 COPY manifests/external-repos.arm64.json /tmp/external-repos.json
 RUN set -eu; \
