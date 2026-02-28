@@ -126,7 +126,9 @@ completion_log = "Verified: removed --link from install stages (PR #138), bootc 
 [[plan.goals.tasks]]
 id = "redesign-wrapper-build-cargo-generated-source-ci-check"
 title = "Redesign wrapper build: cargo, generated source, CI check"
-status = "pending"
+status = "completed"
+completed_at = "2026-02-27T21:28:33.340113329+00:00"
+completion_log = "Implemented RFC-0047: bkt wrap generate is now manifest-driven, bkt wrap check added for CI, wrapper source generated from template, CI job check-wrappers-current enforces freshness. PR #139 merged."
 # Goals contain tasks. Use 'exo-add-task' to add tasks to goals.
 
 

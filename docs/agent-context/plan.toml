@@ -131,7 +131,8 @@ ulid = "01KJ90AQP6V9ADVV9Q2BFVZCZA"
 [[epochs.phases.goals]]
 id = "consolidate-copy-link-layers-to-fix-btrfs-hardlink-limit"
 label = "Consolidate COPY --link layers to fix btrfs hardlink limit"
-status = "pending"
+status = "completed"
+completion_log = "All tasks complete: layer consolidation (keyd, whitesur, wrappers), btrfs hardlink limit fix (PR #138), and RFC-0047 wrapper build redesign (PR #139)."
 ulid = "01KJB37MC4Y26C8MDPT4K62QFF"
 
 [[epochs.phases]]

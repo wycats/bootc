@@ -1,0 +1,97 @@
+name: build-arm64
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Containerfile.arm64"
+      - "manifests/**"
+      - "upstream/**"
+      - "system/**"
+      - "systemd/**"
+      - "skel/**"
+      - "scripts/**"
+      - "wrappers/**"
+      - ".github/workflows/build-arm64.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-arm64-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            bkt -> target
+            bkt-build -> target
+          shared-key: rust-release-aarch64
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build bkt (release, aarch64)
+        run: |
+          cd bkt
+          cargo build --release
+          chmod +x target/release/bkt
+          cp target/release/bkt ../scripts/bkt
+
+      - name: Build bkt-build (release, aarch64)
+        run: |
+          cd bkt-build
+          cargo build --release
+          chmod +x target/release/bkt-build
+          cp target/release/bkt-build ../scripts/bkt-build
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android || true
+          sudo apt-get clean
+          sudo docker system prune -af || true
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=arm64
+            type=raw,value=arm64-sha-${{ github.sha }}
+
+      - name: Build and push ARM64 image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile.arm64
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            org.wycats.bootc.arch=aarch64
+            org.wycats.bootc.base.image=quay.io/fedora-ostree-desktops/silverblue:41
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache-arm64
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache-arm64,mode=max
