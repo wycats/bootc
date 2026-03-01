@@ -108,6 +108,9 @@ COPY system/keyd/default.conf /etc/keyd/default.conf
 # Polkit rules for bkt admin (passwordless bootc/rpm-ostree/flatpak for wheel group)
 COPY system/polkit-1/rules.d/50-bkt-admin.rules /etc/polkit-1/rules.d/50-bkt-admin.rules
 
+# xdg-open forwarder: opens URLs on macOS host via SSH (enables OAuth flows)
+COPY system/etc/profile.d/xdg-open-mac.sh /etc/profile.d/xdg-open-mac.sh
+
 # First-login bootstrap (Flatpak + GNOME extensions + host shims)
 COPY manifests/flatpak-remotes.json /usr/share/bootc-bootstrap/flatpak-remotes.json
 COPY manifests/flatpak-apps.arm64.json /usr/share/bootc-bootstrap/flatpak-apps.json

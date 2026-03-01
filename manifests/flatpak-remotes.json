@@ -8,7 +8,7 @@
     },
     {
       "name": "flathub",
-      "url": "https://dl.flathub.org/repo/",
+      "url": "https://dl.flathub.org/repo/flathub.flatpakrepo",
       "scope": "system",
       "filtered": true
     }

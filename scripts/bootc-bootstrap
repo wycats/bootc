@@ -53,7 +53,13 @@ apply_flatpak_remotes() {
     scope="$(jq -r ".remotes[$i].scope" "$file")"
 
     log "Ensuring flatpak remote (${scope}): ${name} ${url}"
-    run_flatpak "${scope}" remote-add --if-not-exists "${name}" "${url}" || return 1
+    # Use the .flatpakrepo URL if it ends with .flatpakrepo (includes GPG key),
+    # otherwise fall back to bare repo URL
+    if [[ "$url" == *.flatpakrepo ]]; then
+      run_flatpak "${scope}" remote-add --if-not-exists "${name}" "${url}" || return 1
+    else
+      run_flatpak "${scope}" remote-add --if-not-exists --no-gpg-verify "${name}" "${url}" || return 1
+    fi
   done
 }
 
@@ -101,7 +107,9 @@ apply_gnome_extensions() {
 
   local tmpdir
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' EXIT
+  # Use a subshell-safe cleanup instead of global trap (which would reference
+  # the local $tmpdir after the function returns, crashing under set -u)
+  _bootstrap_tmpdir="$tmpdir"
 
   local count
   count="$(jq -r '.extensions | length' "$file")"
@@ -202,8 +210,16 @@ apply_distrobox() {
     return 0
   fi
 
-  log "Assembling distrobox containers from ${ini}"
-  distrobox assemble create --file "$ini" || return 1
+  # Check if the container image is available for this architecture before
+  # attempting to create. This avoids failures on ARM where the toolbox
+  # image may be x86_64-only.
+  local arch
+  arch="$(uname -m)"
+  log "Assembling distrobox containers from ${ini} (arch: ${arch})"
+  distrobox assemble create --file "$ini" || {
+    log "distrobox assemble failed (image may not be available for ${arch})"
+    return 1
+  }
 }
 
 apply_composefs_font_workaround() {
@@ -366,6 +382,14 @@ clone_repo() {
     return 1
   fi
 }
+
+# Clean up any tmpdir from gnome-extensions install
+cleanup() {
+  if [[ -n "${_bootstrap_tmpdir:-}" && -d "${_bootstrap_tmpdir:-}" ]]; then
+    rm -rf "$_bootstrap_tmpdir"
+  fi
+}
+trap cleanup EXIT
 
 case "$cmd" in
   apply)
