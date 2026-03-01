@@ -644,19 +644,16 @@ fn command_exists(cmd: &str) -> bool {
 
 fn run_flatpak(scope: &str, args: &[&str]) -> Result<std::process::ExitStatus> {
     if scope.starts_with("system") {
-        // System-scope operations need elevated privileges
-        if command_exists("pkexec") {
-            Command::new("pkexec")
-                .arg("flatpak")
-                .args(args)
-                .status()
-                .context("Failed to run pkexec flatpak")
-        } else {
-            Command::new("flatpak")
-                .args(args)
-                .status()
-                .context("Failed to run flatpak")
-        }
+        // Use flatpak --system directly. Flatpak has its own polkit integration
+        // that works with our 50-bkt-admin.rules for wheel group members.
+        // Using pkexec triggers interactive polkit dialogs during bootstrap,
+        // which fires 70+ prompts before the user reaches their desktop.
+        let mut full_args = vec!["--system"];
+        full_args.extend_from_slice(args);
+        Command::new("flatpak")
+            .args(&full_args)
+            .status()
+            .context("Failed to run flatpak --system")
     } else {
         let mut full_args = vec!["--user"];
         full_args.extend_from_slice(args);
