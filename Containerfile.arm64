@@ -136,7 +136,7 @@ COPY systemd/system/bootc-apply.service /usr/lib/systemd/system/bootc-apply.serv
 COPY systemd/user/dbus-broker.service.d/override.conf /usr/lib/systemd/user/dbus-broker.service.d/override.conf
 
 # Distrobox configuration (managed by bkt)
-COPY distrobox.ini /etc/distrobox/distrobox.ini
+COPY distrobox.arm64.ini /etc/distrobox/distrobox.ini
 
 # Integrated topgrade configuration
 COPY system/etc/topgrade.toml /etc/topgrade.toml

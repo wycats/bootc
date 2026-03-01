@@ -92,6 +92,26 @@ jobs:
           labels: |
             ${{ steps.meta.outputs.labels }}
             org.wycats.bootc.arch=aarch64
-            org.wycats.bootc.base.image=quay.io/fedora-ostree-desktops/silverblue:41
+            org.wycats.bootc.base.image=quay.io/fedora-ostree-desktops/silverblue:43
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache-arm64
           cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache-arm64,mode=max
+
+      # ── Toolbox image (ARM64) ──────────────────────────────────────────────
+      - name: Docker metadata (toolbox)
+        id: meta-toolbox
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-toolbox
+          tags: |
+            type=raw,value=arm64
+
+      - name: Build and push ARM64 toolbox
+        uses: docker/build-push-action@v6
+        with:
+          context: ./toolbox
+          file: ./toolbox/Containerfile
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta-toolbox.outputs.tags }}
+          labels: ${{ steps.meta-toolbox.outputs.labels }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}-toolbox:buildcache-arm64
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}-toolbox:buildcache-arm64,mode=max
