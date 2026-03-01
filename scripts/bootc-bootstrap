@@ -130,9 +130,14 @@ apply_gnome_extensions() {
       enabled="true"
     fi
 
-    # Skip disabled extensions
+    # Skip disabled extensions — check this BEFORE the already-installed path,
+    # otherwise disabled extensions get re-enabled on every bootstrap run
     if [[ "$enabled" != "true" ]]; then
       log "Skipping disabled extension: ${uuid}"
+      # If it's currently enabled, disable it to match the manifest
+      if gnome-extensions info "${uuid}" >/dev/null 2>&1; then
+        gnome-extensions disable "${uuid}" >/dev/null 2>&1 || true
+      fi
       continue
     fi
 
