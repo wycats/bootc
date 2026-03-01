@@ -109,8 +109,8 @@ COPY system/keyd/default.conf /etc/keyd/default.conf
 COPY system/polkit-1/rules.d/50-bkt-admin.rules /etc/polkit-1/rules.d/50-bkt-admin.rules
 
 # xdg-open forwarder: opens URLs on macOS host via SSH (enables OAuth flows)
-# Installed as /usr/local/bin/xdg-open to shadow /usr/bin/xdg-open in PATH
-COPY system/usr/local/bin/xdg-open-mac /usr/local/bin/xdg-open
+# Installed to /var/usrlocal/bin/ (Silverblue symlinks /usr/local -> ../var/usrlocal)
+COPY system/usr/local/bin/xdg-open-mac /var/usrlocal/bin/xdg-open
 
 # First-login bootstrap (Flatpak + GNOME extensions + host shims)
 COPY manifests/flatpak-remotes.json /usr/share/bootc-bootstrap/flatpak-remotes.json
@@ -263,6 +263,7 @@ RUN set -eu; \
     ln -sf ../keyd.service /usr/lib/systemd/system/multi-user.target.wants/keyd.service; \
     mkdir -p /usr/share/bootc-bootstrap /usr/share/bootc; \
     chmod 0755 /usr/bin/bootc-bootstrap /usr/bin/bootc-apply /usr/bin/bootc-repo /usr/bin/bkt; \
+    chmod 0755 /var/usrlocal/bin/xdg-open; \
     mkdir -p /usr/lib/systemd/user/default.target.wants; \
     ln -sf ../bootc-bootstrap.service /usr/lib/systemd/user/default.target.wants/bootc-bootstrap.service; \
     ln -sf ../bkt-daemon.service /usr/lib/systemd/user/default.target.wants/bkt-daemon.service; \
