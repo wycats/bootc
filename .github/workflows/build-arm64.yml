@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - "Containerfile.arm64"
+      - "bkt/**"
+      - "bkt-build/**"
+      - "bkt-common/**"
       - "manifests/**"
       - "upstream/**"
       - "system/**"
