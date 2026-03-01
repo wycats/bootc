@@ -185,6 +185,7 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Admin(args) => commands::admin::run(args, &plan),
         Commands::Apply(args) => commands::apply::run(args, &plan),
+        Commands::Bootstrap => commands::bootstrap::run(),
         Commands::Capture(args) => commands::capture::run(args, &plan),
         Commands::System(args) => commands::system::run(args, &plan),
         Commands::Try(args) => commands::try_cmd::run(args, &plan),

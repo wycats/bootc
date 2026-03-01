@@ -4,7 +4,7 @@ After=graphical-session.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/bootc-bootstrap apply
+ExecStart=/usr/bin/bkt bootstrap
 
 [Install]
 WantedBy=default.target

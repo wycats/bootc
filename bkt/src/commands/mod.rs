@@ -4,6 +4,7 @@ pub mod admin;
 pub mod appimage;
 pub mod apply;
 pub mod base;
+pub mod bootstrap;
 pub mod build_info;
 pub mod capture;
 pub mod changelog;

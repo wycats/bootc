@@ -61,6 +61,12 @@ pub enum Commands {
     /// Apply all manifests to the running system
     Apply(commands::apply::ApplyArgs),
 
+    /// First-login bootstrap (Flatpak + extensions + gsettings + distrobox)
+    ///
+    /// Runs automatically via systemd user unit on first login.
+    /// Reads manifests from /usr/share/bootc-bootstrap/ (baked into image).
+    Bootstrap,
+
     /// Capture system state to manifests
     Capture(commands::capture::CaptureArgs),
 
@@ -189,6 +195,7 @@ impl Commands {
             Commands::Fetchbin(_) => CommandTarget::Host, // Host binaries
             Commands::Homebrew(_) => CommandTarget::Host, // Linuxbrew is host-level
             Commands::Admin(_) => CommandTarget::Host,  // Already handles delegation internally
+            Commands::Bootstrap => CommandTarget::Host, // First-login setup on host
 
             // Dev-only commands (toolbox operations)
             Commands::Dev(_) => CommandTarget::Dev,
