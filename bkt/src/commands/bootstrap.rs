@@ -168,13 +168,14 @@ fn apply_font_workaround() -> Result<()> {
 
     if !current_deployment.is_empty()
         && let Ok(stored) = fs::read_to_string(&marker_file)
-            && stored.trim() == current_deployment {
-                Output::info(format!(
-                    "Fontconfig cache valid for deployment {}...",
-                    &current_deployment[..12.min(current_deployment.len())]
-                ));
-                return Ok(());
-            }
+        && stored.trim() == current_deployment
+    {
+        Output::info(format!(
+            "Fontconfig cache valid for deployment {}...",
+            &current_deployment[..12.min(current_deployment.len())]
+        ));
+        return Ok(());
+    }
 
     Output::info("Clearing stale fontconfig cache (deployment changed)");
 
@@ -225,34 +226,36 @@ fn apply_flatpak_remotes(bootstrap_dir: &Path) -> Result<()> {
     for remote in remotes {
         let name = remote["name"].as_str().unwrap_or_default();
         let url = remote["url"].as_str().unwrap_or_default();
-        let scope = remote["scope"].as_str().unwrap_or("system");
+        let _scope = remote["scope"].as_str().unwrap_or("system");
 
         if name.is_empty() || url.is_empty() {
             continue;
         }
 
-        Output::info(format!(
-            "Ensuring flatpak remote ({}): {} {}",
-            scope, name, url
-        ));
+        // Add remote for both system and user scopes — apps may use either
+        for add_scope in &["system", "user"] {
+            Output::info(format!(
+                "Ensuring flatpak remote ({}): {} {}",
+                add_scope, name, url
+            ));
 
-        let mut args = vec!["remote-add", "--if-not-exists"];
+            let mut args = vec!["remote-add", "--if-not-exists"];
 
-        // .flatpakrepo URLs include GPG keys; bare repo URLs don't
-        if !url.ends_with(".flatpakrepo") {
-            args.push("--no-gpg-verify");
-        }
+            // .flatpakrepo URLs include GPG keys; bare repo URLs don't
+            if !url.ends_with(".flatpakrepo") {
+                args.push("--no-gpg-verify");
+            }
 
-        if scope == "user" {
-            args.push("--user");
-        }
+            args.push(name);
+            args.push(url);
 
-        args.push(name);
-        args.push(url);
-
-        let status = run_flatpak(scope, &args)?;
-        if !status.success() {
-            anyhow::bail!("Failed to add flatpak remote: {}", name);
+            let status = run_flatpak(add_scope, &args)?;
+            if !status.success() {
+                Output::info(format!(
+                    "Failed to add flatpak remote {} ({}); continuing",
+                    name, add_scope
+                ));
+            }
         }
     }
 
@@ -320,12 +323,29 @@ fn apply_flatpak_apps(bootstrap_dir: &Path) -> Result<()> {
 // ── GNOME extensions ────────────────────────────────────────────────────────
 
 fn shell_major_version() -> Option<u32> {
-    let output = Command::new("gnome-shell").arg("--version").output().ok()?;
-    let version_str = String::from_utf8_lossy(&output.stdout);
-    // "GNOME Shell 49.2" -> 49
-    version_str
-        .split_whitespace()
-        .find_map(|word| word.parse::<u32>().ok())
+    // Try gnome-shell --version first (works if DISPLAY/WAYLAND_DISPLAY is set)
+    if let Ok(output) = Command::new("gnome-shell").arg("--version").output() {
+        let version_str = String::from_utf8_lossy(&output.stdout);
+        if let Some(ver) = version_str
+            .split_whitespace()
+            .find_map(|word| word.parse::<u32>().ok())
+        {
+            return Some(ver);
+        }
+    }
+
+    // Fallback: parse from the gnome-shell binary's package version
+    // This works even without a running display (e.g., over SSH)
+    if let Ok(output) = Command::new("rpm")
+        .args(["-q", "--qf", "%{VERSION}", "gnome-shell"])
+        .output()
+    {
+        let version_str = String::from_utf8_lossy(&output.stdout);
+        // "49.2" -> 49
+        return version_str.split('.').next()?.parse::<u32>().ok();
+    }
+
+    None
 }
 
 fn apply_gnome_extensions(bootstrap_dir: &Path) -> Result<()> {
