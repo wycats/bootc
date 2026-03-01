@@ -109,7 +109,8 @@ COPY system/keyd/default.conf /etc/keyd/default.conf
 COPY system/polkit-1/rules.d/50-bkt-admin.rules /etc/polkit-1/rules.d/50-bkt-admin.rules
 
 # xdg-open forwarder: opens URLs on macOS host via SSH (enables OAuth flows)
-COPY system/etc/profile.d/xdg-open-mac.sh /etc/profile.d/xdg-open-mac.sh
+# Installed as /usr/local/bin/xdg-open to shadow /usr/bin/xdg-open in PATH
+COPY system/usr/local/bin/xdg-open-mac /usr/local/bin/xdg-open
 
 # First-login bootstrap (Flatpak + GNOME extensions + host shims)
 COPY manifests/flatpak-remotes.json /usr/share/bootc-bootstrap/flatpak-remotes.json

@@ -1,0 +1,28 @@
+#!/bin/bash
+# xdg-open forwarder for macOS VM host
+#
+# When configured with a Mac host, forwards URL opens to macOS via SSH.
+# This enables OAuth flows (VS Code GitHub login, etc.) to open in the
+# Mac's default browser instead of a Linux browser.
+#
+# Configuration: ~/.config/bootc/mac-host
+#   Contains the SSH destination (e.g., wycats@192.168.0.36)
+#   If this file doesn't exist, falls through to real xdg-open.
+
+mac_host_file="${XDG_CONFIG_HOME:-$HOME/.config}/bootc/mac-host"
+
+# If no mac-host configured, use real xdg-open
+if [[ ! -f "$mac_host_file" ]]; then
+  exec /usr/bin/xdg-open "$@"
+fi
+
+mac_host="$(<"$mac_host_file")"
+
+# Only forward URLs (http/https), not local files
+if [[ "${1:-}" =~ ^https?:// ]]; then
+  ssh -o ConnectTimeout=3 -o BatchMode=yes "$mac_host" "open '$1'" 2>/dev/null
+  exit $?
+fi
+
+# For non-URLs, use real xdg-open
+exec /usr/bin/xdg-open "$@"
