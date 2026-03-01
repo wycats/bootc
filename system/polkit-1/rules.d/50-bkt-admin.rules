@@ -30,13 +30,28 @@
 // See: docs/rfcs/0009-privileged-operations.md
 
 polkit.addRule(function(action, subject) {
-    // Only handle pkexec (org.freedesktop.policykit.exec) actions
-    if (action.id !== "org.freedesktop.policykit.exec") {
+    // Only grant to wheel group members
+    if (!subject.isInGroup("wheel")) {
         return polkit.Result.NOT_HANDLED;
     }
 
-    // Only grant to wheel group members
-    if (!subject.isInGroup("wheel")) {
+    // Allow Flatpak's own polkit actions (system-scope app/remote management)
+    // Used by bkt bootstrap for declarative flatpak provisioning.
+    // NOTE: Flatpak's built-in rule (org.freedesktop.Flatpak.rules) requires
+    // subject.active && subject.local, which fails during bootstrap because
+    // the systemd user unit runs before the session is fully active.
+    // Our rule runs first (50- vs Flatpak's in /usr/share/) and doesn't
+    // require active/local.
+    if (action.id === "org.freedesktop.Flatpak.app-install" ||
+        action.id === "org.freedesktop.Flatpak.runtime-install" ||
+        action.id === "org.freedesktop.Flatpak.app-uninstall" ||
+        action.id === "org.freedesktop.Flatpak.runtime-uninstall" ||
+        action.id === "org.freedesktop.Flatpak.modify-repo") {
+        return polkit.Result.YES;
+    }
+
+    // Handle pkexec (org.freedesktop.policykit.exec) actions
+    if (action.id !== "org.freedesktop.policykit.exec") {
         return polkit.Result.NOT_HANDLED;
     }
 
@@ -53,8 +68,7 @@ polkit.addRule(function(action, subject) {
         return polkit.Result.YES;
     }
 
-    // Allow flatpak commands (system-scope app/remote management)
-    // Used by bootc-bootstrap for declarative flatpak provisioning
+    // Allow flatpak commands via pkexec (legacy path)
     if (program === "/usr/bin/flatpak") {
         return polkit.Result.YES;
     }
