@@ -123,7 +123,7 @@ apply_gnome_extensions() {
     if [[ "$item" == "{"* ]]; then
       # Object format: {"id": "...", "enabled": true/false}
       uuid="$(jq -r ".extensions[$i].id" "$file")"
-      enabled="$(jq -r ".extensions[$i].enabled // true" "$file")"
+      enabled="$(jq -r "if .extensions[$i] | has(\"enabled\") then .extensions[$i].enabled else true end" "$file")"
     else
       # String format: just the UUID (implies enabled=true)
       uuid="$item"
