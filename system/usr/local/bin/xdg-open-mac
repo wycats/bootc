@@ -3,7 +3,10 @@
 #
 # When configured with a Mac host, forwards URL opens to macOS via SSH.
 # This enables OAuth flows (VS Code GitHub login, etc.) to open in the
-# Mac's default browser instead of a Linux browser.
+# Mac's default browser.
+#
+# For localhost URLs (OAuth callbacks), sets up a reverse SSH tunnel so
+# the Mac browser can reach the VM's localhost server.
 #
 # Configuration: ~/.config/bootc/mac-host
 #   Contains the SSH destination (e.g., wycats@192.168.0.36)
@@ -20,6 +23,32 @@ mac_host="$(<"$mac_host_file")"
 
 # Only forward URLs (http/https), not local files
 if [[ "${1:-}" =~ ^https?:// ]]; then
+  local_port=""
+
+  # Detect localhost callback URLs (OAuth flows) and set up reverse tunnel
+  if [[ "$1" =~ ^https?://127\.0\.0\.1:([0-9]+) ]] || [[ "$1" =~ ^https?://localhost:([0-9]+) ]]; then
+    local_port="${BASH_REMATCH[1]}"
+
+    # Set up reverse tunnel: Mac's localhost:PORT -> VM's localhost:PORT
+    # -f backgrounds after auth, -N no remote command, -o ExitOnForwardFailure
+    # The tunnel stays alive for 120s then exits (ServerAliveInterval + timeout)
+    ssh -o ConnectTimeout=3 -o BatchMode=yes \
+        -o ExitOnForwardFailure=yes \
+        -o ServerAliveInterval=30 \
+        -f -N -R "${local_port}:localhost:${local_port}" \
+        "$mac_host" 2>/dev/null
+
+    if [[ $? -ne 0 ]]; then
+      # Tunnel failed — fall back to real xdg-open (open in VM browser)
+      exec /usr/bin/xdg-open "$@"
+    fi
+
+    # Kill the tunnel after 120 seconds (enough for OAuth to complete)
+    (sleep 120 && ssh -o ConnectTimeout=3 -o BatchMode=yes "$mac_host" \
+      "kill \$(lsof -ti :${local_port} -sTCP:LISTEN 2>/dev/null) 2>/dev/null" &) 2>/dev/null
+  fi
+
+  # Open the URL on the Mac
   ssh -o ConnectTimeout=3 -o BatchMode=yes "$mac_host" "open '$1'" 2>/dev/null
   exit $?
 fi
