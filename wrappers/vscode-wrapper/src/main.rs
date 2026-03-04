@@ -50,8 +50,11 @@ fn main() {
             .unwrap_or(0)
     );
 
-    // Launch via systemd-run
-    let err = std::process::Command::new("systemd-run")
+    // Launch via systemd-run --scope.
+    // Use status() instead of exec() so the wrapper can propagate the exit
+    // code. With exec(), the wrapper becomes systemd-run and hangs until
+    // all processes in the scope exit (blocking code --install-extension etc).
+    let status = std::process::Command::new("systemd-run")
         .args([
             "--user",
             "--quiet",
@@ -64,10 +67,15 @@ fn main() {
             target,
         ])
         .args(std::env::args().skip(1))
-        .exec();
+        .status();
 
-    eprintln!("Failed to exec systemd-run: {}", err);
-    std::process::exit(1);
+    match status {
+        Ok(s) => std::process::exit(s.code().unwrap_or(1)),
+        Err(e) => {
+            eprintln!("Failed to run systemd-run: {}", e);
+            std::process::exit(1);
+        }
+    }
 }
 
 fn find_remote_cli() -> Option<String> {
