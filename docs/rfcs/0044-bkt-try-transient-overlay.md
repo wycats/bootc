@@ -1,3 +1,233 @@
+# RFC 0044: Tier 1 Preview and Convergence
+
+- **Status**: Partially Implemented
+- **Created**: 2026-02-10
+- **Updated**: 2026-03-05
+- **Absorbs**: RFC-0034 (usroverlay integration), RFC-0035 (admin update), RFC-0037 (bkt upgrade)
+- **Related**: [RFC-0004](0004-bkt-admin.md) (Tier 1 model), [RFC-0042](0042-managed-containerfile.md) (Containerfile generation), [RFC-0052](canon/0052-manifest-lifecycle.md) (manifest lifecycle), [RFC-0054](0054-change-workflow.md) (change workflow)
+
+## Summary
+
+`bkt try` provides immediate preview of Tier 1 system package changes by installing into a transient `/usr` overlay while simultaneously capturing intent in manifests. The normal Tier 1 pipeline (manifest → PR → CI image build → `bootc upgrade` → reboot) remains the mechanism for permanence and convergence. This RFC defines the full lifecycle from "I want this package" to "it is in my image," and consolidates prior RFCs into one coherent model.
+
+## The Problem
+
+On an atomic Linux system, changing Tier 1 package state is intentionally heavyweight: update manifest, regenerate image definition, build in CI, stage update, and reboot. That is correct for deterministic convergence, but poor for exploration and short feedback loops. A user cannot quickly try a host-level package and decide whether to keep it without waiting for a full build pipeline.
+
+`bkt try` bridges this gap by making Tier 1 changes immediately testable while preserving declarative convergence as the source of truth.
+
+## The Overlay Primitive
+
+This section records behavior verified from prior investigation and implementation context.
+
+### `rpm-ostree usroverlay`
+
+- Calls `ostree admin unlock --transient` under the hood
+- Creates a tmpfs-backed overlayfs on `/usr`
+- The overlay is writable; the underlying filesystem is unchanged
+- Lost on reboot (the tmpfs is gone)
+- `/etc` and `/var` changes from package scriptlets persist (they are not on the overlay)
+
+### `dnf install` on the overlay
+
+Once usroverlay unlocks `/usr`:
+
+- `dnf install` works normally — full dependency resolution and RPM transactions
+- The RPM database under `/usr/share/rpm` is updated in the overlay (ephemeral)
+- Package updates (replacing already-installed packages) work in the running system
+- COPR repos work when configured in `/etc/yum.repos.d/`
+- No special package-manager behavior is required beyond using host `dnf`
+
+### What persists across reboot
+
+- `/etc` changes from RPM scriptlets (for example, config files and service links)
+- `/var` changes (runtime or data directories)
+- Nothing in `/usr` from the transient overlay
+
+## Alternatives Considered: `rpm-ostree apply-live`
+
+This analysis is included to avoid repeat investigation.
+
+### What `apply-live` does
+
+1. Creates a pending deployment via `rpm-ostree install` (dependency resolution, package fetch, full filesystem tree)
+2. Calls `ostree admin unlock --transient` (same core primitive as usroverlay)
+3. Diffs booted commit against the pending deployment commit
+4. Copies changed files from pending deployment into the transient overlay
+5. Updates `/etc` (persistent side effects)
+6. Runs `systemd-tmpfiles` for `/run` and `/var`
+
+### Why we do not use it
+
+1. **Pending deployment conflict**: if a `bootc upgrade` is already staged, `rpm-ostree install` can replace that pending deployment.
+2. **Replacement restrictions**: replacement of existing packages often requires `--allow-replacement`, reflecting live-replacement risk.
+3. **Heavier workflow**: creates and materializes a full deployment just to copy a subset into an overlay.
+4. **Cleanup workaround exists, but is not the model**: `rpm-ostree cleanup -p` can drop the pending deployment while overlay effects continue.
+
+### When `apply-live` would be better
+
+- When rpm-ostree’s deployment-level package resolution is specifically required
+- When managing package state as ostree deployment metadata is required
+
+### Bottom line
+
+`usroverlay` + `dnf install` is the right primitive for `bkt try`: lighter-weight, naturally aligned with ephemeral preview, compatible with staged upgrades, and simpler to reason about in the Tier 1 lifecycle.
+
+## Safety Analysis
+
+### Safe to live-replace
+
+Packages that install mostly self-contained files:
+
+- Application packages (for example: VS Code, Edge, 1Password)
+- Fonts, icon themes, and related assets
+- Standalone CLI binaries
+
+### Potentially unsafe
+
+Packages that install:
+
+- Shared libraries used by currently running processes
+- systemd units requiring daemon state changes
+- Kernel modules
+- PAM modules and other core auth/runtime components
+
+### Detection
+
+Planned heuristic before install:
+
+```rust
+fn is_safe_to_live_replace(package: &str) -> bool {
+  let files = rpm_query_files(package);
+  !files.iter().any(|f| {
+    f.starts_with("/usr/lib/systemd/") ||
+    (f.starts_with("/usr/lib64/") && f.ends_with(".so")) ||
+    (f.starts_with("/usr/lib/") && f.ends_with(".so"))
+  })
+}
+```
+
+For unsafe packages, `bkt try` should warn and allow override with `--force`.
+
+## The `bkt try` Command
+
+### Usage
+
+```bash
+# Try a package (install ephemerally + record in manifest)
+bkt try htop
+
+# Try multiple packages
+bkt try htop btop neofetch
+
+# Remove a previously tried package from manifest
+bkt try --remove htop
+
+# Show pending try state for this boot
+bkt try --status
+
+# Clean up tracked try side effects
+bkt try --cleanup htop
+```
+
+### What `bkt try <package>` does
+
+1. **Validate** package existence (`dnf repoquery`/validation path)
+2. **Unlock** with `rpm-ostree usroverlay` if not already unlocked
+3. **Prepare** runtime (`/var/lib/rpm-state`)
+4. **Install** via host `dnf5 install -y <package>`
+5. **Record** package in `manifests/system-packages.json`
+6. **Regenerate** managed sections of `Containerfile`
+7. **PR (optional)** create/update a `try/*` branch and PR in standard workflow
+
+Immediate preview is provided by steps 2–4. Durable convergence is provided by steps 5–7 plus the normal Tier 1 pipeline.
+
+### Overlay lifecycle
+
+- Overlay survives while the current boot is running
+- Overlay is discarded on reboot
+- `bootc upgrade` stages a future deployment and does not clear the running overlay
+- Permanence occurs only after CI image build + upgrade staging + reboot
+
+## The Convergence Path
+
+After `bkt try` captures package intent in manifests, the convergence path is:
+
+1. Commit/push or PR merge
+2. CI image build and publish
+3. `bootc upgrade` to stage
+4. reboot into the new image
+
+### `bkt admin update` (absorbed from RFC-0035)
+
+Proposed orchestration command for full convergence:
+
+1. Capture drift (`bkt capture`)
+2. Commit/push or PR workflow
+3. Wait for CI status
+4. Verify image readiness
+5. Stage update with `bootc upgrade`
+6. Report staged readiness
+
+This command is not implemented yet; it remains the intended single-command convergence UX.
+
+### `bkt upgrade` (absorbed from RFC-0037)
+
+Proposed streamlined user command around `bootc upgrade`:
+
+```bash
+bkt upgrade              # Stage latest image
+bkt upgrade --reboot     # Stage and reboot
+bkt upgrade --status     # Show staged state
+```
+
+This command is not implemented yet; existing behavior remains under `bkt admin bootc` flows.
+
+## COPR Support
+
+COPR is a repository configuration concern, not an overlay limitation. Once `/usr` is unlocked, host `dnf` can resolve from configured repos.
+
+Expected flow:
+
+1. Enable repo (`dnf copr enable owner/project`)
+2. Run `bkt try <package>`
+3. Persist repo configuration for image builds via manifest/containerfile integration (future phase)
+
+## Implementation Status
+
+Status reflects current behavior in `bkt/src/commands/try_cmd.rs`.
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| `bkt try <package>` | ✅ Implemented | Overlay install + capture in manifest + Containerfile section sync |
+| `bkt try --remove` | ✅ Implemented | Removes from manifest; does not remove from immutable base |
+| `bkt try --status` | ✅ Implemented | Shows pending try packages for current boot |
+| `bkt try --cleanup` | ⚠️ Partial | Tracking removal only; cleanup actions not implemented |
+| Safety analysis (file list check) | ❌ Not started | No pre-install file-list risk classification yet |
+| COPR integration | ❌ Not started | No first-class `--copr` UX yet |
+| `bkt admin update` | ❌ Not started | RFC concept only |
+| `bkt upgrade` | ❌ Not started | RFC concept only |
+| PR creation from `bkt try` | ✅ Implemented | Integrated via standard PR workflow in `try/*` branch flow |
+
+## Implementation Plan
+
+### Phase 1: Safety Analysis
+
+1. Add pre-install file list inspection
+2. Warn on high-risk package content (shared libraries, system units, core runtime paths)
+3. Support explicit override for risky installs
+
+### Phase 2: COPR Integration
+
+1. Add first-class COPR enable/install UX in `bkt try`
+2. Record COPR repo intent in manifest for generation
+3. Handle keys and reproducible repo configuration in image builds
+
+### Phase 3: Convergence Commands
+
+1. Implement `bkt admin update` orchestration (capture → commit/push → CI wait → stage)
+2. Implement `bkt upgrade` user-focused upgrade command
+3. Align output and status reporting with existing `bkt` UX conventions
 # RFC 0044: `bkt try` — Tier 1 Preview Mechanism
 
 - **Status**: Draft
