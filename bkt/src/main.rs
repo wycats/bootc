@@ -213,6 +213,7 @@ fn main() -> Result<()> {
         Commands::Containerfile(args) => commands::containerfile::run(args, &plan),
         Commands::Migrate(args) => commands::migrate::run(args, cli.dry_run),
         Commands::Wrap(args) => commands::wrap::execute(args),
+        Commands::Upgrade(args) => commands::upgrade::run(args),
         Commands::Tune(args) => commands::tune::run(args),
     }
 }

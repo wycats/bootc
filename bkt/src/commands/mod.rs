@@ -29,5 +29,6 @@ pub mod status;
 pub mod system;
 pub mod try_cmd;
 pub mod tune;
+pub mod upgrade;
 pub mod upstream;
 pub mod wrap;

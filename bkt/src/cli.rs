@@ -161,6 +161,12 @@ pub enum Commands {
     /// resource controls (slices). Replaces shell wrapper scripts.
     Wrap(commands::wrap::WrapArgs),
 
+    /// Preview staged updates or fetch new ones
+    ///
+    /// By default shows what's staged for next boot (package diff, image info).
+    /// Use --fetch to stage the latest image from the registry.
+    Upgrade(commands::upgrade::UpgradeArgs),
+
     /// Analyze and reclaim system memory (RAM, swap, GPU, caches)
     ///
     /// By default shows what could be reclaimed without taking action.
@@ -212,7 +218,8 @@ impl Commands {
             Commands::Containerfile(_) => CommandTarget::Either,
             Commands::Migrate(_) => CommandTarget::Either,
             Commands::Wrap(_) => CommandTarget::Either,
-            Commands::Tune(_) => CommandTarget::Host, // Reads /proc, /sys for memory/GPU info
+            Commands::Upgrade(_) => CommandTarget::Host, // Reads deployment state
+            Commands::Tune(_) => CommandTarget::Host,    // Reads /proc, /sys for memory/GPU info
         }
     }
 }
