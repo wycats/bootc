@@ -24,6 +24,7 @@ pub mod systemd_services;
 pub mod toolbox;
 pub mod try_pending;
 pub mod upstream;
+pub mod vendor_artifacts;
 
 pub use appimage::*;
 pub use base::*;
@@ -41,3 +42,4 @@ pub use systemd_services::*;
 pub use toolbox::*;
 pub use try_pending::*;
 pub use upstream::*;
+pub use vendor_artifacts::*;

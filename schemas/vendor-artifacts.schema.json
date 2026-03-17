@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VendorArtifactsManifest",
+  "description": "The vendor-artifacts.json manifest.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/VendorArtifact"
+      }
+    }
+  },
+  "required": [
+    "artifacts"
+  ],
+  "$defs": {
+    "ArtifactKind": {
+      "description": "The type of artifact being installed.",
+      "oneOf": [
+        {
+          "description": "RPM package",
+          "type": "string",
+          "const": "rpm"
+        }
+      ]
+    },
+    "LayerGroup": {
+      "description": "Controls how a package is grouped for deployment layers.\n\nBuild stages are always per-package (for cache efficiency).\nThis field controls deployment layer consolidation to avoid\nbtrfs hardlink limits in ostree.",
+      "oneOf": [
+        {
+          "description": "Package gets its own deployment layer.\nUse for high-churn, large packages (e.g., vscode, edge).",
+          "type": "string",
+          "const": "independent"
+        },
+        {
+          "description": "Package is grouped with other bundled packages.\nUse for low-churn, smaller packages.",
+          "type": "string",
+          "const": "bundled"
+        }
+      ]
+    },
+    "VendorArtifact": {
+      "description": "A single vendor artifact entry.",
+      "type": "object",
+      "properties": {
+        "display_name": {
+          "description": "Human-readable name (e.g., \"Visual Studio Code\")",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Artifact type",
+          "$ref": "#/$defs/ArtifactKind"
+        },
+        "layer_group": {
+          "description": "Controls deployment layer grouping. Defaults to bundled.",
+          "$ref": "#/$defs/LayerGroup",
+          "default": "bundled"
+        },
+        "name": {
+          "description": "Unique identifier (e.g., \"code\")",
+          "type": "string"
+        },
+        "source": {
+          "description": "How to discover the latest artifact",
+          "$ref": "#/$defs/VendorSource"
+        }
+      },
+      "required": [
+        "name",
+        "display_name",
+        "kind",
+        "source"
+      ]
+    },
+    "VendorSource": {
+      "description": "Discovery specification for a vendor artifact.",
+      "oneOf": [
+        {
+          "description": "Vendor release feed with templated URL",
+          "type": "object",
+          "properties": {
+            "params": {
+              "description": "Key-value parameters for template substitution",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "platforms": {
+              "description": "Architecture → platform identifier mapping.\nThe resolved platform value is available as `{platform}` in the URL template.",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "response_map": {
+              "description": "Maps resolved artifact field names to vendor response JSON field names.\nRequired keys: `url`, `version`, `sha256`. Optional: `vendor_revision`.",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "vendor-feed"
+            },
+            "url": {
+              "description": "URL template with `{param}` placeholders",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "url",
+            "response_map"
+          ]
+        }
+      ]
+    }
+  }
+}

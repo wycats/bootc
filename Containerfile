@@ -52,6 +52,12 @@ RUN set -eu; \
 FROM scratch AS install-bundled
 COPY --from=install-1password / /
 
+# ── Vendor artifact stages (parallel, each fetches one resolved artifact) ────
+
+FROM base AS vendor-code
+COPY .cache/bkt/vendor-artifacts.resolved.json /tmp/vendor-artifacts.resolved.json
+RUN bkt-build install-vendor-artifact code
+
 # ── Upstream fetch stages (parallel, each installs one upstream entry) ───────
 
 FROM base AS fetch-starship
@@ -235,6 +241,7 @@ FROM base AS image
 COPY --from=install-code / /
 COPY --from=install-microsoft-edge / /
 COPY --from=install-bundled / /
+COPY --from=vendor-code / /
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
@@ -272,12 +279,14 @@ RUN printf '%s\n' \
 COPY --from=dl-code /rpms/ /tmp/rpms-code/
 COPY --from=dl-microsoft-edge /rpms/ /tmp/rpms-microsoft-edge/
 COPY --from=dl-1password /rpms/ /tmp/rpms-1password/
+COPY --from=vendor-code /rpms/ /tmp/rpms-vendor-code/
 RUN set -eu; \
     rpm -i --justdb --nodeps /tmp/rpms-code/*.rpm; \
     rpm -i --justdb --nodeps /tmp/rpms-microsoft-edge/*.rpm; \
     rpm -i --justdb --nodeps /tmp/rpms-1password/*.rpm; \
+    rpm -i --justdb --nodeps /tmp/rpms-vendor-code/*.rpm; \
     ldconfig; \
-    rm -rf /tmp/rpms-code /tmp/rpms-microsoft-edge /tmp/rpms-1password
+    rm -rf /tmp/rpms-code /tmp/rpms-microsoft-edge /tmp/rpms-1password /tmp/rpms-vendor-code
 
 # Clean up build-time artifacts (no longer needed after package install)
 RUN rm -rf /tmp/external-repos.json /usr/bin/bkt-build
