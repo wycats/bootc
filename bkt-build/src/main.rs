@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 mod fetch;
 mod repos;
+mod vendor_artifacts;
 
 #[derive(Parser)]
 #[command(
@@ -39,6 +40,26 @@ enum Commands {
         #[arg(long, default_value = "/tmp/external-repos.json")]
         manifest: PathBuf,
     },
+    /// Resolve vendor artifacts from their feed URLs.
+    /// Runs from the repo checkout (CI), so paths are relative to the repo root.
+    ResolveVendorArtifacts {
+        /// Path to vendor-artifacts.json manifest
+        #[arg(long, default_value = "manifests/vendor-artifacts.json")]
+        manifest: PathBuf,
+        /// Output path for resolved manifest
+        #[arg(long, default_value = ".cache/bkt/vendor-artifacts.resolved.json")]
+        output: PathBuf,
+    },
+    /// Install a resolved vendor artifact by name.
+    /// Runs inside the container build, where the resolved manifest has been
+    /// COPY'd to /tmp/.
+    InstallVendorArtifact {
+        /// Artifact name
+        name: String,
+        /// Path to resolved vendor artifacts manifest
+        #[arg(long, default_value = "/tmp/vendor-artifacts.resolved.json")]
+        resolved: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -47,5 +68,11 @@ fn main() -> Result<()> {
         Commands::Fetch { name, manifest } => fetch::run(&name, &manifest),
         Commands::SetupRepos { manifest } => repos::setup_repos(&manifest),
         Commands::DownloadRpms { repo, manifest } => repos::download_rpms(&repo, &manifest),
+        Commands::ResolveVendorArtifacts { manifest, output } => {
+            vendor_artifacts::resolve(&manifest, &output)
+        }
+        Commands::InstallVendorArtifact { name, resolved } => {
+            vendor_artifacts::install(&name, &resolved)
+        }
     }
 }
