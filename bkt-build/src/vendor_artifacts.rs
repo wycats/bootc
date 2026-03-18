@@ -7,7 +7,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use bkt_common::checksum::sha256_hex;
 use bkt_common::http;
 use bkt_common::manifest::{
-    ResolvedVendorArtifact, ResolvedVendorArtifactsManifest, VendorArtifactsManifest, VendorSource,
+    ResolvedVendorArtifact, ResolvedVendorArtifactsManifest, VendorArtifactsManifest,
+    VendorResponseMap, VendorSource,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -80,7 +81,7 @@ fn resolve_vendor_feed(
     url_template: &str,
     manifest_params: &HashMap<String, String>,
     platforms: &HashMap<String, String>,
-    response_map: &HashMap<String, String>,
+    response_map: &VendorResponseMap,
     arch: &str,
 ) -> Result<ResolvedVendorArtifact> {
     // Build parameter map: start with explicit params
@@ -107,16 +108,8 @@ fn resolve_vendor_feed(
     let body: serde_json::Value = http::download_json(&url, &[])
         .with_context(|| format!("failed to fetch vendor feed for '{}'", name))?;
 
-    eprintln!(
-        "  vendor response: {}",
-        serde_json::to_string(&body).unwrap_or_default()
-    );
-
     // Extract fields using response_map
-    let extract = |key: &str| -> Result<String> {
-        let vendor_field = response_map
-            .get(key)
-            .ok_or_else(|| anyhow!("response_map for '{}' missing required key '{}'", name, key))?;
+    let extract = |vendor_field: &str, label: &str| -> Result<String> {
         body[vendor_field]
             .as_str()
             .map(String::from)
@@ -125,23 +118,29 @@ fn resolve_vendor_feed(
                     "vendor response for '{}' missing field '{}' (mapped from '{}')",
                     name,
                     vendor_field,
-                    key
+                    label
                 )
             })
     };
 
-    let artifact_url = extract("url")?;
-    let version = extract("version")?;
-    let sha256 = extract("sha256")?;
+    let artifact_url = extract(&response_map.url, "url")?;
+    let version = extract(&response_map.version, "version")?;
+    let sha256 = extract(&response_map.sha256, "sha256")?;
     let vendor_revision = response_map
-        .get("vendor_revision")
+        .vendor_revision
+        .as_ref()
         .and_then(|field| body[field].as_str().map(String::from));
 
     let kind_str = match kind {
         bkt_common::manifest::ArtifactKind::Rpm => "rpm",
     };
 
-    eprintln!("  → {} {} ({})", name, version, artifact_url);
+    eprintln!("  → {} v{}", name, version);
+    eprintln!("    url: {}", artifact_url);
+    eprintln!("    sha256: {}", sha256);
+    if let Some(rev) = &vendor_revision {
+        eprintln!("    vendor_revision: {}", rev);
+    }
 
     Ok(ResolvedVendorArtifact {
         name: name.to_string(),
@@ -179,7 +178,7 @@ fn expand_template(
             result.replace_range(abs_start..=abs_end, value);
             pos = abs_start + value.len();
         } else {
-            break;
+            bail!("unmatched '{{' in URL template at position {}", abs_start);
         }
     }
 
@@ -226,6 +225,18 @@ fn install_rpm(artifact: &ResolvedVendorArtifact) -> Result<()> {
             artifact.name,
             artifact.sha256,
             actual
+        );
+    }
+
+    // Validate artifact name to prevent path traversal
+    if !artifact
+        .name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        bail!(
+            "invalid artifact name '{}': only [A-Za-z0-9_-] are allowed",
+            artifact.name
         );
     }
 

@@ -2,14 +2,6 @@
   "$schema": "../schemas/external-repos.schema.json",
   "repos": [
     {
-      "name": "code",
-      "display_name": "Visual Studio Code",
-      "baseurl": "https://packages.microsoft.com/yumrepos/vscode",
-      "gpg_key": "https://packages.microsoft.com/keys/microsoft.asc",
-      "packages": ["code", "code-insiders"],
-      "layer_group": "independent"
-    },
-    {
       "name": "microsoft-edge",
       "display_name": "microsoft-edge",
       "baseurl": "https://packages.microsoft.com/yumrepos/edge",

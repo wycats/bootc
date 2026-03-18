@@ -79,6 +79,36 @@
         "source"
       ]
     },
+    "VendorResponseMap": {
+      "description": "Maps resolved artifact field names to vendor response JSON field names.",
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "description": "Vendor response field containing the SHA256 checksum",
+          "type": "string"
+        },
+        "url": {
+          "description": "Vendor response field containing the download URL",
+          "type": "string"
+        },
+        "vendor_revision": {
+          "description": "Vendor response field containing a revision identifier (optional)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "description": "Vendor response field containing the version string",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "version",
+        "sha256"
+      ]
+    },
     "VendorSource": {
       "description": "Discovery specification for a vendor artifact.",
       "oneOf": [
@@ -101,11 +131,8 @@
               }
             },
             "response_map": {
-              "description": "Maps resolved artifact field names to vendor response JSON field names.\nRequired keys: `url`, `version`, `sha256`. Optional: `vendor_revision`.",
-              "type": "object",
-              "additionalProperties": {
-                "type": "string"
-              }
+              "description": "Maps resolved artifact field names to vendor response JSON field names.",
+              "$ref": "#/$defs/VendorResponseMap"
             },
             "type": {
               "type": "string",

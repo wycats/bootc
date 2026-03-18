@@ -309,9 +309,23 @@ pub enum VendorSource {
         platforms: HashMap<String, String>,
 
         /// Maps resolved artifact field names to vendor response JSON field names.
-        /// Required keys: `url`, `version`, `sha256`. Optional: `vendor_revision`.
-        response_map: HashMap<String, String>,
+        response_map: VendorResponseMap,
     },
+}
+
+/// Maps resolved artifact field names to vendor response JSON field names.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct VendorResponseMap {
+    /// Vendor response field containing the download URL
+    pub url: String,
+    /// Vendor response field containing the version string
+    pub version: String,
+    /// Vendor response field containing the SHA256 checksum
+    pub sha256: String,
+    /// Vendor response field containing a revision identifier (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vendor_revision: Option<String>,
 }
 
 impl VendorArtifactsManifest {

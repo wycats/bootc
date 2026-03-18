@@ -303,6 +303,7 @@ pub fn generate_full_containerfile(input: &ContainerfileGeneratorInput) -> Strin
     emit_install_stages(&mut lines, &input.external_repos);
     emit_bundled_stage(&mut lines, &input.external_repos);
     emit_vendor_artifact_stages(&mut lines, &input.vendor_artifacts);
+    emit_vendor_bundled_stage(&mut lines, &input.vendor_artifacts);
     emit_fetch_stages(&mut lines, &input.upstreams);
     emit_script_stages(&mut lines, &input.upstreams);
     emit_wrapper_build_stage(&mut lines, &input.image_config);
@@ -486,10 +487,50 @@ fn emit_vendor_artifact_stages(lines: &mut Vec<String>, manifest: &VendorArtifac
     }
 }
 
+/// Emit a merged stage for bundled vendor artifacts (if any exist).
+fn emit_vendor_bundled_stage(lines: &mut Vec<String>, manifest: &VendorArtifactsManifest) {
+    let bundled: Vec<_> = manifest
+        .artifacts
+        .iter()
+        .filter(|a| a.layer_group == LayerGroup::Bundled)
+        .collect();
+
+    if bundled.is_empty() {
+        return;
+    }
+
+    lines.push("".to_string());
+    lines.push(section_header(
+        "Bundled vendor artifacts merged stage (reduces deployment layer count)",
+    ));
+    lines.push("".to_string());
+    lines.push("FROM scratch AS vendor-bundled".to_string());
+    for artifact in &bundled {
+        lines.push(format!("COPY --from=vendor-{} /usr/ /usr/", artifact.name));
+    }
+}
+
 /// Emit COPY instructions from vendor-* stages into final image.
+/// Only copies installed package files, excluding build-time artifacts
+/// (/rpms/ and /tmp/) that should not ship in the final image.
+/// Independent artifacts get their own COPY; bundled artifacts share one layer.
 fn emit_vendor_artifact_copies(lines: &mut Vec<String>, manifest: &VendorArtifactsManifest) {
-    for artifact in &manifest.artifacts {
-        lines.push(format!("COPY --from=vendor-{} / /", artifact.name));
+    let independent: Vec<_> = manifest
+        .artifacts
+        .iter()
+        .filter(|a| a.layer_group == LayerGroup::Independent)
+        .collect();
+    let has_bundled = manifest
+        .artifacts
+        .iter()
+        .any(|a| a.layer_group == LayerGroup::Bundled);
+
+    for artifact in &independent {
+        lines.push(format!("COPY --from=vendor-{} /usr/ /usr/", artifact.name));
+    }
+
+    if has_bundled {
+        lines.push("COPY --from=vendor-bundled / /".to_string());
     }
 }
 

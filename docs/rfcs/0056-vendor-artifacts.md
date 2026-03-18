@@ -45,6 +45,12 @@ Git-tracked intent manifest. Declares what to follow, not what version to use.
         "platforms": {
           "x86_64": "linux-rpm-x64",
           "aarch64": "linux-rpm-arm64"
+        },
+        "response_map": {
+          "url": "url",
+          "version": "productVersion",
+          "sha256": "sha256hash",
+          "vendor_revision": "version"
         }
       },
       "layer_group": "independent"
@@ -67,10 +73,11 @@ Git-tracked intent manifest. Declares what to follow, not what version to use.
 
 | Field       | Required | Description                                    |
 | ----------- | -------- | ---------------------------------------------- |
-| `type`      | yes      | Source type (`vendor-feed`)                    |
-| `url`       | yes      | URL template with `{param}` placeholders       |
-| `params`    | no       | Key-value parameters for template substitution |
-| `platforms` | no       | Architecture → platform identifier mapping     |
+| `type`         | yes      | Source type (`vendor-feed`)                                              |
+| `url`          | yes      | URL template with `{param}` placeholders                                 |
+| `params`       | no       | Key-value parameters for template substitution                           |
+| `platforms`    | no       | Architecture → platform identifier mapping                               |
+| `response_map` | yes      | Maps resolved field names (`url`, `version`, `sha256`) to vendor JSON fields |
 
 ### Template Substitution
 
@@ -100,11 +107,7 @@ Generated file, not checked into git. Produced by the resolver, consumed by the 
       "version": "1.111.0",
       "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/ce099c1ed25d9eb3076c11e4a280f3eb52b4fbeb/code-1.111.0-1772846667.el8.x86_64.rpm",
       "sha256": "c64f744ce4091b940c800dda8ba19d3c56c495bde6a100b2d19ae564d0c81bf2",
-      "vendor_revision": "ce099c1ed25d9eb3076c11e4a280f3eb52b4fbeb",
-      "metadata": {
-        "productVersion": "1.111.0",
-        "timestamp": 1772846448148
-      }
+      "vendor_revision": "ce099c1ed25d9eb3076c11e4a280f3eb52b4fbeb"
     }
   ]
 }
@@ -121,7 +124,7 @@ The resolver reads `manifests/vendor-artifacts.json`, queries each artifact's so
 3. Combine with `source.params`
 4. Expand URL template
 5. HTTP GET the expanded URL
-6. Parse JSON response (expects `url`, `productVersion`/`name`, `sha256hash`, `version`)
+6. Parse JSON response, extracting fields via `response_map`
 7. Write resolved entry
 
 **Command:** `bkt-build resolve-vendor-artifacts`

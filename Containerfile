@@ -13,10 +13,6 @@ RUN set -eu; \
 
 # ── RPM download stages (parallel, each downloads from one external repo) ────
 
-FROM base AS dl-code
-ARG CACHE_EPOCH_CODE=0
-RUN bkt-build download-rpms code
-
 FROM base AS dl-microsoft-edge
 ARG CACHE_EPOCH_MICROSOFT_EDGE=0
 RUN bkt-build download-rpms microsoft-edge
@@ -26,10 +22,6 @@ ARG CACHE_EPOCH_1PASSWORD=0
 RUN bkt-build download-rpms 1password
 
 # ── RPM install stages (per-package extraction with /opt relocation) ─────────
-
-FROM base AS install-code
-COPY --from=dl-code /rpms/ /tmp/rpms/
-RUN rpm -i --nodb --noscripts --nodeps /tmp/rpms/*.rpm && rm -rf /tmp/rpms
 
 FROM base AS install-microsoft-edge
 COPY --from=dl-microsoft-edge /rpms/ /tmp/rpms/
@@ -238,10 +230,9 @@ FROM base AS image
 # === END KERNEL_ARGUMENTS ===
 
 # Import installed files from install-* stages (no --link to avoid xattrs hardlink limit)
-COPY --from=install-code / /
 COPY --from=install-microsoft-edge / /
 COPY --from=install-bundled / /
-COPY --from=vendor-code / /
+COPY --from=vendor-code /usr/ /usr/
 
 # === SYSTEM_PACKAGES (managed by bkt) ===
 RUN dnf install -y \
@@ -276,17 +267,15 @@ RUN printf '%s\n' \
     >/usr/lib/tmpfiles.d/bootc-opt.conf
 
 # Finalize RPM database for external packages
-COPY --from=dl-code /rpms/ /tmp/rpms-code/
 COPY --from=dl-microsoft-edge /rpms/ /tmp/rpms-microsoft-edge/
 COPY --from=dl-1password /rpms/ /tmp/rpms-1password/
 COPY --from=vendor-code /rpms/ /tmp/rpms-vendor-code/
 RUN set -eu; \
-    rpm -i --justdb --nodeps /tmp/rpms-code/*.rpm; \
     rpm -i --justdb --nodeps /tmp/rpms-microsoft-edge/*.rpm; \
     rpm -i --justdb --nodeps /tmp/rpms-1password/*.rpm; \
     rpm -i --justdb --nodeps /tmp/rpms-vendor-code/*.rpm; \
     ldconfig; \
-    rm -rf /tmp/rpms-code /tmp/rpms-microsoft-edge /tmp/rpms-1password /tmp/rpms-vendor-code
+    rm -rf /tmp/rpms-microsoft-edge /tmp/rpms-1password /tmp/rpms-vendor-code
 
 # Clean up build-time artifacts (no longer needed after package install)
 RUN rm -rf /tmp/external-repos.json /usr/bin/bkt-build
