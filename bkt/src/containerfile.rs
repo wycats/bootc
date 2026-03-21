@@ -477,7 +477,7 @@ fn emit_vendor_artifact_stages(lines: &mut Vec<String>, manifest: &VendorArtifac
         }
         lines.push(format!("FROM base AS vendor-{}", artifact.name));
         lines.push(
-            "COPY .cache/bkt/vendor-artifacts.resolved.json /tmp/vendor-artifacts.resolved.json"
+            "COPY build/vendor-artifacts.resolved.json /tmp/vendor-artifacts.resolved.json"
                 .to_string(),
         );
         lines.push(format!(

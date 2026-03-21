@@ -47,7 +47,7 @@ enum Commands {
         #[arg(long, default_value = "manifests/vendor-artifacts.json")]
         manifest: PathBuf,
         /// Output path for resolved manifest
-        #[arg(long, default_value = ".cache/bkt/vendor-artifacts.resolved.json")]
+        #[arg(long, default_value = "build/vendor-artifacts.resolved.json")]
         output: PathBuf,
     },
     /// Install a resolved vendor artifact by name.

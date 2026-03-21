@@ -47,7 +47,7 @@ COPY --from=install-1password / /
 # ── Vendor artifact stages (parallel, each fetches one resolved artifact) ────
 
 FROM base AS vendor-code
-COPY .cache/bkt/vendor-artifacts.resolved.json /tmp/vendor-artifacts.resolved.json
+COPY build/vendor-artifacts.resolved.json /tmp/vendor-artifacts.resolved.json
 RUN bkt-build install-vendor-artifact code
 
 # ── Upstream fetch stages (parallel, each installs one upstream entry) ───────
