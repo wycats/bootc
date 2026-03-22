@@ -441,6 +441,7 @@ jobs:
 
       - name: Resolve vendor artifacts
         run: |
+          set -euo pipefail
           # Query vendor release feeds and write resolved manifest for the Docker build.
           # This runs once per build so all vendor-* stages see consistent versions.
           # If no vendor-artifacts.json exists yet, skip gracefully.
@@ -522,8 +523,8 @@ jobs:
 
   build-toolbox:
     runs-on: ubuntu-latest
-    # PRs require approval via 'pr-build' environment
-    environment: ${{ github.event_name == 'pull_request_target' && 'pr-build' || '' }}
+    # Fork PRs require approval; same-repo PRs build automatically (see build job comment).
+    environment: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository && 'pr-build' || '' }}
     # Elevated permissions for registry push
     permissions:
       packages: write
