@@ -16,6 +16,9 @@ wrappers/*/target/
 # Base image package cache
 .cache/
 
+# Build-time generated artifacts (vendor resolution, etc.)
+build/
+
 **/target/
 **/node_modules/
 # Editor/tool logs

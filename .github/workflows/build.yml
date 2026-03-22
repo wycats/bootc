@@ -322,9 +322,10 @@ jobs:
         nightly,
       ]
     runs-on: ubuntu-latest
-    # PRs require approval via 'pr-build' environment before running
-    # This ensures maintainer review before granting cache/registry access
-    environment: ${{ github.event_name == 'pull_request_target' && 'pr-build' || 'build' }}
+    # Fork PRs require approval via 'pr-build' environment before running.
+    # Same-repo PRs (from collaborators/bots with push access) build automatically —
+    # push access already implies trust, so the environment gate adds no security.
+    environment: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository && 'pr-build' || 'build' }}
     # Permissions: packages:write for GHCR cache, contents:write only needed for releases (gated by step condition)
     permissions:
       contents: write
@@ -437,6 +438,20 @@ jobs:
           make_latest: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve vendor artifacts
+        run: |
+          # Query vendor release feeds and write resolved manifest for the Docker build.
+          # This runs once per build so all vendor-* stages see consistent versions.
+          # If no vendor-artifacts.json exists yet, skip gracefully.
+          if [ -f manifests/vendor-artifacts.json ]; then
+            mkdir -p build
+            ./scripts/bkt-build resolve-vendor-artifacts \
+              --manifest manifests/vendor-artifacts.json \
+              --output build/vendor-artifacts.resolved.json
+          else
+            echo "No vendor-artifacts.json found, skipping resolution"
+          fi
 
       - name: Free disk space
         shell: bash
