@@ -210,12 +210,36 @@ pub fn install(name: &str, resolved_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Download a large artifact with retries on transient network errors.
+fn download_with_retries(url: &str, name: &str) -> Result<Vec<u8>> {
+    const MAX_RETRIES: u32 = 3;
+    const RETRY_DELAY_SECS: u64 = 5;
+
+    for attempt in 1..=MAX_RETRIES {
+        match bkt_common::http::download(url) {
+            Ok(data) => return Ok(data),
+            Err(e) if attempt < MAX_RETRIES => {
+                eprintln!(
+                    "  download attempt {}/{} for {} failed: {}",
+                    attempt, MAX_RETRIES, name, e
+                );
+                eprintln!("  retrying in {}s...", RETRY_DELAY_SECS);
+                std::thread::sleep(std::time::Duration::from_secs(RETRY_DELAY_SECS));
+            }
+            Err(e) => {
+                return Err(e)
+                    .with_context(|| format!("failed to download {} after {} attempts", name, MAX_RETRIES));
+            }
+        }
+    }
+    unreachable!()
+}
+
 /// Download and install an RPM artifact.
 fn install_rpm(artifact: &ResolvedVendorArtifact) -> Result<()> {
     eprintln!("Downloading {} v{} ...", artifact.name, artifact.version);
 
-    let data = bkt_common::http::download(&artifact.url)
-        .with_context(|| format!("failed to download {}", artifact.name))?;
+    let data = download_with_retries(&artifact.url, &artifact.name)?;
 
     eprintln!("Verifying SHA256...");
     let actual = sha256_hex(&data);
