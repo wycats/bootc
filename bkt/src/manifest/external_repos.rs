@@ -1,23 +1,7 @@
 //! External RPM repositories manifest types.
+pub use bkt_common::manifest::LayerGroup;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
-/// Controls how a package is grouped for deployment layers.
-///
-/// Build stages are always per-package (for cache efficiency).
-/// This field controls deployment layer consolidation to avoid
-/// btrfs hardlink limits in ostree.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum LayerGroup {
-    /// Package gets its own deployment layer.
-    /// Use for high-churn, large packages (e.g., vscode, edge).
-    Independent,
-    /// Package is grouped with other bundled packages.
-    /// Use for low-churn, smaller packages.
-    #[default]
-    Bundled,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 pub struct ExternalReposManifest {

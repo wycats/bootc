@@ -1,0 +1,28 @@
+{
+  "$schema": "../schemas/vendor-artifacts.schema.json",
+  "artifacts": [
+    {
+      "name": "code",
+      "display_name": "Visual Studio Code",
+      "kind": "rpm",
+      "source": {
+        "type": "vendor-feed",
+        "url": "https://update.code.visualstudio.com/api/update/{platform}/{channel}/latest",
+        "params": {
+          "channel": "stable"
+        },
+        "platforms": {
+          "x86_64": "linux-rpm-x64",
+          "aarch64": "linux-rpm-arm64"
+        },
+        "response_map": {
+          "url": "url",
+          "version": "productVersion",
+          "sha256": "sha256hash",
+          "vendor_revision": "version"
+        }
+      },
+      "layer_group": "independent"
+    }
+  ]
+}

@@ -18,6 +18,7 @@ use crate::manifest::system_config::SystemConfigManifest;
 use crate::manifest::upstream::ManifestRepo as UpstreamManifestRepo;
 use crate::manifest::{
     ExternalReposManifest, ShimsManifest, SystemPackagesManifest, UpstreamManifest,
+    VendorArtifactsManifest,
 };
 use crate::output::Output;
 use crate::pipeline::ExecutionPlan;
@@ -446,6 +447,24 @@ fn load_generator_input() -> Result<ContainerfileGeneratorInput> {
 
     let has_external_rpms = !external_repos.repos.is_empty();
 
+    let vendor_artifacts_path = repo_path.join("manifests").join("vendor-artifacts.json");
+    let vendor_artifacts = if vendor_artifacts_path.exists() {
+        let content = std::fs::read_to_string(&vendor_artifacts_path).with_context(|| {
+            format!(
+                "Failed to read vendor artifacts manifest from {}",
+                vendor_artifacts_path.display()
+            )
+        })?;
+        serde_json::from_str(&content).with_context(|| {
+            format!(
+                "Failed to parse vendor artifacts manifest from {}",
+                vendor_artifacts_path.display()
+            )
+        })?
+    } else {
+        VendorArtifactsManifest::default()
+    };
+
     Ok(ContainerfileGeneratorInput {
         external_repos,
         upstreams,
@@ -455,5 +474,6 @@ fn load_generator_input() -> Result<ContainerfileGeneratorInput> {
         image_config,
         shims: shims_manifest.shims,
         has_external_rpms,
+        vendor_artifacts,
     })
 }

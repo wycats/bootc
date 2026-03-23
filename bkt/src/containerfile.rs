@@ -21,6 +21,7 @@
 
 use crate::manifest::ExternalReposManifest;
 use crate::manifest::Shim;
+use crate::manifest::VendorArtifactsManifest;
 use crate::manifest::external_repos::LayerGroup;
 use crate::manifest::image_config::{FileCopy, ImageConfigManifest, ImageModule};
 use crate::manifest::system_config::SystemConfigManifest;
@@ -289,6 +290,7 @@ pub struct ContainerfileGeneratorInput {
     pub image_config: ImageConfigManifest,
     pub shims: Vec<Shim>,
     pub has_external_rpms: bool,
+    pub vendor_artifacts: VendorArtifactsManifest,
 }
 
 /// Generate the full Containerfile from manifests.
@@ -300,6 +302,8 @@ pub fn generate_full_containerfile(input: &ContainerfileGeneratorInput) -> Strin
     emit_dl_stages(&mut lines, &input.external_repos);
     emit_install_stages(&mut lines, &input.external_repos);
     emit_bundled_stage(&mut lines, &input.external_repos);
+    emit_vendor_artifact_stages(&mut lines, &input.vendor_artifacts);
+    emit_vendor_bundled_stage(&mut lines, &input.vendor_artifacts);
     emit_fetch_stages(&mut lines, &input.upstreams);
     emit_script_stages(&mut lines, &input.upstreams);
     emit_wrapper_build_stage(&mut lines, &input.image_config);
@@ -455,6 +459,81 @@ fn emit_bundled_stage(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
     }
 }
 
+/// Emit vendor artifact build stages (parallel, each fetches and installs one resolved artifact).
+fn emit_vendor_artifact_stages(lines: &mut Vec<String>, manifest: &VendorArtifactsManifest) {
+    if manifest.artifacts.is_empty() {
+        return;
+    }
+
+    lines.push("".to_string());
+    lines.push(section_header(
+        "Vendor artifact stages (parallel, each fetches one resolved artifact)",
+    ));
+    lines.push("".to_string());
+
+    for (idx, artifact) in manifest.artifacts.iter().enumerate() {
+        if idx > 0 {
+            lines.push("".to_string());
+        }
+        lines.push(format!("FROM base AS vendor-{}", artifact.name));
+        lines.push(
+            "COPY build/vendor-artifacts.resolved.json /tmp/vendor-artifacts.resolved.json"
+                .to_string(),
+        );
+        lines.push(format!(
+            "RUN bkt-build install-vendor-artifact {}",
+            artifact.name
+        ));
+    }
+}
+
+/// Emit a merged stage for bundled vendor artifacts (if any exist).
+fn emit_vendor_bundled_stage(lines: &mut Vec<String>, manifest: &VendorArtifactsManifest) {
+    let bundled: Vec<_> = manifest
+        .artifacts
+        .iter()
+        .filter(|a| a.layer_group == LayerGroup::Bundled)
+        .collect();
+
+    if bundled.is_empty() {
+        return;
+    }
+
+    lines.push("".to_string());
+    lines.push(section_header(
+        "Bundled vendor artifacts merged stage (reduces deployment layer count)",
+    ));
+    lines.push("".to_string());
+    lines.push("FROM scratch AS vendor-bundled".to_string());
+    for artifact in &bundled {
+        lines.push(format!("COPY --from=vendor-{} /usr/ /usr/", artifact.name));
+    }
+}
+
+/// Emit COPY instructions from vendor-* stages into final image.
+/// Only copies installed package files, excluding build-time artifacts
+/// (/rpms/ and /tmp/) that should not ship in the final image.
+/// Independent artifacts get their own COPY; bundled artifacts share one layer.
+fn emit_vendor_artifact_copies(lines: &mut Vec<String>, manifest: &VendorArtifactsManifest) {
+    let independent: Vec<_> = manifest
+        .artifacts
+        .iter()
+        .filter(|a| a.layer_group == LayerGroup::Independent)
+        .collect();
+    let has_bundled = manifest
+        .artifacts
+        .iter()
+        .any(|a| a.layer_group == LayerGroup::Bundled);
+
+    for artifact in &independent {
+        lines.push(format!("COPY --from=vendor-{} /usr/ /usr/", artifact.name));
+    }
+
+    if has_bundled {
+        lines.push("COPY --from=vendor-bundled / /".to_string());
+    }
+}
+
 /// Emit COPY --link instructions from install-* stages into final image.
 /// Independent packages get their own layer; bundled packages share one layer.
 fn emit_install_copies(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
@@ -486,17 +565,33 @@ fn emit_install_copies(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
 }
 
 /// Emit RPM database finalization after all file payloads are in place.
-fn emit_rpm_db_finalization(lines: &mut Vec<String>, repos: &ExternalReposManifest) {
-    if repos.repos.is_empty() {
+fn emit_rpm_db_finalization(
+    lines: &mut Vec<String>,
+    repos: &ExternalReposManifest,
+    vendor_artifacts: &VendorArtifactsManifest,
+) {
+    let has_repos = !repos.repos.is_empty();
+    let has_vendor = !vendor_artifacts.artifacts.is_empty();
+
+    if !has_repos && !has_vendor {
         return;
     }
 
     lines.push("# Finalize RPM database for external packages".to_string());
-    // Copy RPMs to separate dirs to avoid filename collisions
+
+    // Copy RPMs from external repo dl-* stages
     for repo in &repos.repos {
         lines.push(format!(
             "COPY --from=dl-{} /rpms/ /tmp/rpms-{}/",
             repo.name, repo.name
+        ));
+    }
+
+    // Copy RPMs from vendor-* stages
+    for artifact in &vendor_artifacts.artifacts {
+        lines.push(format!(
+            "COPY --from=vendor-{} /rpms/ /tmp/rpms-vendor-{}/",
+            artifact.name, artifact.name
         ));
     }
 
@@ -507,14 +602,23 @@ fn emit_rpm_db_finalization(lines: &mut Vec<String>, repos: &ExternalReposManife
             repo.name, LINE_CONT
         ));
     }
+    for artifact in &vendor_artifacts.artifacts {
+        lines.push(format!(
+            "    rpm -i --justdb --nodeps /tmp/rpms-vendor-{}/*.rpm; {}",
+            artifact.name, LINE_CONT
+        ));
+    }
     lines.push(format!("    ldconfig; {}", LINE_CONT));
 
     // Cleanup
-    let cleanup_parts: Vec<String> = repos
+    let mut cleanup_parts: Vec<String> = repos
         .repos
         .iter()
         .map(|r| format!("/tmp/rpms-{}", r.name))
         .collect();
+    for artifact in &vendor_artifacts.artifacts {
+        cleanup_parts.push(format!("/tmp/rpms-vendor-{}", artifact.name));
+    }
     lines.push(format!("    rm -rf {}", cleanup_parts.join(" ")));
 }
 
@@ -818,6 +922,8 @@ fn emit_image_assembly(lines: &mut Vec<String>, input: &ContainerfileGeneratorIn
 
     // Per-package RPM file payloads (COPY --link for layer independence)
     emit_install_copies(lines, &input.external_repos);
+    // Vendor artifact file payloads
+    emit_vendor_artifact_copies(lines, &input.vendor_artifacts);
     lines.push("".to_string());
 
     // System packages only (external RPMs handled via install stages)
@@ -834,7 +940,7 @@ fn emit_image_assembly(lines: &mut Vec<String>, input: &ContainerfileGeneratorIn
     lines.push("".to_string());
 
     // RPM database finalization (--justdb + ldconfig)
-    emit_rpm_db_finalization(lines, &input.external_repos);
+    emit_rpm_db_finalization(lines, &input.external_repos, &input.vendor_artifacts);
     lines.push("".to_string());
 
     emit_cleanup(lines);
@@ -1469,6 +1575,7 @@ COPY . /app
             },
             shims: Vec::new(),
             has_external_rpms: false,
+            vendor_artifacts: VendorArtifactsManifest::default(),
         };
 
         let output = generate_full_containerfile(&input);

@@ -1,6 +1,7 @@
 use crate::error::CommonError;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -225,5 +226,165 @@ impl ExternalReposManifest {
     /// Find an external repository by name.
     pub fn find(&self, name: &str) -> Option<&ExternalRepo> {
         self.repos.iter().find(|repo| repo.name == name)
+    }
+}
+
+// ── Vendor artifacts (intent manifest types) ────────────────────────────────
+
+/// Controls how a package is grouped for deployment layers.
+///
+/// Build stages are always per-package (for cache efficiency).
+/// This field controls deployment layer consolidation to avoid
+/// btrfs hardlink limits in ostree.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum LayerGroup {
+    /// Package gets its own deployment layer.
+    /// Use for high-churn, large packages (e.g., vscode, edge).
+    Independent,
+    /// Package is grouped with other bundled packages.
+    /// Use for low-churn, smaller packages.
+    #[default]
+    Bundled,
+}
+
+/// The vendor-artifacts.json manifest.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct VendorArtifactsManifest {
+    #[serde(rename = "$schema", default, skip_serializing_if = "Option::is_none")]
+    pub schema: Option<String>,
+
+    pub artifacts: Vec<VendorArtifact>,
+}
+
+/// A single vendor artifact entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct VendorArtifact {
+    /// Unique identifier (e.g., "code")
+    pub name: String,
+
+    /// Human-readable name (e.g., "Visual Studio Code")
+    pub display_name: String,
+
+    /// Artifact type
+    pub kind: ArtifactKind,
+
+    /// How to discover the latest artifact
+    pub source: VendorSource,
+
+    /// Controls deployment layer grouping. Defaults to bundled.
+    #[serde(default)]
+    pub layer_group: LayerGroup,
+}
+
+/// The type of artifact being installed.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum ArtifactKind {
+    /// RPM package
+    Rpm,
+}
+
+/// Discovery specification for a vendor artifact.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum VendorSource {
+    /// Vendor release feed with templated URL
+    VendorFeed {
+        /// URL template with `{param}` placeholders
+        url: String,
+
+        /// Key-value parameters for template substitution
+        #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+        params: HashMap<String, String>,
+
+        /// Architecture → platform identifier mapping.
+        /// The resolved platform value is available as `{platform}` in the URL template.
+        #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+        platforms: HashMap<String, String>,
+
+        /// Maps resolved artifact field names to vendor response JSON field names.
+        response_map: VendorResponseMap,
+    },
+}
+
+/// Maps resolved artifact field names to vendor response JSON field names.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct VendorResponseMap {
+    /// Vendor response field containing the download URL
+    pub url: String,
+    /// Vendor response field containing the version string
+    pub version: String,
+    /// Vendor response field containing the SHA256 checksum
+    pub sha256: String,
+    /// Vendor response field containing a revision identifier (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vendor_revision: Option<String>,
+}
+
+impl VendorArtifactsManifest {
+    pub const PROJECT_PATH: &'static str = "manifests/vendor-artifacts.json";
+
+    /// Load from a specific path.
+    pub fn load_from(path: &Path) -> Result<Self, CommonError> {
+        let content = fs::read_to_string(path)?;
+        let manifest: Self = serde_json::from_str(&content)?;
+        Ok(manifest)
+    }
+
+    /// Find an artifact by name.
+    pub fn find(&self, name: &str) -> Option<&VendorArtifact> {
+        self.artifacts.iter().find(|a| a.name == name)
+    }
+}
+
+// ── Resolved vendor artifacts (build-time resolution output) ────────────────
+
+/// A resolved vendor artifact, produced by the resolver and consumed by the build.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolvedVendorArtifact {
+    /// Artifact name (matches manifest entry)
+    pub name: String,
+    /// Artifact type
+    pub kind: String,
+    /// Resolved version string
+    pub version: String,
+    /// Direct download URL for the artifact
+    pub url: String,
+    /// SHA256 checksum of the artifact
+    pub sha256: String,
+    /// Vendor-specific revision identifier (e.g., commit hash)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vendor_revision: Option<String>,
+}
+
+/// The resolved vendor artifacts file (`.cache/bkt/vendor-artifacts.resolved.json`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolvedVendorArtifactsManifest {
+    /// When resolution was performed
+    pub resolved_at: DateTime<Utc>,
+    /// Build architecture
+    pub arch: String,
+    /// Resolved artifacts
+    pub artifacts: Vec<ResolvedVendorArtifact>,
+}
+
+impl ResolvedVendorArtifactsManifest {
+    /// Load from a specific path.
+    pub fn load_from(path: &Path) -> Result<Self, CommonError> {
+        let content = fs::read_to_string(path)?;
+        let manifest: Self = serde_json::from_str(&content)?;
+        Ok(manifest)
+    }
+
+    /// Find a resolved artifact by name.
+    pub fn find(&self, name: &str) -> Option<&ResolvedVendorArtifact> {
+        self.artifacts.iter().find(|a| a.name == name)
     }
 }
