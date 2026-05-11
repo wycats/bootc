@@ -994,7 +994,7 @@ impl Subsystem for SystemdServicesSubsystem {
         let mut report = DriftReport::default();
 
         let mut services: Vec<_> = manifest.services.iter().collect();
-        services.sort_by(|(a, _), (b, _)| a.cmp(b));
+        services.sort_by_key(|(service, _)| *service);
 
         for (service, expected_state) in services {
             let expected = expected_state.as_str();

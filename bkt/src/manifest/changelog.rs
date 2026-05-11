@@ -367,7 +367,7 @@ impl ChangelogManager {
         }
 
         // Sort by timestamp
-        entries.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        entries.sort_by_key(|entry| entry.timestamp);
 
         Ok(entries)
     }

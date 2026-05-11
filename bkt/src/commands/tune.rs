@@ -352,11 +352,10 @@ fn show_status(status: &SystemStatus, actions: &mut Vec<Action>) {
     // System Memory
     Output::header("System Memory");
 
-    let mem_used_pct = if status.mem_total > 0 {
-        ((status.mem_total - status.mem_available) * 100) / status.mem_total
-    } else {
-        0
-    };
+    let mem_used_pct = (status.mem_total - status.mem_available)
+        .saturating_mul(100)
+        .checked_div(status.mem_total)
+        .unwrap_or(0);
 
     println!("  Total:       {}", human_size_kb(status.mem_total));
     println!(
@@ -374,11 +373,11 @@ fn show_status(status: &SystemStatus, actions: &mut Vec<Action>) {
     }
 
     // Check if memory is low
-    let available_pct = if status.mem_total > 0 {
-        (status.mem_available * 100) / status.mem_total
-    } else {
-        100
-    };
+    let available_pct = status
+        .mem_available
+        .saturating_mul(100)
+        .checked_div(status.mem_total)
+        .unwrap_or(100);
     if available_pct < MEM_AVAILABLE_LOW_PCT {
         Output::warning(format!("Available memory is low ({}%)", available_pct));
         actions.push(Action::DropCaches);
@@ -390,11 +389,11 @@ fn show_status(status: &SystemStatus, actions: &mut Vec<Action>) {
     if status.swap_total == 0 {
         println!("  No swap configured");
     } else {
-        let swap_pct = if status.swap_total > 0 {
-            (status.swap_used * 100) / status.swap_total
-        } else {
-            0
-        };
+        let swap_pct = status
+            .swap_used
+            .saturating_mul(100)
+            .checked_div(status.swap_total)
+            .unwrap_or(0);
         println!("  Total:       {}", human_size_kb(status.swap_total));
         println!(
             "  Used:        {} ({}%)",
@@ -415,11 +414,11 @@ fn show_status(status: &SystemStatus, actions: &mut Vec<Action>) {
     if status.gpu_card.is_some() {
         Output::header("GPU Memory");
 
-        let vram_pct = if status.vram_total > 0 {
-            (status.vram_used * 100) / status.vram_total
-        } else {
-            0
-        };
+        let vram_pct = status
+            .vram_used
+            .saturating_mul(100)
+            .checked_div(status.vram_total)
+            .unwrap_or(0);
 
         println!(
             "  VRAM:        {} / {} ({}%)",

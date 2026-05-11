@@ -678,7 +678,7 @@ fn emit_script_stages(lines: &mut Vec<String>, upstreams: &UpstreamManifest) {
         lines.push("COPY upstream/manifest.json /tmp/upstream-manifest.json".to_string());
         if let Some(script) = script_lines {
             lines.push("RUN <<'EOF'".to_string());
-            lines.extend(script.into_iter());
+            lines.extend(script);
 
             // Collect outputs into /out/ for single-layer COPY (RFC-0050)
             if !outputs.is_empty() {
