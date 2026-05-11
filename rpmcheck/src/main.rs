@@ -262,10 +262,8 @@ fn find_primary_href(repomd_xml: &str) -> Result<String> {
                     }
                 }
             }
-            Event::End(ref e) => {
-                if tag_local(e.name()) == "data" {
-                    in_primary = false;
-                }
+            Event::End(ref e) if tag_local(e.name()) == "data" => {
+                in_primary = false;
             }
             Event::Eof => break,
             _ => {}
@@ -326,16 +324,12 @@ fn parse_packages(xml: &str, tracked: &HashSet<&str>) -> Result<Vec<PackageVersi
                     });
                 }
             }
-            Event::Text(ref e) => {
-                if reading_name {
-                    current_name = e.unescape()?.to_string();
-                    reading_name = false;
-                }
+            Event::Text(ref e) if reading_name => {
+                current_name = e.unescape()?.to_string();
+                reading_name = false;
             }
-            Event::End(ref e) => {
-                if tag_local(e.name()) == "package" {
-                    in_package = false;
-                }
+            Event::End(ref e) if tag_local(e.name()) == "package" => {
+                in_package = false;
             }
             Event::Eof => break,
             _ => {}
