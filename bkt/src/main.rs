@@ -206,7 +206,7 @@ fn main() -> Result<()> {
         Commands::Doctor(args) => commands::doctor::run(args),
         Commands::Status(args) => commands::status::run(args),
         Commands::Upstream(args) => commands::upstream::run(args, plan.runner()),
-        Commands::VendorArtifacts(args) => commands::vendor_artifacts::run(args),
+        Commands::VendorArtifacts(args) => commands::vendor_artifacts::run(args, &plan),
         Commands::Changelog(args) => commands::changelog::run(args),
         Commands::Drift(args) => commands::drift::run(args),
         Commands::Base(args) => commands::base::run(args, plan.runner()),

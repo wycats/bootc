@@ -355,7 +355,7 @@ fn handle_try_install(packages: &[String], plan: &ExecutionPlan) -> Result<()> {
     Ok(())
 }
 
-fn ensure_usroverlay(runner: &dyn CommandRunner, dry_run: bool) -> Result<()> {
+pub(crate) fn ensure_usroverlay(runner: &dyn CommandRunner, dry_run: bool) -> Result<()> {
     if overlay_is_unlocked(runner)? {
         return Ok(());
     }
@@ -370,7 +370,7 @@ fn ensure_usroverlay(runner: &dyn CommandRunner, dry_run: bool) -> Result<()> {
     Ok(())
 }
 
-fn ensure_rpm_state_dir(runner: &dyn CommandRunner, dry_run: bool) -> Result<()> {
+pub(crate) fn ensure_rpm_state_dir(runner: &dyn CommandRunner, dry_run: bool) -> Result<()> {
     if dry_run {
         Output::dry_run("Would create /var/lib/rpm-state");
         return Ok(());
@@ -733,7 +733,11 @@ fn sanitize_branch_component(value: &str) -> String {
     }
 }
 
-fn run_pkexec_status(runner: &dyn CommandRunner, program: &str, args: &[&str]) -> Result<()> {
+pub(crate) fn run_pkexec_status(
+    runner: &dyn CommandRunner,
+    program: &str,
+    args: &[&str],
+) -> Result<()> {
     let mut argv = vec![program];
     argv.extend(args);
 

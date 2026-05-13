@@ -4,14 +4,18 @@
 //! (such as VS Code) are newer upstream than the currently installed RPM.
 
 use anyhow::{Context, Result, anyhow, bail};
+use bkt_common::checksum::sha256_hex;
 use bkt_common::manifest::{ArtifactKind, VendorArtifactsManifest, VendorSource};
 use clap::{Args, Subcommand};
 use owo_colors::OwoColorize;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::Command;
 
+use crate::context::{CommandDomain, PrMode};
 use crate::output::Output;
+use crate::pipeline::ExecutionPlan;
 
 #[derive(Debug, Args)]
 pub struct VendorArtifactsArgs {
@@ -29,6 +33,11 @@ pub enum VendorArtifactsAction {
         #[arg(long)]
         json: bool,
     },
+    /// Try a vendor artifact update in the transient host overlay
+    Try {
+        /// Artifact name
+        name: String,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -42,16 +51,15 @@ struct ArtifactStatus {
     stale: bool,
 }
 
-pub fn run(args: VendorArtifactsArgs) -> Result<()> {
+pub fn run(args: VendorArtifactsArgs, plan: &ExecutionPlan) -> Result<()> {
     match args.action {
         VendorArtifactsAction::Status { name, json } => status(name, json),
+        VendorArtifactsAction::Try { name } => try_artifact(&name, plan),
     }
 }
 
 fn status(name: Option<String>, json: bool) -> Result<()> {
-    let manifest = VendorArtifactsManifest::load_from(
-        &crate::repo::find_repo_path()?.join(VendorArtifactsManifest::PROJECT_PATH),
-    )?;
+    let manifest = load_manifest()?;
 
     let artifacts: Vec<_> = match name {
         Some(name) => vec![
@@ -131,6 +139,169 @@ fn status(name: Option<String>, json: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn try_artifact(name: &str, plan: &ExecutionPlan) -> Result<()> {
+    plan.validate_domain(CommandDomain::System)?;
+
+    if plan.pr_mode == PrMode::PrOnly {
+        bail!("vendor artifact try installs locally and does not support --pr-only");
+    }
+
+    if !plan.dry_run && !plan.should_execute_locally() {
+        bail!("vendor artifact try installs locally and requires local execution");
+    }
+
+    let manifest = load_manifest()?;
+    let artifact = manifest
+        .find(name)
+        .ok_or_else(|| anyhow!("vendor artifact '{}' not found", name))?;
+
+    if artifact.kind != ArtifactKind::Rpm {
+        bail!(
+            "unsupported artifact kind '{}' for '{}'",
+            artifact_kind(&artifact.kind),
+            artifact.name
+        );
+    }
+
+    validate_artifact_filename(&artifact.name)?;
+
+    let resolved = resolve_artifact(artifact)?;
+    let installed = installed_rpm_version(&artifact.name)?;
+    let expected_prefix = format!("{}-", resolved.version);
+
+    Output::header(format!("TRY VENDOR ARTIFACT: {}", artifact.name));
+    Output::kv("Latest", &resolved.version);
+    Output::kv("Installed", installed.as_deref().unwrap_or("not installed"));
+
+    if installed
+        .as_deref()
+        .is_some_and(|version| version.starts_with(&expected_prefix))
+    {
+        Output::success(format!("{} is already current", artifact.name));
+        return Ok(());
+    }
+
+    let temp_dir = vendor_temp_dir(&artifact.name);
+    let rpm_path = temp_dir.join(format!("{}.rpm", artifact.name));
+    let rpm_path_display = rpm_path.display().to_string();
+
+    if plan.dry_run {
+        Output::dry_run(format!("Would download {}", resolved.url));
+        Output::dry_run(format!("Would verify SHA256 {}", resolved.sha256));
+        Output::dry_run("Would unlock /usr overlay via rpm-ostree usroverlay");
+        Output::dry_run("Would create /var/lib/rpm-state");
+        Output::dry_run(format!(
+            "Would install {} via dnf5 install -y",
+            rpm_path_display
+        ));
+        return Ok(());
+    }
+
+    Output::info(format!(
+        "Downloading {} v{}...",
+        artifact.name, resolved.version
+    ));
+    let data = bkt_common::http::download(&resolved.url)
+        .with_context(|| format!("failed to download vendor artifact '{}'", artifact.name))?;
+
+    Output::info("Verifying SHA256...");
+    let actual = sha256_hex(&data);
+    if actual != resolved.sha256 {
+        bail!(
+            "SHA256 mismatch for {}: expected {}, got {}",
+            artifact.name,
+            resolved.sha256,
+            actual
+        );
+    }
+
+    std::fs::create_dir(&temp_dir)
+        .with_context(|| format!("failed to create temp dir {}", temp_dir.display()))?;
+    let cleanup = TempDirCleanup::new(temp_dir.clone());
+
+    write_new_file(&rpm_path, &data)
+        .with_context(|| format!("failed to write RPM to {}", rpm_path.display()))?;
+
+    let runner = plan.runner();
+    crate::commands::try_cmd::ensure_usroverlay(runner, false)?;
+    crate::commands::try_cmd::ensure_rpm_state_dir(runner, false)?;
+
+    Output::info(format!("Installing {} via dnf5...", artifact.name.cyan()));
+    crate::commands::try_cmd::run_pkexec_status(
+        runner,
+        "/usr/bin/dnf5",
+        &["install", "-y", &rpm_path_display],
+    )?;
+
+    drop(cleanup);
+
+    Output::success(format!(
+        "Installed {} {} in the transient overlay",
+        artifact.name, resolved.version
+    ));
+
+    Ok(())
+}
+
+fn load_manifest() -> Result<VendorArtifactsManifest> {
+    VendorArtifactsManifest::load_from(
+        &crate::repo::find_repo_path()?.join(VendorArtifactsManifest::PROJECT_PATH),
+    )
+    .context("failed to load vendor artifacts manifest")
+}
+
+fn validate_artifact_filename(name: &str) -> Result<()> {
+    if name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Ok(());
+    }
+
+    bail!(
+        "invalid artifact name '{}': only [A-Za-z0-9_-] are allowed for local RPM filenames",
+        name
+    )
+}
+
+fn vendor_temp_dir(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("bkt-vendor-{}-{}", name, std::process::id()))
+}
+
+fn write_new_file(path: &std::path::Path, data: &[u8]) -> Result<()> {
+    use std::io::Write;
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    file.write_all(data)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+struct TempDirCleanup {
+    path: PathBuf,
+}
+
+impl TempDirCleanup {
+    fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+}
+
+impl Drop for TempDirCleanup {
+    fn drop(&mut self) {
+        if let Err(error) = std::fs::remove_dir_all(&self.path) {
+            Output::warning(format!(
+                "Failed to remove temporary directory {}: {}",
+                self.path.display(),
+                error
+            ));
+        }
+    }
 }
 
 fn resolve_artifact(
