@@ -320,6 +320,8 @@ jobs:
             echo "vendor_artifacts_changed=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Vendor artifacts unchanged"
           fi
+
+  check-schemas-current:
     name: Check schemas are current
     runs-on: ubuntu-latest
     timeout-minutes: 15
