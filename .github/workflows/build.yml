@@ -235,6 +235,7 @@ jobs:
             ["manifests/gnome-extensions.json"]="schemas/gnome-extensions.schema.json"
             ["manifests/gsettings.json"]="schemas/gsettings.schema.json"
             ["manifests/host-shims.json"]="schemas/host-shims.schema.json"
+            ["manifests/vendor-artifacts.json"]="schemas/vendor-artifacts.schema.json"
           )
 
           for manifest in "${!SCHEMA_MAP[@]}"; do
@@ -246,6 +247,79 @@ jobs:
           echo "✓ All manifests are valid"
 
   check-schemas-current:
+
+  check-vendor-artifacts:
+    name: Check vendor artifacts freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      vendor_artifacts_changed: ${{ steps.check.outputs.vendor_artifacts_changed }}
+      vendor_artifacts_hash: ${{ steps.check.outputs.vendor_artifacts_hash }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bkt-build -> target
+          shared-key: bkt-build-vendor-artifacts
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build bkt-build
+        run: cargo build --release
+        working-directory: bkt-build
+
+      - name: Install skopeo and jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo jq
+
+      - name: Check resolved vendor artifacts
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # No manifest means no vendor-artifact freshness signal.
+          if [[ ! -f manifests/vendor-artifacts.json ]]; then
+            echo "vendor_artifacts_changed=false" >> "$GITHUB_OUTPUT"
+            echo "vendor_artifacts_hash=" >> "$GITHUB_OUTPUT"
+            echo "::notice::No vendor-artifacts.json found"
+            exit 0
+          fi
+
+          ./bkt-build/target/release/bkt-build resolve-vendor-artifacts \
+            --manifest manifests/vendor-artifacts.json \
+            --output /tmp/vendor-artifacts.resolved.json
+
+          # Exclude resolved_at from the freshness hash; it changes every run.
+          NORMALIZED=$(jq -S '{arch, artifacts: [.artifacts[] | {name, kind, version, url, sha256, vendor_revision}]}' /tmp/vendor-artifacts.resolved.json)
+          CURRENT_HASH=$(printf '%s' "$NORMALIZED" | sha256sum | awk '{print $1}')
+          echo "Current vendor artifacts hash: ${CURRENT_HASH}"
+          echo "Resolved vendor artifacts:"
+          jq -r '.artifacts[] | "  \(.name) \(.version) \(.sha256)"' /tmp/vendor-artifacts.resolved.json
+
+          LAST_HASH=""
+          if skopeo inspect "docker://ghcr.io/${GITHUB_REPOSITORY}:latest" >/tmp/current.json 2>/dev/null; then
+            LAST_HASH=$(jq -r '.Labels["org.wycats.bootc.vendor-artifacts.hash"] // empty' </tmp/current.json)
+          fi
+          echo "Last image vendor artifacts hash: ${LAST_HASH:-none}"
+
+          echo "vendor_artifacts_hash=${CURRENT_HASH}" >> "$GITHUB_OUTPUT"
+
+          if [[ -z "${LAST_HASH}" || "${CURRENT_HASH}" != "${LAST_HASH}" ]]; then
+            echo "vendor_artifacts_changed=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Vendor artifacts changed — will rebuild image"
+          else
+            echo "vendor_artifacts_changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Vendor artifacts unchanged"
+          fi
     name: Check schemas are current
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -319,6 +393,7 @@ jobs:
         check-schemas-current,
         check-upstream,
         check-rpm-freshness,
+        check-vendor-artifacts,
         nightly,
       ]
     runs-on: ubuntu-latest
@@ -336,6 +411,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       needs.check-upstream.outputs.upstream_changed == 'true' ||
       needs.check-rpm-freshness.outputs.rpms_changed == 'true' ||
+      needs.check-vendor-artifacts.outputs.vendor_artifacts_changed == 'true' ||
       needs.nightly.outputs.force_rebuild == 'true'
     steps:
       - name: Checkout
@@ -516,6 +592,7 @@ jobs:
             org.wycats.bootc.base.image=${{ env.BASE_IMAGE }}
             org.wycats.bootc.base.digest=${{ needs.check-upstream.outputs.upstream_digest }}
             org.wycats.bootc.rpm.hash=${{ needs.check-rpm-freshness.outputs.cache_epoch }}
+            org.wycats.bootc.vendor-artifacts.hash=${{ needs.check-vendor-artifacts.outputs.vendor_artifacts_hash }}
             org.opencontainers.image.description=${{ steps.build-info.outputs.summary }}
           # Registry cache - shared across all branches (unlike GHA cache)
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache

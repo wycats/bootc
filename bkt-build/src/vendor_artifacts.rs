@@ -227,8 +227,9 @@ fn download_with_retries(url: &str, name: &str) -> Result<Vec<u8>> {
                 std::thread::sleep(std::time::Duration::from_secs(RETRY_DELAY_SECS));
             }
             Err(e) => {
-                return Err(e)
-                    .with_context(|| format!("failed to download {} after {} attempts", name, MAX_RETRIES));
+                return Err(e).with_context(|| {
+                    format!("failed to download {} after {} attempts", name, MAX_RETRIES)
+                });
             }
         }
     }
