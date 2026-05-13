@@ -136,6 +136,10 @@ pub enum Commands {
     /// Manage upstream dependencies (themes, icons, fonts, tools)
     Upstream(commands::upstream::UpstreamArgs),
 
+    /// Inspect vendor-sourced artifacts (e.g. VS Code)
+    #[command(alias = "vendor")]
+    VendorArtifacts(commands::vendor_artifacts::VendorArtifactsArgs),
+
     /// Manage distribution changelog and version history
     Changelog(commands::changelog::ChangelogArgs),
 
@@ -212,6 +216,7 @@ impl Commands {
             Commands::Schema(_) => CommandTarget::Either,
             Commands::Completions(_) => CommandTarget::Either,
             Commands::Upstream(_) => CommandTarget::Either,
+            Commands::VendorArtifacts(_) => CommandTarget::Host,
             Commands::Changelog(_) => CommandTarget::Either,
             Commands::Skel(_) => CommandTarget::Either,
             Commands::BuildInfo(_) => CommandTarget::Either,

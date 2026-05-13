@@ -31,4 +31,5 @@ pub mod try_cmd;
 pub mod tune;
 pub mod upgrade;
 pub mod upstream;
+pub mod vendor_artifacts;
 pub mod wrap;
