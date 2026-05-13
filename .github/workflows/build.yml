@@ -246,8 +246,6 @@ jobs:
 
           echo "✓ All manifests are valid"
 
-  check-schemas-current:
-
   check-vendor-artifacts:
     name: Check vendor artifacts freshness
     runs-on: ubuntu-latest
