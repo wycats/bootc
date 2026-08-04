@@ -68,7 +68,7 @@ fn run_preview() -> Result<()> {
     // Show booted info
     Output::info(format!(
         "Booted: {} ({})",
-        booted_info.version, &booted_info.timestamp
+        booted_info.version, booted_info.timestamp
     ));
     Output::info(format!("  Image: {}", booted_info.image));
 
@@ -83,7 +83,7 @@ fn run_preview() -> Result<()> {
             Output::blank();
             Output::info(format!(
                 "Staged: {} ({})",
-                staged_info.version, &staged_info.timestamp
+                staged_info.version, staged_info.timestamp
             ));
             Output::info(format!("  Image: {}", staged_info.image));
 
