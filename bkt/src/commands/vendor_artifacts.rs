@@ -45,10 +45,20 @@ struct ArtifactStatus {
     name: String,
     kind: String,
     installed: Option<String>,
+    staged: Option<String>,
     latest: String,
     latest_url: String,
     vendor_revision: Option<String>,
+    status: Freshness,
     stale: bool,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum Freshness {
+    Current,
+    Staged,
+    UpdateAvailable,
 }
 
 pub fn run(args: VendorArtifactsArgs, plan: &ExecutionPlan) -> Result<()> {
@@ -60,6 +70,7 @@ pub fn run(args: VendorArtifactsArgs, plan: &ExecutionPlan) -> Result<()> {
 
 fn status(name: Option<String>, json: bool) -> Result<()> {
     let manifest = load_manifest()?;
+    let staged_root = staged_deployment_root()?;
 
     let artifacts: Vec<_> = match name {
         Some(name) => vec![
@@ -74,18 +85,24 @@ fn status(name: Option<String>, json: bool) -> Result<()> {
     for artifact in artifacts {
         let resolved = resolve_artifact(artifact)?;
         let installed = installed_rpm_version(&artifact.name)?;
-        let stale = installed
+        let staged = staged_root
             .as_deref()
-            .is_none_or(|version| !version.starts_with(&format!("{}-", resolved.version)));
+            .map(|root| rpm_version(&artifact.name, Some(root)))
+            .transpose()?
+            .flatten();
+        let freshness =
+            classify_freshness(installed.as_deref(), staged.as_deref(), &resolved.version);
 
         statuses.push(ArtifactStatus {
             name: artifact.name.clone(),
             kind: artifact_kind(&artifact.kind).to_string(),
             installed,
+            staged,
             latest: resolved.version,
             latest_url: resolved.url,
             vendor_revision: resolved.vendor_revision,
-            stale,
+            stale: freshness == Freshness::UpdateAvailable,
+            status: freshness,
         });
     }
 
@@ -101,30 +118,37 @@ fn status(name: Option<String>, json: bool) -> Result<()> {
 
     Output::header("VENDOR ARTIFACTS");
     println!(
-        "{:<18} {:<14} {:<14} STATUS",
+        "{:<18} {:<24} {:<24} {:<14} STATUS",
         "NAME".cyan(),
-        "INSTALLED".cyan(),
+        "RUNNING".cyan(),
+        "STAGED".cyan(),
         "LATEST".cyan()
     );
     Output::separator();
 
     for status in &statuses {
         let installed = status.installed.as_deref().unwrap_or("not installed");
-        let state = if status.stale {
-            "update available".yellow().to_string()
-        } else {
-            "current".green().to_string()
+        let staged = status.staged.as_deref().unwrap_or("-");
+        let state = match status.status {
+            Freshness::Current => "current".green().to_string(),
+            Freshness::Staged => "staged".cyan().to_string(),
+            Freshness::UpdateAvailable => "update available".yellow().to_string(),
         };
         println!(
-            "{:<18} {:<14} {:<14} {}",
+            "{:<18} {:<24} {:<24} {:<14} {}",
             status.name.yellow(),
             installed,
+            staged,
             status.latest,
             state
         );
     }
 
     let stale_count = statuses.iter().filter(|s| s.stale).count();
+    let staged_count = statuses
+        .iter()
+        .filter(|status| status.status == Freshness::Staged)
+        .count();
     Output::blank();
     if stale_count > 0 {
         Output::warning(format!(
@@ -134,6 +158,11 @@ fn status(name: Option<String>, json: bool) -> Result<()> {
         Output::hint(
             "Run `gh workflow run build-and-push --repo wycats/bootc --ref main` to force a build now.",
         );
+    } else if staged_count > 0 {
+        Output::success(format!(
+            "{} vendor artifact update(s) are already staged.",
+            staged_count
+        ));
     } else {
         Output::success("All vendor artifacts are current.");
     }
@@ -382,7 +411,16 @@ fn expand_template(template: &str, params: &HashMap<String, String>) -> Result<S
 }
 
 fn installed_rpm_version(name: &str) -> Result<Option<String>> {
-    let output = Command::new("rpm")
+    rpm_version(name, None)
+}
+
+fn rpm_version(name: &str, root: Option<&std::path::Path>) -> Result<Option<String>> {
+    let mut command = Command::new("rpm");
+    if let Some(root) = root {
+        command.arg("--root").arg(root);
+    }
+
+    let output = command
         .args(["-q", name, "--qf", "%{VERSION}-%{RELEASE}"])
         .output()
         .with_context(|| format!("failed to query installed RPM '{}'", name))?;
@@ -396,8 +434,84 @@ fn installed_rpm_version(name: &str) -> Result<Option<String>> {
     }
 }
 
+fn staged_deployment_root() -> Result<Option<PathBuf>> {
+    let output = Command::new("rpm-ostree")
+        .args(["status", "--json"])
+        .output()
+        .context("failed to query staged deployment")?;
+
+    if !output.status.success() {
+        bail!("rpm-ostree status failed while querying staged deployment");
+    }
+
+    let status: serde_json::Value =
+        serde_json::from_slice(&output.stdout).context("failed to parse rpm-ostree status")?;
+    let Some(staged) = status["deployments"].as_array().and_then(|deployments| {
+        deployments
+            .iter()
+            .find(|deployment| deployment["staged"] == true)
+    }) else {
+        return Ok(None);
+    };
+
+    let osname = staged["osname"]
+        .as_str()
+        .context("staged deployment has no osname")?;
+    let id = staged["id"]
+        .as_str()
+        .context("staged deployment has no id")?;
+    let deployment = id.strip_prefix(&format!("{}-", osname)).unwrap_or(id);
+
+    Ok(Some(
+        PathBuf::from("/sysroot/ostree/deploy")
+            .join(osname)
+            .join("deploy")
+            .join(deployment),
+    ))
+}
+
+fn classify_freshness(installed: Option<&str>, staged: Option<&str>, latest: &str) -> Freshness {
+    let expected_prefix = format!("{}-", latest);
+    if installed.is_some_and(|version| version.starts_with(&expected_prefix)) {
+        Freshness::Current
+    } else if staged.is_some_and(|version| version.starts_with(&expected_prefix)) {
+        Freshness::Staged
+    } else {
+        Freshness::UpdateAvailable
+    }
+}
+
 fn artifact_kind(kind: &ArtifactKind) -> &'static str {
     match kind {
         ArtifactKind::Rpm => "rpm",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Freshness, classify_freshness};
+
+    #[test]
+    fn classifies_running_version_as_current() {
+        assert_eq!(
+            classify_freshness(Some("1.132.0-1.el8"), None, "1.132.0"),
+            Freshness::Current
+        );
+    }
+
+    #[test]
+    fn classifies_latest_staged_version_as_staged() {
+        assert_eq!(
+            classify_freshness(Some("1.131.0-1.el8"), Some("1.132.0-1.el8"), "1.132.0"),
+            Freshness::Staged
+        );
+    }
+
+    #[test]
+    fn requires_update_when_latest_is_neither_running_nor_staged() {
+        assert_eq!(
+            classify_freshness(Some("1.130.0-1.el8"), Some("1.131.0-1.el8"), "1.132.0"),
+            Freshness::UpdateAvailable
+        );
     }
 }
